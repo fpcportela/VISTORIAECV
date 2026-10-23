@@ -26,9 +26,10 @@ insert into usuario_lojas (usuario_id, loja_id, perfil_id) values
   ('50000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001'),
   ('50000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001');
 
-insert into servicos (empresa_id, nome, descricao) values
-  ('20000000-0000-0000-0000-000000000001', 'ECV', 'Vistoria ECV'),
-  ('20000000-0000-0000-0000-000000000001', 'CAUTELAR', 'Vistoria cautelar');
+insert into servicos (empresa_id, nome, tipo, descricao, valor_padrao, gera_vistoria) values
+  ('20000000-0000-0000-0000-000000000001', 'ECV', 'servico', 'Vistoria ECV', 150, true),
+  ('20000000-0000-0000-0000-000000000001', 'CAUTELAR', 'servico', 'Vistoria cautelar', 150, true),
+  ('20000000-0000-0000-0000-000000000001', 'SEGUNDA VIA DE LAUDO', 'produto', 'Reimpressão do laudo', 30, false);
 
 insert into categorias_financeiras (empresa_id, tipo, nome) values
   ('20000000-0000-0000-0000-000000000001', 'receber', 'Receitas de Serviços'),
@@ -46,7 +47,7 @@ insert into servico_precos (servico_id, tipo_veiculo, valor)
 select s.id, t.tipo::tipo_veiculo, t.valor
   from servicos s
   cross join (values ('carro', 150), ('moto', 120), ('caminhao', 250), ('outro', 150)) t(tipo, valor)
- where s.empresa_id = '20000000-0000-0000-0000-000000000001';
+ where s.empresa_id = '20000000-0000-0000-0000-000000000001' and s.gera_vistoria;
 
 -- Checklist padrão (vale para todos os tipos de veículo). Ajuste os itens
 -- conforme o roteiro da franquia.

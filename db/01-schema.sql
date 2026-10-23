@@ -33,7 +33,7 @@ $$;
 create type tipo_veiculo        as enum ('carro', 'moto', 'caminhao', 'outro');
 create type tipo_pessoa         as enum ('pf', 'pj', 'avulso');
 create type tipo_venda          as enum ('orcamento', 'venda_avulsa');
-create type situacao_venda      as enum ('em_aberto', 'aprovado', 'cancelado');
+create type situacao_venda      as enum ('aberta', 'finalizada', 'cancelada');
 create type status_vistoria     as enum ('agendada', 'em_andamento', 'concluida', 'cancelada');
 create type resultado_vistoria  as enum ('aprovado', 'aprovado_com_apontamentos', 'reprovado');
 create type situacao_item       as enum ('conforme', 'nao_conforme', 'nao_se_aplica');
@@ -169,7 +169,8 @@ create unique index preferencias_tema_empresa on preferencias_tema(empresa_id) w
 -- null = ainda não escolheu: aparecem todos os módulos liberados no perfil.
 create table usuario_atalhos (
   usuario_id    uuid primary key references usuarios(id) on delete cascade,
-  atalhos       text[] not null default '{}',
+  atalhos       text[],                          -- null = todos os módulos liberados
+  menu          text[],                          -- ordem do menu lateral; null = padrão
   atualizado_em timestamptz not null default now()
 );
 create unique index preferencias_tema_usuario on preferencias_tema(usuario_id) where usuario_id is not null;
@@ -256,7 +257,9 @@ create table servicos (
   id           uuid primary key default gen_random_uuid(),
   empresa_id   uuid not null references empresas(id),
   nome         text not null,                   -- ex.: ECV, Cautelar, Pesquisa
+  tipo         text not null default 'servico' check (tipo in ('servico', 'produto')),
   descricao    text,
+  valor_padrao numeric(12,2) not null default 0 check (valor_padrao >= 0), -- sem preço por tipo de veículo
   gera_vistoria boolean not null default true,
   ativo        boolean not null default true,
   criado_em    timestamptz not null default now(),
@@ -318,7 +321,7 @@ create table vendas (
   empresa_id       uuid not null references empresas(id), -- grupo (preenchido pela loja)
   numero           bigint not null,
   tipo             tipo_venda not null default 'venda_avulsa',
-  situacao         situacao_venda not null default 'aprovado',
+  situacao         situacao_venda not null default 'aberta',  -- finalizada = travada
   cliente_id       uuid not null references clientes(id),
   data_venda       date not null default current_date,
   categoria_id     uuid references categorias_financeiras(id),
@@ -327,6 +330,8 @@ create table vendas (
   desconto         numeric(12,2) not null default 0,
   valor_total      numeric(12,2) generated always as (valor_bruto - desconto) stored,
   observacoes      text,
+  finalizada_em    timestamptz,
+  finalizada_por   uuid references usuarios(id),
   nfse_numero      text,
   nfse_status      text,
   criado_por       uuid references usuarios(id),
@@ -360,6 +365,44 @@ begin
 end $$;
 create trigger trg_venda_itens_total after insert or update or delete on venda_itens
   for each row execute function vendas_recalcular();
+
+-- Venda finalizada fica travada: só volta a ser editada se for reaberta por
+-- app_reabrir_venda (master ou alguém com vendas.autorizar), que deixa registro.
+create or replace function vendas_travar() returns trigger
+language plpgsql as $$
+begin
+  if old.situacao in ('finalizada', 'cancelada')
+     and coalesce(current_setting('app.reabrindo_venda', true), '') <> old.id::text then
+    raise exception 'Venda % está %. Peça a liberação para alterar.', old.numero, old.situacao
+      using errcode = '22023';
+  end if;
+  return coalesce(new, old);
+end $$;
+create trigger trg_vendas_travar before update or delete on vendas
+  for each row execute function vendas_travar();
+
+create or replace function venda_itens_travar() returns trigger
+language plpgsql as $$
+begin
+  if exists (select 1 from vendas where id = coalesce(new.venda_id, old.venda_id) and situacao <> 'aberta') then
+    raise exception 'A venda não está aberta. Peça a liberação para alterar os itens.' using errcode = '22023';
+  end if;
+  return coalesce(new, old);
+end $$;
+create trigger trg_venda_itens_travar before insert or update or delete on venda_itens
+  for each row execute function venda_itens_travar();
+
+-- Histórico legível da venda (quem fez o quê); a tabela auditoria guarda o antes/depois completo
+create table venda_historico (
+  id             bigserial primary key,
+  venda_id       uuid not null references vendas(id) on delete cascade,
+  usuario_id     uuid references usuarios(id),
+  acao           text not null,                 -- criada, alterada, finalizada, reaberta, cancelada
+  detalhe        text,
+  autorizado_por uuid references usuarios(id),
+  criado_em      timestamptz not null default now()
+);
+create index venda_historico_venda on venda_historico(venda_id, criado_em);
 
 -- =====================================================================
 -- 6. Vistorias
@@ -715,18 +758,18 @@ begin
   -- taxas de cartão do mês, para a base "faturamento líquido" (rateadas pelo faturamento)
   select coalesce(sum(t.taxa), 0) into taxas
     from transacoes_cartao t join vendas v on v.id = t.venda_id
-   where v.loja_id = p_loja and v.situacao = 'aprovado' and v.tipo = 'venda_avulsa'
+   where v.loja_id = p_loja and v.situacao = 'finalizada' and v.tipo = 'venda_avulsa'
      and v.data_venda >= ini and v.data_venda < fim and t.status = 'aprovada';
 
   select coalesce(sum(i.valor_total), 0) into bruto_loja
     from venda_itens i join vendas v on v.id = i.venda_id
-   where v.loja_id = p_loja and v.situacao = 'aprovado' and v.tipo = 'venda_avulsa'
+   where v.loja_id = p_loja and v.situacao = 'finalizada' and v.tipo = 'venda_avulsa'
      and v.data_venda >= ini and v.data_venda < fim;
 
   for s in
     select i.servico_id, sum(i.quantidade) as qtd, sum(i.valor_total) as bruto
       from venda_itens i join vendas v on v.id = i.venda_id
-     where v.loja_id = p_loja and v.situacao = 'aprovado' and v.tipo = 'venda_avulsa'
+     where v.loja_id = p_loja and v.situacao = 'finalizada' and v.tipo = 'venda_avulsa'
        and v.data_venda >= ini and v.data_venda < fim
      group by i.servico_id
   loop
@@ -835,6 +878,8 @@ begin
 end $$;
 
 create trigger aud_vendas      after insert or update or delete on vendas            for each row execute function auditar();
+create trigger aud_venda_itens after insert or update or delete on venda_itens       for each row execute function auditar();
+create trigger aud_servicos    after insert or update or delete on servicos          for each row execute function auditar();
 create trigger aud_lancamentos after insert or update or delete on lancamentos       for each row execute function auditar();
 create trigger aud_baixas      after insert or update or delete on lancamento_baixas for each row execute function auditar();
 create trigger aud_vistorias   after insert or update or delete on vistorias         for each row execute function auditar();
@@ -923,6 +968,15 @@ create policy apuracao_itens_por_loja on apuracao_royalty_itens for all
   using (exists (select 1 from apuracoes_royalty a where a.id = apuracao_id and tem_loja(a.loja_id)))
   with check (exists (select 1 from apuracoes_royalty a where a.id = apuracao_id and tem_loja(a.loja_id)));
 
+alter table venda_itens enable row level security;
+create policy venda_itens_por_venda on venda_itens for all
+  using (exists (select 1 from vendas v where v.id = venda_id))
+  with check (exists (select 1 from vendas v where v.id = venda_id));
+alter table venda_historico enable row level security;
+create policy venda_historico_por_venda on venda_historico for all
+  using (exists (select 1 from vendas v where v.id = venda_id))
+  with check (exists (select 1 from vendas v where v.id = venda_id));
+
 -- Ações sensíveis exigem permissão específica além do acesso à loja
 create policy lancamentos_excluir on lancamentos as restrictive for delete
   using (pode(loja_id, 'financeiro.excluir'));
@@ -945,11 +999,13 @@ insert into permissoes (codigo, modulo, descricao) values
   ('placa.foto',           'Ler placa por foto',   'Ler a placa pela câmera'),
   ('clientes.ver',         'Clientes',             'Ver o módulo de clientes'),
   ('clientes.editar',      'Clientes',             'Cadastrar e editar clientes'),
-  ('clientes.serasa',      'Clientes',             'Consultar cliente no Serasa'),
   ('vendas.ver',           'Vendas',               'Ver vendas e orçamentos'),
   ('vendas.criar',         'Vendas',               'Criar vendas e orçamentos'),
   ('vendas.cancelar',      'Vendas',               'Cancelar vendas'),
   ('vendas.desconto',      'Vendas',               'Dar desconto'),
+  ('vendas.finalizar',     'Vendas',               'Finalizar vendas'),
+  ('vendas.autorizar',     'Vendas',               'Autorizar alteração de venda finalizada (senha)'),
+  ('servicos.gerenciar',   'Serviços e produtos',  'Cadastrar serviços, produtos e preços'),
   ('financeiro.ver',       'Financeiro',           'Ver contas a pagar e receber'),
   ('financeiro.lancar',    'Financeiro',           'Criar lançamentos e dar baixa'),
   ('financeiro.excluir',   'Financeiro',           'Excluir lançamentos'),

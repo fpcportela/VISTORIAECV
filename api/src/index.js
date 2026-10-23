@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { comoUsuario } from './db.js';
 import { rotasAcessos } from './acessos.js';
 import { rotasVistorias } from './vistorias.js';
+import { rotasVendas } from './vendas.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
@@ -50,12 +51,13 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
     const lojas = (await db.query('select * from app_minhas_lojas()')).rows;
     const cor = (await db.query('select app_cor_tema() as cor')).rows[0].cor;
     const atalhos = (await db.query('select app_meus_atalhos() as a')).rows[0].a;
+    const menu = (await db.query('select app_meu_menu() as m')).rows[0].m;
     // { loja_id: ["vistorias.ver", ...] }: o app mostra só os módulos liberados
     const acessos = {};
     for (const { loja_id, permissao } of (await db.query('select * from app_meus_acessos()')).rows) {
       (acessos[loja_id] ||= []).push(permissao);
     }
-    return { usuario, lojas, cor, atalhos, acessos, master: usuario.admin_rede };
+    return { usuario, lojas, cor, atalhos, menu, acessos, master: usuario.admin_rede };
   });
   res.json(dados);
 }));
@@ -65,6 +67,12 @@ app.put('/api/atalhos', exigeLogin, rota(async (req, res) => {
   if (!atalhos) return res.status(400).json({ erro: 'Lista de atalhos inválida.' });
   await comoUsuario(req.usuarioId, (db) => db.query('select app_salvar_atalhos($1)', [atalhos]));
   res.json({ atalhos });
+}));
+
+app.put('/api/menu', exigeLogin, rota(async (req, res) => {
+  const menu = Array.isArray(req.body?.menu) ? req.body.menu.map(String).slice(0, 40) : null;
+  await comoUsuario(req.usuarioId, (db) => db.query('select app_salvar_menu($1)', [menu]));
+  res.json({ menu });
 }));
 
 app.put('/api/tema', exigeLogin, rota(async (req, res) => {
@@ -188,5 +196,6 @@ app.get('/api/placa/:placa', exigeLogin, rota(async (req, res) => {
 
 rotasAcessos(app, { exigeLogin, rota });
 rotasVistorias(app, { exigeLogin, rota });
+rotasVendas(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));

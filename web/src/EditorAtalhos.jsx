@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Icone } from './icones.jsx';
 
 // O usuário escolhe quais módulos (entre os liberados no perfil) viram atalho
-// na tela inicial, e a ordem em que aparecem.
-export default function EditorAtalhos({ disponiveis, escolhidos, aoSalvar, aoFechar }) {
+// na tela inicial, e a ordem em que aparecem. Com soOrdem, só reordena (menu).
+export default function EditorAtalhos({ disponiveis, escolhidos, aoSalvar, aoFechar, soOrdem, titulo = 'Personalizar atalhos',
+  ajuda = 'Marque os atalhos que quer ver na sua tela inicial. Use as setas para mudar a ordem.' }) {
   const [lista, setLista] = useState(escolhidos);
 
   const alternar = (id) =>
@@ -25,19 +26,19 @@ export default function EditorAtalhos({ disponiveis, escolhidos, aoSalvar, aoFec
 
   return (
     <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
-      <section className="modal" role="dialog" aria-modal="true" aria-label="Personalizar atalhos">
+      <section className="modal" role="dialog" aria-modal="true" aria-label={titulo}>
         <div className="modal-topo">
-          <h2>Personalizar atalhos</h2>
+          <h2>{titulo}</h2>
           <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
         </div>
-        <p className="cinza ajuda">Marque os atalhos que quer ver na sua tela inicial. Use as setas para mudar a ordem.</p>
+        <p className="cinza ajuda">{ajuda}</p>
         <ul className="lista-atalhos">
           {ordenados.map((m) => {
             const marcado = lista.includes(m.id);
             return (
               <li key={m.id}>
                 <label>
-                  <input type="checkbox" checked={marcado} onChange={() => alternar(m.id)} />
+                  {!soOrdem && <input type="checkbox" checked={marcado} onChange={() => alternar(m.id)} />}
                   <span className="bolha"><Icone nome={m.id} tamanho={18} /></span>
                   {m.nome}
                 </label>
@@ -52,7 +53,7 @@ export default function EditorAtalhos({ disponiveis, escolhidos, aoSalvar, aoFec
           })}
         </ul>
         <div className="acoes-modal">
-          <button className="botao-contorno" onClick={() => setLista(disponiveis.map((m) => m.id))}>Marcar todos</button>
+          <button className="botao-contorno" onClick={() => setLista(disponiveis.map((m) => m.id))}>{soOrdem ? 'Ordem padrão' : 'Marcar todos'}</button>
           <button className="botao-primario" onClick={() => aoSalvar(lista)}>Salvar</button>
         </div>
       </section>

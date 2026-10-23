@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { api, moeda } from './api.js';
 import { aplicarTema, COR_PADRAO, PALETA } from './tema.js';
 import { Icone } from './icones.jsx';
-import { MODULOS, criarTem } from './modulos.js';
+import { MODULOS, criarTem, ordenar } from './modulos.js';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
 import EditorAtalhos from './EditorAtalhos.jsx';
 import UsuariosPermissoes from './UsuariosPermissoes.jsx';
 import { ExecutarVistoria, ListaVistorias, NovaVistoria } from './Vistorias.jsx';
+import { EditorVenda, ListaVendas } from './Vendas.jsx';
+import Servicos from './Servicos.jsx';
+import Pesquisa from './Pesquisa.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [loja, setLoja] = useState('');
@@ -19,13 +22,17 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [editandoAtalhos, setEditandoAtalhos] = useState(false);
   const [novaVistoria, setNovaVistoria] = useState(false);
   const [vistoriaId, setVistoriaId] = useState(null);
+  const [vendaId, setVendaId] = useState(null); // null = lista; 'nova' = nova venda
+  const [buscaVendas, setBuscaVendas] = useState('');
+  const [organizandoMenu, setOrganizandoMenu] = useState(false);
   const [aviso, setAviso] = useState('');
   const [consulta, setConsulta] = useState(null); // null = fechada; texto = placa digitada
-  const [buscaCelular, setBuscaCelular] = useState('');
   const timerAviso = useRef();
 
   const tem = criarTem(perfil, loja);
-  const modulos = MODULOS.filter((m) => tem(m.permissao));
+  const modulos = ordenar(MODULOS.filter((m) => tem(m.permissao)), perfil.menu);
+  // Lojas em que o usuário pode fazer algo (para telas que precisam de uma loja só)
+  const lojasCom = (permissao) => perfil.lojas.map((l) => l.id).filter((id) => criarTem(perfil, id)(permissao));
   // Atalhos: os escolhidos pelo usuário (que ele ainda pode ver) ou, sem escolha, todos os liberados
   const atalhos = perfil.atalhos
     ? perfil.atalhos.map((id) => modulos.find((m) => m.id === id)).filter(Boolean)
@@ -47,7 +54,9 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   function abrir(id) {
     setMenuAberto(false);
-    if (id === 'inicio' || id === 'usuarios' || id === 'vistorias') { setTela(id); setVistoriaId(null); }
+    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos'].includes(id)) {
+      setTela(id); setVistoriaId(null); setVendaId(null); setBuscaVendas('');
+    }
     else if (id === 'busca') setConsulta('');
     else emBreve();
   }
@@ -57,6 +66,20 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     setPerfil({ ...perfil, cor });
     try {
       await api('/tema', { metodo: 'PUT', corpo: { cor } });
+    } catch (falha) {
+      setErro(falha.message);
+    }
+  }
+
+  const novaVenda = () => { setMenuAberto(false); setTela('vendas'); setVendaId('nova'); };
+  const abrirVistoria = (id) => { setTela('vistorias'); setVistoriaId(id); };
+  const abrirVenda = (id) => { setTela('vendas'); setVendaId(id); };
+
+  async function salvarMenu(lista) {
+    setPerfil({ ...perfil, menu: lista });
+    setOrganizandoMenu(false);
+    try {
+      await api('/menu', { metodo: 'PUT', corpo: { menu: lista } });
     } catch (falha) {
       setErro(falha.message);
     }
@@ -93,6 +116,12 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       {perfil.lojas.length > 1 && <option value="">Todas as lojas</option>}
       {perfil.lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
     </select>
+  );
+
+  const pesquisa = (classe) => (tem('vistorias.ver') || tem('vendas.ver') || tem('clientes.ver') || tem('placa.consultar')) && (
+    <Pesquisa classe={classe} loja={loja} podeConsultarPlaca={tem('placa.consultar')}
+      aoVistoria={abrirVistoria} aoVenda={abrirVenda} aoConsultarPlaca={(p) => setConsulta(p)}
+      aoCliente={(c) => { setTela('vendas'); setVendaId(null); setBuscaVendas(c.cpf_cnpj || c.nome); }} />
   );
 
   const paleta = paletaAberta && (
@@ -234,7 +263,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <span className="marca-icone"><Icone nome="escudo" tamanho={22} /></span>
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
-        {tem('placa.consultar') && <button className="botao-texto" onClick={() => setConsulta('')}><Icone nome="busca" /> <span className="rotulo">Buscar placa</span></button>}
+        {pesquisa('so-computador')}
         {tem('vistorias.criar') && <button className="botao-primario" onClick={() => setNovaVistoria(true)}><Icone nome="mais" tamanho={18} /> <span className="rotulo">Nova vistoria</span></button>}
         <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
@@ -255,32 +284,39 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <button onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
         </div>
         <label className="loja">Loja {seletorLoja}</label>
-        {tem('placa.consultar') && (
-          <form className="busca" onSubmit={(e) => { e.preventDefault(); setConsulta(buscaCelular); }}>
-            <label>
-              <Icone nome="busca" />
-              <input type="search" enterKeyHint="search" placeholder="Buscar placa" aria-label="Buscar placa"
-                value={buscaCelular} onChange={(e) => setBuscaCelular(e.target.value)} />
-            </label>
-            {tem('placa.foto') && <button type="button" onClick={emBreve} aria-label="Ler placa pela câmera"><Icone nome="camera" tamanho={22} /></button>}
-          </form>
-        )}
+        <div className="linha-pesquisa">
+          {pesquisa('')}
+          {tem('placa.foto') && <button type="button" className="botao-camera" onClick={emBreve} aria-label="Ler placa pela câmera"><Icone nome="camera" tamanho={22} /></button>}
+        </div>
       </header>
 
       {paleta}
 
       <div className="corpo">
         <nav className="menu so-computador" aria-label="Menu principal">
+          {tem('vendas.criar') && (
+            <button className="nova-venda" onClick={novaVenda} title="Nova venda" aria-label="Nova venda">
+              <Icone nome="mais" /><span className="rotulo">Nova venda</span>
+            </button>
+          )}
           {[{ id: 'inicio', nome: 'Início' }, ...modulos].map((m) => (
             <button key={m.id} className={tela === m.id ? 'ativo' : ''} title={m.nome} aria-label={m.nome} onClick={() => abrir(m.id)}>
               <Icone nome={m.id} /><span className="rotulo">{m.nome}</span>
               {m.sub && <span className="seta"><Icone nome="direita" tamanho={16} /></span>}
             </button>
           ))}
+          <button className="organizar-menu" onClick={() => setOrganizandoMenu(true)} title="Organizar menu" aria-label="Organizar menu">
+            <Icone nome="ordenar" tamanho={18} /><span className="rotulo">Organizar menu</span>
+          </button>
         </nav>
 
         <main className="conteudo">
           {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
+            : tela === 'servicos' ? <Servicos loja={lojasCom('servicos.gerenciar').includes(loja) ? loja : lojasCom('servicos.gerenciar')[0]} />
+            : tela === 'vendas' ? (vendaId
+              ? <EditorVenda key={vendaId} id={vendaId === 'nova' ? null : vendaId} perfil={perfil} lojaInicial={loja}
+                  lojasPermitidas={lojasCom('vendas.criar')} aoVoltar={() => setVendaId(null)} aoSalvo={(id) => setVendaId(id)} />
+              : <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} podeCriar={tem('vendas.criar')} aoAbrir={setVendaId} aoNova={novaVenda} />)
             : tela === 'vistorias' ? (vistoriaId
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)
@@ -295,7 +331,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         <span>
           {tem('vistorias.criar') && <button className="botao-central" onClick={() => setNovaVistoria(true)} aria-label="Nova vistoria"><Icone nome="mais" tamanho={26} traco={2.6} /></button>}
         </span>
-        {tem('financeiro.ver') ? <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}
+        {tem('vendas.ver') ? <button className={tela === 'vendas' ? 'ativo' : ''} onClick={() => abrir('vendas')}><Icone nome="vendas" tamanho={22} />Vendas</button>
+          : tem('financeiro.ver') ? <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}
         <button className={menuAberto ? 'ativo' : ''} onClick={() => setMenuAberto(true)}><Icone nome="menu" tamanho={22} />Menu</button>
       </nav>
 
@@ -306,6 +343,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               <h2>Menu</h2>
               <button className="fechar" onClick={() => setMenuAberto(false)} aria-label="Fechar">×</button>
             </div>
+            {tem('vendas.criar') && <button className="botao-primario" onClick={novaVenda}><Icone nome="mais" tamanho={18} /> Nova venda</button>}
             <div className="lista-menu">
               {modulos.map((m) => (
                 <button key={m.id} onClick={() => abrir(m.id)}>
@@ -313,8 +351,17 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
                 </button>
               ))}
             </div>
+            <button className="botao-contorno" onClick={() => { setMenuAberto(false); setOrganizandoMenu(true); }}>
+              <Icone nome="ordenar" tamanho={18} /> Organizar menu
+            </button>
           </section>
         </div>
+      )}
+
+      {organizandoMenu && (
+        <EditorAtalhos soOrdem titulo="Organizar menu" ajuda="Use as setas para escolher a ordem dos itens do seu menu."
+          disponiveis={MODULOS.filter((m) => tem(m.permissao))} escolhidos={modulos.map((m) => m.id)}
+          aoSalvar={salvarMenu} aoFechar={() => setOrganizandoMenu(false)} />
       )}
 
       {editandoAtalhos && (

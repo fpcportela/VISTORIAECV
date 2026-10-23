@@ -1,20 +1,9 @@
 import { comoUsuario } from './db.js';
 import { normalizarPlaca } from './placas.js';
-
-const UUID = /^[0-9a-f-]{36}$/i;
+import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './comum.js';
 const TIPOS = ['carro', 'moto', 'caminhao', 'outro'];
 const SITUACOES = ['conforme', 'nao_conforme', 'nao_se_aplica'];
 const RESULTADOS = ['aprovado', 'aprovado_com_apontamentos', 'reprovado'];
-
-// Erro com status HTTP, devolvido como { erro } pela rota
-class Recusa extends Error {
-  constructor(status, mensagem) { super(mensagem); this.status = status; }
-}
-
-async function exigir(db, loja, permissao, mensagem) {
-  const ok = (await db.query('select pode($1, $2) as ok', [loja, permissao])).rows[0].ok;
-  if (!ok) throw new Recusa(403, mensagem || 'Seu perfil não tem permissão para isso.');
-}
 
 // Vistoria visível para o usuário (as regras por loja do banco filtram)
 async function buscarVistoria(db, id) {
@@ -25,18 +14,9 @@ async function buscarVistoria(db, id) {
   return v;
 }
 
-const texto = (v, max = 500) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
-
 // Módulo Vistorias: abrir, preencher o checklist, concluir e cancelar
 export function rotasVistorias(app, { exigeLogin, rota }) {
-  const comRecusa = (fn) => rota(async (req, res) => {
-    try {
-      await fn(req, res);
-    } catch (erro) {
-      if (erro instanceof Recusa) return res.status(erro.status).json({ erro: erro.message });
-      throw erro;
-    }
-  });
+  const comRecusa = criarComRecusa(rota);
 
   // Lista com filtros: ?loja, ?status, ?periodo (hoje|mes|todos), ?busca (placa, cliente ou número)
   app.get('/api/vistorias', exigeLogin, comRecusa(async (req, res) => {
@@ -63,22 +43,6 @@ export function rotasVistorias(app, { exigeLogin, rota }) {
                or c.nome ilike '%' || $4 || '%' or vi.numero::text = $4)
         order by vi.criado_em desc
         limit 200`, [loja, status, periodo, busca])).rows);
-    res.json(lista);
-  }));
-
-  // Serviços da loja com o preço por tipo de veículo (o da loja vale mais que o geral)
-  app.get('/api/servicos', exigeLogin, comRecusa(async (req, res) => {
-    if (!UUID.test(req.query.loja || '')) throw new Recusa(400, 'Escolha a loja.');
-    const lista = await comoUsuario(req.usuarioId, async (db) => (await db.query(
-      `select s.id, s.nome, s.descricao,
-              coalesce((select jsonb_object_agg(tipo_veiculo, valor) from (
-                 select distinct on (p.tipo_veiculo) p.tipo_veiculo, p.valor
-                   from servico_precos p
-                  where p.servico_id = s.id and (p.loja_id is null or p.loja_id = $1)
-                  order by p.tipo_veiculo, p.loja_id nulls last) x), '{}') as precos
-         from servicos s join lojas l on l.empresa_id = s.empresa_id
-        where l.id = $1 and s.ativo and s.gera_vistoria
-        order by s.nome`, [req.query.loja])).rows);
     res.json(lista);
   }));
 
@@ -130,27 +94,7 @@ export function rotasVistorias(app, { exigeLogin, rota }) {
         [placa, tipo, texto(m.marca, 60), texto(m.modelo, 80), texto(m.cor, 30),
          /^\d{4}$/.test(String(m.ano || '')) ? Number(m.ano) : null])).rows[0];
 
-      // Cliente: um existente, um novo, ou o "particular / avulso" do grupo
-      let cliente = UUID.test(b.cliente_id || '') ? b.cliente_id : null;
-      if (cliente) {
-        const ok = (await db.query('select 1 from clientes where id = $1 and empresa_id = $2', [cliente, empresa])).rowCount;
-        if (!ok) throw new Recusa(400, 'Cliente não encontrado.');
-      } else if (b.cliente_novo?.nome) {
-        await exigir(db, b.loja_id, 'clientes.editar', 'Seu perfil não pode cadastrar clientes.');
-        const n = b.cliente_novo;
-        const doc = texto(n.cpf_cnpj, 20)?.replace(/\D/g, '') || null;
-        if (doc && ![11, 14].includes(doc.length)) throw new Recusa(400, 'CPF ou CNPJ inválido.');
-        cliente = (await db.query(
-          `insert into clientes (empresa_id, tipo, nome, cpf_cnpj, whatsapp)
-           values ($1, $2, $3, $4, $5) returning id`,
-          [empresa, doc ? (doc.length === 14 ? 'pj' : 'pf') : 'avulso', texto(n.nome, 120).toUpperCase(), doc,
-           texto(n.whatsapp, 20)?.replace(/\D/g, '') || null])).rows[0].id;
-      } else {
-        cliente = (await db.query(
-          "select id from clientes where empresa_id = $1 and tipo = 'avulso' and nome = 'CLIENTE PARTICULAR / AVULSO'", [empresa])).rows[0]?.id
-          || (await db.query(
-            "insert into clientes (empresa_id, tipo, nome) values ($1, 'avulso', 'CLIENTE PARTICULAR / AVULSO') returning id", [empresa])).rows[0].id;
-      }
+      const cliente = await resolverCliente(db, { empresa, loja: b.loja_id, cliente_id: b.cliente_id, cliente_novo: b.cliente_novo });
 
       const servico = (await db.query('select id from servicos where id = $1 and empresa_id = $2 and ativo', [b.servico_id, empresa])).rows[0];
       if (!servico) throw new Recusa(400, 'Serviço não encontrado.');

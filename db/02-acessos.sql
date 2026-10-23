@@ -177,3 +177,15 @@ language sql security definer as $$
   insert into usuario_atalhos (usuario_id, atalhos) values (app_usuario_atual(), coalesce(p_atalhos, '{}'))
   on conflict (usuario_id) do update set atalhos = excluded.atalhos, atualizado_em = now()
 $$;
+
+-- Ordem do menu lateral escolhida pelo usuário logado (null = padrão)
+create or replace function app_meu_menu() returns text[]
+language sql stable security definer as $$
+  select menu from usuario_atalhos where usuario_id = app_usuario_atual()
+$$;
+
+create or replace function app_salvar_menu(p_menu text[]) returns void
+language sql security definer as $$
+  insert into usuario_atalhos (usuario_id, menu) values (app_usuario_atual(), p_menu)
+  on conflict (usuario_id) do update set menu = excluded.menu, atualizado_em = now()
+$$;

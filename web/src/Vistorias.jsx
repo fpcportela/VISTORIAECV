@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, moeda } from './api.js';
 import { Icone } from './icones.jsx';
+import { Placa, PlacaInput, limparPlaca, placaValida } from './Placa.jsx';
 
 export const TIPOS = { carro: 'Carro', moto: 'Moto', caminhao: 'Caminhão', outro: 'Outro' };
 const STATUS = { agendada: 'Agendada', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
@@ -12,11 +13,6 @@ const RESULTADOS = {
 const SITUACOES = [['conforme', 'Conforme', '✓'], ['nao_conforme', 'Não conforme', '✗'], ['nao_se_aplica', 'Não se aplica', 'N/A']];
 
 const dataHora = (d) => (d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
-const Placa = ({ placa, pequena }) => (
-  <div className={pequena ? 'placa-mercosul pequena' : 'placa-mercosul'} aria-label={`Placa ${placa}`}>
-    <span>BRASIL</span><strong>{placa}</strong>
-  </div>
-);
 const Situacao = ({ v }) => (
   <span className={`etiqueta status-${v.status}`}>
     {v.status === 'concluida' && v.resultado ? RESULTADOS[v.resultado] : STATUS[v.status]}
@@ -68,7 +64,7 @@ export function ListaVistorias({ loja, podeCriar, aoAbrir, aoNova }) {
         <div className="lista-cadastro">
           {lista.map((v) => (
             <button key={v.id} className="cartao item-vistoria" onClick={() => aoAbrir(v.id)}>
-              <Placa placa={v.placa} pequena />
+              <Placa placa={v.placa} tamanho="pequena" />
               <span className="item-vistoria-textos">
                 <span className="item-titulo"><strong>Nº {v.numero}</strong><Situacao v={v} /></span>
                 <small>{[v.marca, v.modelo].filter(Boolean).join(' ') || TIPOS[v.tipo]} · {v.servico}</small>
@@ -121,8 +117,8 @@ export function NovaVistoria({ perfil, lojaInicial, lojasPermitidas, tem, aoCria
 
   async function consultar(e) {
     e?.preventDefault();
-    const p = placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(p)) { setAvisoPlaca('Placa inválida. Use o formato ABC1234 ou ABC1D23.'); return; }
+    const p = limparPlaca(placa);
+    if (!placaValida(p)) { setAvisoPlaca('Placa inválida. Use o formato ABC1234 ou ABC1D23.'); return; }
     setPlaca(p); setAvisoPlaca(''); setConsultando(true);
     try {
       if (!podeLoja('placa.consultar')) throw new Error('Seu perfil não consulta placas. Preencha os dados do veículo.');
@@ -185,8 +181,7 @@ export function NovaVistoria({ perfil, lojaInicial, lojasPermitidas, tem, aoCria
 
           <h3 className="passo"><span>1</span> Veículo</h3>
           <form className="busca-placa" onSubmit={consultar}>
-            <input value={placa} onChange={(e) => { setPlaca(e.target.value.toUpperCase()); setVeiculo(null); }}
-              placeholder="ABC1D23" maxLength={8} aria-label="Placa" autoFocus />
+            <PlacaInput valor={placa} aoMudar={(p) => { setPlaca(p); setVeiculo(null); }} autoFocus />
             <button className="botao-primario" disabled={consultando}>{consultando ? 'Buscando…' : 'Buscar'}</button>
           </form>
           {avisoPlaca && <p className="aviso-texto">{avisoPlaca}</p>}

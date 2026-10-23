@@ -1,17 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { Icone } from './icones.jsx';
+import { Placa, PlacaInput, limparPlaca } from './Placa.jsx';
 
 const TIPOS = { carro: 'Carro', moto: 'Moto', caminhao: 'Caminhão', outro: 'Outro' };
 
-const formatarPlaca = (texto) => texto.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
-
-export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar }) {
-  const [placa, setPlaca] = useState(formatarPlaca(placaInicial));
+// aoUsar(veiculo): opcional, mostra o botão "Usar nesta venda"
+export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar, aoUsar }) {
+  const [placa, setPlaca] = useState(limparPlaca(placaInicial));
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState('');
   const [buscando, setBuscando] = useState(false);
-  const campo = useRef();
 
   async function buscar(atualizar = false) {
     if (placa.length !== 7) {
@@ -34,7 +33,6 @@ export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar }) {
   }
 
   useEffect(() => {
-    campo.current?.focus();
     if (placaInicial) buscar();
     const fechar = (e) => e.key === 'Escape' && aoFechar();
     window.addEventListener('keydown', fechar);
@@ -63,8 +61,7 @@ export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar }) {
         </div>
 
         <form className="busca-placa" onSubmit={(e) => { e.preventDefault(); buscar(); }}>
-          <input ref={campo} value={placa} onChange={(e) => setPlaca(formatarPlaca(e.target.value))}
-            placeholder="ABC1D23" aria-label="Placa" autoComplete="off" autoCapitalize="characters" />
+          <PlacaInput valor={placa} aoMudar={setPlaca} autoFocus />
           <button className="botao-primario" type="submit" disabled={buscando}>
             <Icone nome="busca" tamanho={18} /> {buscando ? 'Buscando…' : 'Buscar'}
           </button>
@@ -74,10 +71,6 @@ export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar }) {
 
         {v && (
           <div className="resultado-placa">
-            <div className="placa-mercosul" aria-label={`Placa ${v.placa}`}>
-              <span>BRASIL</span>
-              <strong>{v.placa}</strong>
-            </div>
             {resultado.aviso && <p className="aviso-texto">{resultado.aviso} Mostrando os dados guardados.</p>}
             <dl>
               {linhas.map(([rotulo, valor]) => (
@@ -89,6 +82,7 @@ export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar }) {
                 {resultado.origem === 'cache' ? 'Dados guardados' : 'Consultado agora'} em{' '}
                 {new Date(v.consultado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
               </small>
+              {aoUsar && <button className="botao-primario pequeno" onClick={() => aoUsar(v)}>Usar nesta venda</button>}
               {resultado.origem === 'cache' && (
                 <button className="botao-contorno pequeno" onClick={() => buscar(true)} disabled={buscando}>
                   Atualizar consulta
