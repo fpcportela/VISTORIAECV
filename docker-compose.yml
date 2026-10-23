@@ -1,0 +1,18 @@
+services:
+  banco:
+    image: postgres:16
+    container_name: vistoria-ecv-banco
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vistoria_ecv
+      POSTGRES_USER: vistoria
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-vistoria_dev}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-app_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - dados_banco:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  dados_banco:

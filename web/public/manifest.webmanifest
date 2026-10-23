@@ -1,0 +1,9 @@
+{
+  "name": "Vistoria ECV",
+  "short_name": "Vistoria ECV",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f5f8",
+  "theme_color": "#0774B8",
+  "icons": [{ "src": "/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
