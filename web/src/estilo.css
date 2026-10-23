@@ -56,37 +56,39 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 .corpo { display: flex; flex: 1; }
 .menu { width: 260px; flex-shrink: 0; background: var(--primaria); color: var(--sobre-primaria); padding: 12px 0 24px; display: flex; flex-direction: column; gap: 2px; }
 .menu button { display: flex; align-items: center; gap: 14px; margin-right: 8px; padding: 12px 20px; border: none; border-radius: 0 24px 24px 0; background: none; color: inherit; font-size: 15px; font-weight: 700; text-align: left; min-height: 44px; }
-.menu button span { flex: 1; }
+.menu button .rotulo { flex: 1; }
+.menu button .seta { display: flex; }
 .menu button:hover { background: rgba(255, 255, 255, .12); }
 .menu button.ativo { background: #fff; color: var(--forte); font-weight: 800; }
-.conteudo { flex: 1; min-width: 0; max-width: 1200px; padding: 24px 32px 48px; display: flex; flex-direction: column; gap: 24px; }
+.conteudo { flex: 1; min-width: 0; max-width: 1680px; padding: clamp(16px, 2.5vw, 32px) clamp(16px, 2.5vw, 40px) 48px; display: flex; flex-direction: column; gap: clamp(16px, 2vw, 24px); }
 .cabecalho { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid #dfe3ea; }
 .cabecalho h1 { font-size: 26px; font-weight: 700; }
 
 /* ---------- Blocos e cartões ---------- */
 .bloco { display: flex; flex-direction: column; gap: 12px; }
 .bloco h2 { font-size: 20px; font-weight: 700; }
-.bloco-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bloco-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.total { white-space: nowrap; }
 .cartao { background: #fff; border-radius: 8px; box-shadow: var(--sombra); }
 .bolha { width: 52px; height: 52px; border-radius: 50%; background: var(--clara); color: var(--forte); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.vistorias-hoje { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.vistorias-hoje { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(10px, 1.5vw, 16px); }
 .contador { padding: 20px; display: flex; align-items: center; gap: 16px; }
 .contador span:last-child { display: flex; flex-direction: column; }
-.contador strong { font-size: 28px; font-weight: 800; }
+.contador strong { font-size: clamp(22px, 2.2vw, 30px); font-weight: 800; }
 .contador small { font-size: 14px; color: var(--cinza); }
 .linha-filtro { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .linha-filtro label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--forte); }
 .linha-filtro select { font-size: 14px; padding: 8px 10px; min-height: 40px; border-radius: 6px; border-color: var(--borda); }
-.contas { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 32px; }
+.contas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: clamp(18px, 2.5vw, 32px); }
 .duas-colunas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .valor { padding: 28px 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
-.valor span { font-size: 26px; font-weight: 800; }
+.valor span { font-size: clamp(18px, 2vw, 28px); font-weight: 800; overflow-wrap: anywhere; }
 .valor span small { font-size: 14px; }
 .valor strong { font-size: 15px; }
 .valor .cinza { font-size: 13px; }
 .positivo { color: var(--positivo); }
 .negativo { color: var(--negativo); }
-.tres-colunas { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.tres-colunas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; }
 .painel { padding: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .painel h2 { font-size: 17px; }
 .painel .destaque { font-size: 24px; font-weight: 800; color: var(--forte); }
@@ -107,6 +109,25 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 .paleta .botao-contorno { align-self: flex-start; color: #374151; }
 
 .aviso { position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); background: #1f2937; color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(15, 23, 42, .25); z-index: 30; max-width: calc(100vw - 32px); text-align: center; }
+
+/* ---------- Telas médias (tablet deitado, notebook pequeno) ---------- */
+@media (min-width: 821px) and (max-width: 1200px) {
+  .topo { flex-wrap: nowrap; padding: 10px 16px; gap: 8px; }
+  .marca-textos small { display: none; }
+  .topo .botao-texto .rotulo { display: none; }
+  .empresa strong { font-size: 13px; }
+  .menu { width: 76px; }
+  .menu button { justify-content: center; padding: 12px 0; margin-right: 8px; }
+  .menu button .rotulo, .menu button .seta { display: none; }
+  .contador { padding: 16px; gap: 12px; }
+  .bolha { width: 44px; height: 44px; }
+}
+
+/* ---------- Telas grandes ---------- */
+@media (min-width: 1700px) {
+  html { font-size: 17px; }
+  .menu { width: 280px; }
+}
 
 /* ---------- Celular ---------- */
 .so-celular { display: none !important; }

@@ -105,8 +105,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <span className="marca-icone"><Icone nome="escudo" tamanho={22} /></span>
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
-        <button className="botao-texto" onClick={() => setConsulta('')}><Icone nome="busca" /> Buscar placa</button>
-        <button className="botao-primario" onClick={emBreve}><Icone nome="mais" tamanho={18} /> Nova vistoria</button>
+        <button className="botao-texto" onClick={() => setConsulta('')}><Icone nome="busca" /> <span className="rotulo">Buscar placa</span></button>
+        <button className="botao-primario" onClick={emBreve}><Icone nome="mais" tamanho={18} /> <span className="rotulo">Nova vistoria</span></button>
         <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
         <div className="empresa">
@@ -141,9 +141,9 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       <div className="corpo">
         <nav className="menu so-computador" aria-label="Menu principal">
           {MENU.map(([icone, nome, sub]) => (
-            <button key={icone} className={icone === 'inicio' ? 'ativo' : ''}
+            <button key={icone} className={icone === 'inicio' ? 'ativo' : ''} title={nome} aria-label={nome}
               onClick={icone === 'inicio' ? undefined : icone === 'busca' ? () => setConsulta('') : emBreve}>
-              <Icone nome={icone} /><span>{nome}</span>{sub && <Icone nome="direita" tamanho={16} />}
+              <Icone nome={icone} /><span className="rotulo">{nome}</span>{sub && <span className="seta"><Icone nome="direita" tamanho={16} /></span>}
             </button>
           ))}
         </nav>
@@ -169,7 +169,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <section className="bloco">
             <div className="bloco-topo">
               <h2>Vistorias realizadas em {nomeMes}</h2>
-              <small className="cinza">Total: {mes ? mes.carros + mes.motos + mes.caminhoes : '–'}</small>
+              <small className="cinza total">Total: {mes ? mes.carros + mes.motos + mes.caminhoes : '–'}</small>
             </div>
             {contadores(mes)}
           </section>
