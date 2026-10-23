@@ -6,6 +6,7 @@ import { MODULOS, criarTem } from './modulos.js';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
 import EditorAtalhos from './EditorAtalhos.jsx';
 import UsuariosPermissoes from './UsuariosPermissoes.jsx';
+import { ExecutarVistoria, ListaVistorias, NovaVistoria } from './Vistorias.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [loja, setLoja] = useState('');
@@ -16,6 +17,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [paletaAberta, setPaletaAberta] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
   const [editandoAtalhos, setEditandoAtalhos] = useState(false);
+  const [novaVistoria, setNovaVistoria] = useState(false);
+  const [vistoriaId, setVistoriaId] = useState(null);
   const [aviso, setAviso] = useState('');
   const [consulta, setConsulta] = useState(null); // null = fechada; texto = placa digitada
   const [buscaCelular, setBuscaCelular] = useState('');
@@ -44,7 +47,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   function abrir(id) {
     setMenuAberto(false);
-    if (id === 'inicio' || id === 'usuarios') setTela(id);
+    if (id === 'inicio' || id === 'usuarios' || id === 'vistorias') { setTela(id); setVistoriaId(null); }
     else if (id === 'busca') setConsulta('');
     else emBreve();
   }
@@ -148,7 +151,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <section className="bloco">
             <div className="bloco-topo">
               <h2>Vistorias de hoje</h2>
-              {tem('vistorias.criar') && <button className="botao-contorno pequeno so-computador" onClick={emBreve}>+ Nova vistoria</button>}
+              {tem('vistorias.criar') && <button className="botao-contorno pequeno so-computador" onClick={() => setNovaVistoria(true)}>+ Nova vistoria</button>}
             </div>
             {contadores(hoje)}
           </section>
@@ -232,7 +235,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
         {tem('placa.consultar') && <button className="botao-texto" onClick={() => setConsulta('')}><Icone nome="busca" /> <span className="rotulo">Buscar placa</span></button>}
-        {tem('vistorias.criar') && <button className="botao-primario" onClick={emBreve}><Icone nome="mais" tamanho={18} /> <span className="rotulo">Nova vistoria</span></button>}
+        {tem('vistorias.criar') && <button className="botao-primario" onClick={() => setNovaVistoria(true)}><Icone nome="mais" tamanho={18} /> <span className="rotulo">Nova vistoria</span></button>}
         <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
         <div className="empresa">
@@ -277,16 +280,20 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         </nav>
 
         <main className="conteudo">
-          {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} /> : painelInicio}
+          {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
+            : tela === 'vistorias' ? (vistoriaId
+              ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
+              : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)
+            : painelInicio}
         </main>
       </div>
 
       {/* ---------- Navegação inferior (celular) ---------- */}
       <nav className="barra-inferior so-celular" aria-label="Navegação">
         <button className={tela === 'inicio' ? 'ativo' : ''} onClick={() => abrir('inicio')}><Icone nome="inicio" tamanho={22} />Início</button>
-        {tem('vistorias.ver') ? <button onClick={emBreve}><Icone nome="vistorias" tamanho={22} />Vistorias</button> : <span />}
+        {tem('vistorias.ver') ? <button className={tela === 'vistorias' ? 'ativo' : ''} onClick={() => abrir('vistorias')}><Icone nome="vistorias" tamanho={22} />Vistorias</button> : <span />}
         <span>
-          {tem('vistorias.criar') && <button className="botao-central" onClick={emBreve} aria-label="Nova vistoria"><Icone nome="mais" tamanho={26} traco={2.6} /></button>}
+          {tem('vistorias.criar') && <button className="botao-central" onClick={() => setNovaVistoria(true)} aria-label="Nova vistoria"><Icone nome="mais" tamanho={26} traco={2.6} /></button>}
         </span>
         {tem('financeiro.ver') ? <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}
         <button className={menuAberto ? 'ativo' : ''} onClick={() => setMenuAberto(true)}><Icone nome="menu" tamanho={22} />Menu</button>
@@ -313,6 +320,13 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       {editandoAtalhos && (
         <EditorAtalhos disponiveis={modulos} escolhidos={atalhos.map((m) => m.id)}
           aoSalvar={salvarAtalhos} aoFechar={() => setEditandoAtalhos(false)} />
+      )}
+
+      {novaVistoria && (
+        <NovaVistoria perfil={perfil} lojaInicial={loja} tem={tem}
+          lojasPermitidas={perfil.lojas.map((l) => l.id).filter((id) => criarTem(perfil, id)('vistorias.criar'))}
+          aoFechar={() => setNovaVistoria(false)}
+          aoCriar={(id) => { setNovaVistoria(false); setTela('vistorias'); setVistoriaId(id); }} />
       )}
 
       {consulta !== null && <ConsultaPlaca loja={loja} placaInicial={consulta} aoFechar={() => setConsulta(null)} />}

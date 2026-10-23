@@ -233,3 +233,68 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 .grupo-permissoes legend label { font-size: 15px; }
 .linha-loja { justify-content: space-between; flex-wrap: wrap; font-weight: 700; }
 .linha-loja select { min-width: 180px; }
+
+/* ---------- Vistorias ---------- */
+.filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.filtros .abas { border-bottom: none; }
+.filtros select, .filtros input, .formulario > input[type=search] { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font-size: 15px; min-height: 42px; background: #fff; }
+.filtros input { flex: 1; min-width: 180px; }
+.item-vistoria { border: none; padding: 14px; display: flex; align-items: center; gap: 14px; text-align: left; color: var(--texto); }
+.item-vistoria-textos { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 14px; }
+.placa-mercosul.pequena { width: 104px; flex-shrink: 0; border-width: 2px; border-radius: 6px; }
+.placa-mercosul.pequena span { font-size: 7px; letter-spacing: 2px; padding: 1px 0; }
+.placa-mercosul.pequena strong { font-size: 16px; letter-spacing: 1px; padding: 3px 0 4px; }
+.status-em_andamento, .status-agendada { background: #fef3c7; color: #92400e; }
+.status-concluida { background: #dcfce7; color: var(--positivo); }
+.status-cancelada { background: #f1f5f9; color: var(--cinza); }
+.passo { display: flex; align-items: center; gap: 10px; margin: 6px 0 0; font-size: 16px; }
+.passo span { width: 26px; height: 26px; border-radius: 50%; background: var(--forte); color: #fff; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
+.dados-veiculo { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 12px; }
+.dados-veiculo label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
+.resumo-veiculo { margin: 0; display: flex; flex-direction: column; justify-content: center; font-size: 16px; }
+.opcoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.opcao { display: flex; align-items: center; gap: 8px; border: 1px solid var(--borda); border-radius: 8px; padding: 10px 14px; min-height: 48px; cursor: pointer; font-size: 15px; background: #fff; }
+.opcao.marcada { border-color: var(--forte); background: var(--clara); }
+.opcao small { margin-left: 4px; font-weight: 700; color: var(--forte); }
+.opcao input { accent-color: var(--forte); }
+.lista-clientes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.lista-clientes .opcao { width: 100%; }
+.valor-servico { margin-right: auto; align-self: center; font-size: 15px; }
+.ficha-vistoria { padding: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+.ficha-vistoria dl { flex: 1; min-width: min(100%, 280px); margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px 16px; }
+.ficha-vistoria dt { font-size: 12px; font-weight: 700; color: var(--cinza); }
+.ficha-vistoria dd { margin: 2px 0 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.progresso { height: 8px; border-radius: 4px; background: #e3e7ee; overflow: hidden; }
+.progresso span { display: block; height: 100%; background: var(--forte); transition: width .2s; }
+.grupo-checklist { padding: 8px 16px 12px; }
+.grupo-checklist h3 { margin: 8px 0 4px; font-size: 15px; color: var(--forte); }
+.item-checklist { border-top: 1px solid #eef1f5; padding: 8px 0; display: flex; flex-direction: column; gap: 8px; }
+.item-checklist:first-of-type { border-top: none; }
+.item-checklist-linha { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.item-nome { font-size: 15px; font-weight: 600; }
+.botoes-situacao { display: flex; gap: 6px; }
+.botoes-situacao button { min-width: 48px; height: 44px; border: 1px solid var(--borda); border-radius: 8px; background: #fff; font-size: 16px; font-weight: 800; color: var(--cinza); }
+.botoes-situacao button.marcado.conforme { background: var(--positivo); border-color: var(--positivo); color: #fff; }
+.botoes-situacao button.marcado.nao_conforme { background: var(--negativo); border-color: var(--negativo); color: #fff; }
+.botoes-situacao button.marcado.nao_se_aplica { background: #64748b; border-color: #64748b; color: #fff; }
+.botoes-situacao button:disabled { cursor: default; }
+.obs-item { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font-size: 15px; min-height: 40px; }
+.formulario textarea { border: 1px solid var(--borda); border-radius: 6px; padding: 10px 12px; font-size: 16px; font-family: inherit; resize: vertical; font-weight: 400; }
+.painel.formulario { align-items: stretch; }
+.painel.formulario > label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
+.acoes-vistoria { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.resultados { display: flex; flex-direction: column; gap: 10px; }
+.resultado { min-height: 56px; border-radius: 8px; border: 2px solid; background: #fff; font-size: 17px; font-weight: 800; }
+.resultado.aprovado { border-color: var(--positivo); color: var(--positivo); }
+.resultado.aprovado_com_apontamentos { border-color: #b45309; color: #b45309; }
+.resultado.reprovado { border-color: var(--negativo); color: var(--negativo); }
+@media (max-width: 820px) {
+  .filtros .abas { width: 100%; }
+  .filtros .abas button { flex: 1; }
+  .filtros select { flex: 1; }
+  .item-checklist-linha { flex-direction: column; align-items: stretch; }
+  .botoes-situacao button { flex: 1; }
+  .acoes-vistoria { position: sticky; bottom: 76px; background: var(--fundo); padding: 8px 0; }
+  .acoes-vistoria button { flex: 1; }
+  .ficha-vistoria .placa-mercosul { margin: 0 auto; }
+}

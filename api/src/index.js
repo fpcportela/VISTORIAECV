@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { comoUsuario } from './db.js';
 import { rotasAcessos } from './acessos.js';
+import { rotasVistorias } from './vistorias.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
@@ -186,5 +187,6 @@ app.get('/api/placa/:placa', exigeLogin, rota(async (req, res) => {
 }));
 
 rotasAcessos(app, { exigeLogin, rota });
+rotasVistorias(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));
