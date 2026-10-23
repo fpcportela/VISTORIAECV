@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { comoUsuario } from './db.js';
+import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
 app.use(express.json());
@@ -92,6 +93,72 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
     };
   });
   res.json(dados);
+}));
+
+// Consulta de placa: usa o que já está no banco (até CACHE_DIAS dias) e só
+// chama a API Placas, que é paga, quando não tem ou quando pedem para atualizar.
+app.get('/api/placa/:placa', exigeLogin, rota(async (req, res) => {
+  const placa = normalizarPlaca(req.params.placa);
+  if (!placa) return res.status(400).json({ erro: 'Placa inválida. Use o formato ABC1234 ou ABC1D23.' });
+  const atualizar = req.query.atualizar === '1';
+
+  const resultado = await comoUsuario(req.usuarioId, async (db) => {
+    const loja = UUID.test(req.query.loja || '')
+      ? req.query.loja
+      : (await db.query('select id from app_minhas_lojas() limit 1')).rows[0]?.id;
+    if (!loja) return { status: 403, erro: 'Você não tem acesso a nenhuma loja.' };
+    const pode = (await db.query("select pode($1, 'placa.consultar') as ok", [loja])).rows[0].ok;
+    if (!pode) return { status: 403, erro: 'Seu perfil não tem permissão para consultar placas.' };
+
+    const salvo = (await db.query(
+      `select *, consultado_em > now() - make_interval(days => $2) as recente
+         from veiculos where placa = $1`, [placa, CACHE_DIAS])).rows[0];
+
+    if (salvo?.recente && !atualizar) {
+      await db.query(
+        `insert into consultas_placa (loja_id, usuario_id, placa, origem, sucesso, veiculo_id)
+         values ($1, $2, $3, 'cache', true, $4)`, [loja, req.usuarioId, placa, salvo.id]);
+      return { veiculo: salvo, origem: 'cache' };
+    }
+
+    let resposta;
+    try {
+      resposta = await consultarApiPlacas(placa);
+    } catch (erro) {
+      if (!(erro instanceof ErroPlaca)) throw erro;
+      await db.query(
+        `insert into consultas_placa (loja_id, usuario_id, placa, origem, sucesso, resposta)
+         values ($1, $2, $3, 'api_placas', false, $4)`,
+        [loja, req.usuarioId, placa, { erro: erro.message, status: erro.status, request_id: erro.requestId }]);
+      // Sem a API, devolve o último dado guardado, se houver
+      if (salvo && erro.status !== 404) return { veiculo: salvo, origem: 'cache', aviso: erro.message };
+      return { status: erro.status === 404 ? 404 : 502, erro: erro.message };
+    }
+
+    const v = mapearVeiculo(resposta);
+    const veiculo = (await db.query(
+      `insert into veiculos (placa, tipo, marca, modelo, versao, ano_fabricacao, ano_modelo, cor, combustivel,
+                             chassi, renavam, motor, municipio, uf, dados_consulta, consultado_em)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+       on conflict (placa) do update set
+         tipo = excluded.tipo, marca = excluded.marca, modelo = excluded.modelo, versao = excluded.versao,
+         ano_fabricacao = excluded.ano_fabricacao, ano_modelo = excluded.ano_modelo, cor = excluded.cor,
+         combustivel = excluded.combustivel,
+         chassi = coalesce(excluded.chassi, veiculos.chassi), renavam = coalesce(excluded.renavam, veiculos.renavam),
+         motor = coalesce(excluded.motor, veiculos.motor), municipio = excluded.municipio, uf = excluded.uf,
+         dados_consulta = excluded.dados_consulta, consultado_em = now()
+       returning *`,
+      [placa, v.tipo, v.marca, v.modelo, v.versao, v.ano_fabricacao, v.ano_modelo, v.cor, v.combustivel,
+       v.chassi, v.renavam, v.motor, v.municipio, v.uf, resposta])).rows[0];
+    await db.query(
+      `insert into consultas_placa (loja_id, usuario_id, placa, origem, sucesso, resposta, veiculo_id)
+       values ($1, $2, $3, 'api_placas', true, $4, $5)`, [loja, req.usuarioId, placa, resposta, veiculo.id]);
+    return { veiculo, origem: 'api_placas' };
+  });
+
+  if (resultado.erro) return res.status(resultado.status).json({ erro: resultado.erro });
+  const { dados_consulta: _bruto, recente: _r, ...veiculo } = resultado.veiculo;
+  res.json({ veiculo, origem: resultado.origem, aviso: resultado.aviso });
 }));
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));

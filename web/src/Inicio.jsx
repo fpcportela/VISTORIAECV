@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, moeda } from './api.js';
 import { aplicarTema, COR_PADRAO, PALETA } from './tema.js';
 import { Icone } from './icones.jsx';
+import ConsultaPlaca from './ConsultaPlaca.jsx';
 
 const MENU = [
   ['inicio', 'Início'], ['vistorias', 'Vistorias', true], ['busca', 'Consulta de placa'],
@@ -24,6 +25,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [oculto, setOculto] = useState(false);
   const [paletaAberta, setPaletaAberta] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [consulta, setConsulta] = useState(null); // null = fechada; texto = placa digitada
+  const [buscaCelular, setBuscaCelular] = useState('');
   const timerAviso = useRef();
 
   useEffect(() => {
@@ -90,7 +93,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <span className="marca-icone"><Icone nome="escudo" tamanho={22} /></span>
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
-        <button className="botao-texto" onClick={emBreve}><Icone nome="busca" /> Buscar placa</button>
+        <button className="botao-texto" onClick={() => setConsulta('')}><Icone nome="busca" /> Buscar placa</button>
         <button className="botao-primario" onClick={emBreve}><Icone nome="mais" tamanho={18} /> Nova vistoria</button>
         <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
@@ -111,13 +114,14 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <button onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
         </div>
         <label className="loja">Loja {seletorLoja}</label>
-        <div className="busca">
+        <form className="busca" onSubmit={(e) => { e.preventDefault(); setConsulta(buscaCelular); }}>
           <label>
             <Icone nome="busca" />
-            <input type="text" placeholder="Buscar placa" aria-label="Buscar placa" />
+            <input type="search" enterKeyHint="search" placeholder="Buscar placa" aria-label="Buscar placa"
+              value={buscaCelular} onChange={(e) => setBuscaCelular(e.target.value)} />
           </label>
-          <button onClick={emBreve} aria-label="Ler placa pela câmera"><Icone nome="camera" tamanho={22} /></button>
-        </div>
+          <button type="button" onClick={emBreve} aria-label="Ler placa pela câmera"><Icone nome="camera" tamanho={22} /></button>
+        </form>
       </header>
 
       {paleta}
@@ -125,7 +129,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       <div className="corpo">
         <nav className="menu so-computador" aria-label="Menu principal">
           {MENU.map(([icone, nome, sub]) => (
-            <button key={icone} className={icone === 'inicio' ? 'ativo' : ''} onClick={icone === 'inicio' ? undefined : emBreve}>
+            <button key={icone} className={icone === 'inicio' ? 'ativo' : ''}
+              onClick={icone === 'inicio' ? undefined : icone === 'busca' ? () => setConsulta('') : emBreve}>
               <Icone nome={icone} /><span>{nome}</span>{sub && <Icone nome="direita" tamanho={16} />}
             </button>
           ))}
@@ -224,6 +229,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button>
         <button onClick={emBreve}><Icone nome="menu" tamanho={22} />Menu</button>
       </nav>
+
+      {consulta !== null && <ConsultaPlaca loja={loja} placaInicial={consulta} aoFechar={() => setConsulta(null)} />}
 
       {aviso && <div className="aviso" role="status">{aviso}</div>}
     </div>

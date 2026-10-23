@@ -24,6 +24,20 @@ npm run instalar
 cp api/.env.exemplo api/.env
 ```
 
+## Consulta de placa (API Placas)
+
+A busca de placa usa a API Placas (apiplacas.com.br), que é paga por consulta.
+Pegue o token no painel da sua conta e coloque no arquivo `api/.env`:
+
+```
+API_PLACAS_TOKEN=seu-token-aqui
+API_PLACAS_ROTA=completa
+```
+
+`completa` traz chassi, motor e renavam (R$ 0,20 por consulta). `basico` custa R$ 0,03,
+mas não traz esses números. A mesma placa fica guardada por 30 dias: buscar de novo
+nesse período não gera cobrança, a não ser que você clique em "Atualizar consulta".
+
 ## Rodar no dia a dia
 
 ```bash

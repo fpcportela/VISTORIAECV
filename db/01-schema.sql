@@ -46,7 +46,7 @@ create type status_transacao    as enum ('aprovada', 'cancelada', 'estornada', '
 create type base_royalty        as enum ('faturamento_bruto', 'faturamento_liquido', 'valor_fixo');
 create type status_apuracao     as enum ('rascunho', 'fechada', 'faturada', 'paga');
 create type tipo_marcacao_ponto as enum ('entrada', 'saida_intervalo', 'volta_intervalo', 'saida');
-create type origem_consulta     as enum ('sinetram', 'ocr_foto', 'manual');
+create type origem_consulta     as enum ('api_placas', 'cache', 'ocr_foto', 'manual');
 
 -- Função padrão para atualizar o campo atualizado_em
 create or replace function set_atualizado_em() returns trigger
@@ -203,7 +203,7 @@ create table fornecedores (
   criado_em     timestamptz not null default now()
 );
 
--- Veículo identificado pela placa (dados vindos da consulta SINETRAM ou manuais)
+-- Veículo identificado pela placa (dados vindos da API Placas ou digitados)
 create table veiculos (
   id              uuid primary key default gen_random_uuid(),
   placa           text not null unique check (placa ~ '^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$'),
@@ -226,7 +226,7 @@ create table veiculos (
   atualizado_em   timestamptz not null default now()
 );
 
--- Histórico de consultas de placa (SINETRAM, leitura por foto ou digitação)
+-- Histórico de consultas de placa (API Placas, cache local, leitura por foto ou digitação)
 create table consultas_placa (
   id           uuid primary key default gen_random_uuid(),
   loja_id      uuid not null references lojas(id),
@@ -931,7 +931,7 @@ insert into permissoes (codigo, modulo, descricao) values
   ('vistorias.criar',      'Vistorias',      'Abrir e executar vistorias'),
   ('vistorias.concluir',   'Vistorias',      'Concluir e emitir laudo'),
   ('vistorias.cancelar',   'Vistorias',      'Cancelar vistorias'),
-  ('placa.consultar',      'Consulta de placa', 'Consultar placa (SINETRAM / foto)'),
+  ('placa.consultar',      'Consulta de placa', 'Consultar placa (API Placas / foto)'),
   ('vendas.ver',           'Vendas',         'Ver vendas e orçamentos'),
   ('vendas.criar',         'Vendas',         'Criar vendas e orçamentos'),
   ('vendas.cancelar',      'Vendas',         'Cancelar vendas'),
