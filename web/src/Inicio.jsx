@@ -53,7 +53,19 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   }
 
   const valor = (v) => (oculto ? '••••' : moeda(v));
-  const receber = dados?.receber, pagar = dados?.pagar, hoje = dados?.vistoriasHoje;
+  const receber = dados?.receber, pagar = dados?.pagar, hoje = dados?.vistoriasHoje, mes = dados?.vistoriasMes;
+  const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long' });
+
+  const contadores = (q) => (
+    <div className="vistorias-hoje">
+      {[['carro', 'Carros', q?.carros], ['moto', 'Motos', q?.motos], ['caminhao', 'Caminhões', q?.caminhoes]].map(([ic, nome, qtd]) => (
+        <div className="cartao contador" key={ic}>
+          <span className="bolha"><Icone nome={ic} tamanho={28} traco={1.8} /></span>
+          <span><strong>{qtd ?? '–'}</strong><small>{nome}</small></span>
+        </div>
+      ))}
+    </div>
+  );
   const empresa = perfil.lojas[0]?.empresa || perfil.usuario.nome;
 
   const seletorLoja = (
@@ -151,14 +163,15 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               <h2>Vistorias de hoje</h2>
               <button className="botao-contorno pequeno so-computador" onClick={emBreve}>+ Nova vistoria</button>
             </div>
-            <div className="vistorias-hoje">
-              {[['carro', 'Carros', hoje?.carros], ['moto', 'Motos', hoje?.motos], ['caminhao', 'Caminhões', hoje?.caminhoes]].map(([ic, nome, qtd]) => (
-                <div className="cartao contador" key={ic}>
-                  <span className="bolha"><Icone nome={ic} tamanho={28} traco={1.8} /></span>
-                  <span><strong>{qtd ?? '–'}</strong><small>{nome}</small></span>
-                </div>
-              ))}
+            {contadores(hoje)}
+          </section>
+
+          <section className="bloco">
+            <div className="bloco-topo">
+              <h2>Vistorias realizadas em {nomeMes}</h2>
+              <small className="cinza">Total: {mes ? mes.carros + mes.motos + mes.caminhoes : '–'}</small>
             </div>
+            {contadores(mes)}
           </section>
 
           <div className="linha-filtro so-computador">

@@ -67,13 +67,17 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
          from resumo_contas
         where $1::uuid is null or loja_id = $1
         group by tipo`, [loja])).rows;
+    // Hoje: vistorias do dia (exceto canceladas). Mês: realizadas (concluídas)
+    // no mês corrente, que zera sozinho na virada do mês.
     const vistorias = (await db.query(
-      `select v.tipo, count(vi.id)::int as total
+      `select v.tipo,
+              count(vi.id) filter (where vi.status <> 'cancelada'
+                and coalesce(vi.agendada_para, vi.criado_em)::date = current_date)::int as hoje,
+              count(vi.id) filter (where vi.status = 'concluida'
+                and vi.concluida_em >= date_trunc('month', current_date))::int as mes
          from unnest(enum_range(null::tipo_veiculo)) as v(tipo)
          left join veiculos ve on ve.tipo = v.tipo
          left join vistorias vi on vi.veiculo_id = ve.id
-              and vi.status <> 'cancelada'
-              and coalesce(vi.agendada_para, vi.criado_em)::date = current_date
               and ($1::uuid is null or vi.loja_id = $1)
         group by v.tipo`, [loja])).rows;
     const royalties = (await db.query(
@@ -84,11 +88,13 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
 
     const vazio = { vencidos: 0, vencem_hoje: 0, restante_mes: 0 };
     const porTipo = (t) => contas.find((c) => c.tipo === t) || vazio;
-    const qtd = (t) => vistorias.find((v) => v.tipo === t)?.total || 0;
+    const qtd = (t, campo) => vistorias.find((v) => v.tipo === t)?.[campo] || 0;
+    const porVeiculo = (campo) => ({ carros: qtd('carro', campo), motos: qtd('moto', campo), caminhoes: qtd('caminhao', campo) });
     return {
       receber: porTipo('receber'),
       pagar: porTipo('pagar'),
-      vistoriasHoje: { carros: qtd('carro'), motos: qtd('moto'), caminhoes: qtd('caminhao') },
+      vistoriasHoje: porVeiculo('hoje'),
+      vistoriasMes: porVeiculo('mes'),
       royaltiesMes: royalties,
     };
   });
