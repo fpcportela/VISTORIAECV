@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { comoUsuario } from './db.js';
+import { rotasAcessos } from './acessos.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
@@ -10,8 +11,12 @@ const SEGREDO = process.env.JWT_SECRET || 'troque-este-segredo-em-producao';
 const PORTA = Number(process.env.PORT || 3001);
 const UUID = /^[0-9a-f-]{36}$/i;
 
+// Erros do banco viram respostas claras; o resto é erro interno
 const rota = (fn) => (req, res) =>
   fn(req, res).catch((erro) => {
+    if (erro.code === '42501') return res.status(403).json({ erro: 'Você não tem permissão para isso.' });
+    if (erro.code === '23505') return res.status(400).json({ erro: 'Já existe um cadastro com esses dados (e-mail ou nome repetido).' });
+    if (erro.code === '22023' || erro.code === '23503') return res.status(400).json({ erro: erro.message });
     console.error(erro);
     res.status(500).json({ erro: 'Erro interno. Veja o terminal da API.' });
   });
@@ -43,9 +48,22 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
     const usuario = (await db.query('select id, nome, email, admin_rede from usuarios where id = $1', [req.usuarioId])).rows[0];
     const lojas = (await db.query('select * from app_minhas_lojas()')).rows;
     const cor = (await db.query('select app_cor_tema() as cor')).rows[0].cor;
-    return { usuario, lojas, cor };
+    const atalhos = (await db.query('select app_meus_atalhos() as a')).rows[0].a;
+    // { loja_id: ["vistorias.ver", ...] }: o app mostra só os módulos liberados
+    const acessos = {};
+    for (const { loja_id, permissao } of (await db.query('select * from app_meus_acessos()')).rows) {
+      (acessos[loja_id] ||= []).push(permissao);
+    }
+    return { usuario, lojas, cor, atalhos, acessos, master: usuario.admin_rede };
   });
   res.json(dados);
+}));
+
+app.put('/api/atalhos', exigeLogin, rota(async (req, res) => {
+  const atalhos = Array.isArray(req.body?.atalhos) ? req.body.atalhos.map(String).slice(0, 30) : null;
+  if (!atalhos) return res.status(400).json({ erro: 'Lista de atalhos inválida.' });
+  await comoUsuario(req.usuarioId, (db) => db.query('select app_salvar_atalhos($1)', [atalhos]));
+  res.json({ atalhos });
 }));
 
 app.put('/api/tema', exigeLogin, rota(async (req, res) => {
@@ -65,7 +83,7 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
               coalesce(sum(vencem_hoje), 0)  as vencem_hoje,
               coalesce(sum(restante_mes), 0) as restante_mes
          from resumo_contas
-        where $1::uuid is null or loja_id = $1
+        where ($1::uuid is null or loja_id = $1) and pode(loja_id, 'financeiro.ver')
         group by tipo`, [loja])).rows;
     // Hoje: vistorias do dia (exceto canceladas). Mês: realizadas (concluídas)
     // no mês corrente, que zera sozinho na virada do mês.
@@ -78,13 +96,13 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
          from unnest(enum_range(null::tipo_veiculo)) as v(tipo)
          left join veiculos ve on ve.tipo = v.tipo
          left join vistorias vi on vi.veiculo_id = ve.id
-              and ($1::uuid is null or vi.loja_id = $1)
+              and ($1::uuid is null or vi.loja_id = $1) and pode(vi.loja_id, 'vistorias.ver')
         group by v.tipo`, [loja])).rows;
     const royalties = (await db.query(
       `select coalesce(sum(valor_total), 0) as total
          from apuracoes_royalty
         where competencia = date_trunc('month', current_date)::date
-          and ($1::uuid is null or loja_id = $1)`, [loja])).rows[0].total;
+          and ($1::uuid is null or loja_id = $1) and pode(loja_id, 'royalties.ver')`, [loja])).rows[0].total;
 
     const vazio = { vencidos: 0, vencem_hoje: 0, restante_mes: 0 };
     const porTipo = (t) => contas.find((c) => c.tipo === t) || vazio;
@@ -166,5 +184,7 @@ app.get('/api/placa/:placa', exigeLogin, rota(async (req, res) => {
   const { dados_consulta: _bruto, recente: _r, ...veiculo } = resultado.veiculo;
   res.json({ veiculo, origem: resultado.origem, aviso: resultado.aviso });
 }));
+
+rotasAcessos(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));

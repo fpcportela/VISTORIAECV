@@ -164,6 +164,14 @@ create table preferencias_tema (
   check (empresa_id is not null or usuario_id is not null)
 );
 create unique index preferencias_tema_empresa on preferencias_tema(empresa_id) where usuario_id is null;
+
+-- Atalhos que cada usuário escolheu para a tela inicial (computador e celular).
+-- null = ainda não escolheu: aparecem todos os módulos liberados no perfil.
+create table usuario_atalhos (
+  usuario_id    uuid primary key references usuarios(id) on delete cascade,
+  atalhos       text[] not null default '{}',
+  atualizado_em timestamptz not null default now()
+);
 create unique index preferencias_tema_usuario on preferencias_tema(usuario_id) where usuario_id is not null;
 
 -- =====================================================================
@@ -926,32 +934,38 @@ create policy ponto_ajuste on marcacoes_ponto as restrictive for insert
 -- =====================================================================
 -- Dados iniciais: catálogo de permissões
 -- =====================================================================
+-- A permissão terminada em ".ver" (ou a primeira de cada módulo) libera o
+-- módulo no menu e nos atalhos. O usuário master (admin_rede) vê tudo.
 insert into permissoes (codigo, modulo, descricao) values
-  ('vistorias.ver',        'Vistorias',      'Ver vistorias'),
-  ('vistorias.criar',      'Vistorias',      'Abrir e executar vistorias'),
-  ('vistorias.concluir',   'Vistorias',      'Concluir e emitir laudo'),
-  ('vistorias.cancelar',   'Vistorias',      'Cancelar vistorias'),
-  ('placa.consultar',      'Consulta de placa', 'Consultar placa (API Placas / foto)'),
-  ('vendas.ver',           'Vendas',         'Ver vendas e orçamentos'),
-  ('vendas.criar',         'Vendas',         'Criar vendas e orçamentos'),
-  ('vendas.cancelar',      'Vendas',         'Cancelar vendas'),
-  ('vendas.desconto',      'Vendas',         'Dar desconto'),
-  ('clientes.editar',      'Clientes',       'Cadastrar e editar clientes'),
-  ('clientes.serasa',      'Clientes',       'Consultar cliente no Serasa'),
-  ('financeiro.ver',       'Financeiro',     'Ver contas a pagar e receber'),
-  ('financeiro.lancar',    'Financeiro',     'Criar lançamentos e dar baixa'),
-  ('financeiro.excluir',   'Financeiro',     'Excluir lançamentos'),
-  ('financeiro.conciliar', 'Financeiro',     'Conciliar banco e maquininhas'),
-  ('financeiro.importar',  'Financeiro',     'Importar arquivos de administradoras e bancos'),
-  ('royalties.ver',        'Royalties',      'Ver apurações de royalties'),
-  ('royalties.fechar',     'Royalties',      'Fechar apuração de royalties'),
-  ('royalties.configurar', 'Royalties',      'Configurar regras de royalties por serviço'),
-  ('ponto.registrar',      'Ponto',          'Registrar o próprio ponto'),
-  ('ponto.ver_equipe',     'Ponto',          'Ver o ponto da equipe'),
-  ('ponto.ajustar',        'Ponto',          'Ajustar marcações de ponto'),
-  ('relatorios.ver',       'Relatórios',     'Ver relatórios'),
-  ('relatorios.exportar',  'Relatórios',     'Exportar relatórios'),
-  ('whatsapp.enviar',      'WhatsApp',       'Enviar mensagens pelo WhatsApp'),
-  ('usuarios.gerenciar',   'Usuários',       'Gerenciar usuários e perfis'),
-  ('lojas.gerenciar',      'Lojas',          'Gerenciar lojas e configurações'),
-  ('integracoes.gerenciar','Integrações',    'Configurar bancos e maquininhas');
+  ('vistorias.ver',        'Vistorias',            'Ver o módulo de vistorias'),
+  ('vistorias.criar',      'Vistorias',            'Abrir e executar vistorias'),
+  ('vistorias.concluir',   'Vistorias',            'Concluir e emitir laudo'),
+  ('vistorias.cancelar',   'Vistorias',            'Cancelar vistorias'),
+  ('placa.consultar',      'Consulta de placa',    'Consultar placa (API Placas)'),
+  ('placa.foto',           'Ler placa por foto',   'Ler a placa pela câmera'),
+  ('clientes.ver',         'Clientes',             'Ver o módulo de clientes'),
+  ('clientes.editar',      'Clientes',             'Cadastrar e editar clientes'),
+  ('clientes.serasa',      'Clientes',             'Consultar cliente no Serasa'),
+  ('vendas.ver',           'Vendas',               'Ver vendas e orçamentos'),
+  ('vendas.criar',         'Vendas',               'Criar vendas e orçamentos'),
+  ('vendas.cancelar',      'Vendas',               'Cancelar vendas'),
+  ('vendas.desconto',      'Vendas',               'Dar desconto'),
+  ('financeiro.ver',       'Financeiro',           'Ver contas a pagar e receber'),
+  ('financeiro.lancar',    'Financeiro',           'Criar lançamentos e dar baixa'),
+  ('financeiro.excluir',   'Financeiro',           'Excluir lançamentos'),
+  ('financeiro.conciliar', 'Financeiro',           'Conciliar banco e maquininhas'),
+  ('financeiro.importar',  'Financeiro',           'Importar arquivos de administradoras e bancos'),
+  ('royalties.ver',        'Royalties',            'Ver apurações de royalties'),
+  ('royalties.fechar',     'Royalties',            'Fechar apuração de royalties'),
+  ('royalties.configurar', 'Royalties',            'Configurar regras de royalties por serviço'),
+  ('maquininhas.ver',      'Maquininhas e bancos', 'Ver maquininhas, contas e extratos'),
+  ('integracoes.gerenciar','Maquininhas e bancos', 'Configurar bancos e maquininhas'),
+  ('lojas.gerenciar',      'Lojas',                'Gerenciar lojas'),
+  ('usuarios.gerenciar',   'Usuários e permissões','Gerenciar usuários e perfis'),
+  ('ponto.registrar',      'Controle de ponto',    'Registrar o próprio ponto'),
+  ('ponto.ver_equipe',     'Controle de ponto',    'Ver o ponto da equipe'),
+  ('ponto.ajustar',        'Controle de ponto',    'Ajustar marcações de ponto'),
+  ('relatorios.ver',       'Relatórios',           'Ver relatórios'),
+  ('relatorios.exportar',  'Relatórios',           'Exportar relatórios'),
+  ('whatsapp.enviar',      'WhatsApp',             'Enviar mensagens pelo WhatsApp'),
+  ('config.gerenciar',     'Configurações',        'Alterar as configurações do sistema');

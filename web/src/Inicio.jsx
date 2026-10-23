@@ -2,44 +2,51 @@ import { useEffect, useRef, useState } from 'react';
 import { api, moeda } from './api.js';
 import { aplicarTema, COR_PADRAO, PALETA } from './tema.js';
 import { Icone } from './icones.jsx';
+import { MODULOS, criarTem } from './modulos.js';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
-
-const MENU = [
-  ['inicio', 'Início'], ['vistorias', 'Vistorias', true], ['busca', 'Consulta de placa'],
-  ['camera', 'Ler placa por foto'], ['clientes', 'Clientes'], ['financeiro', 'Financeiro', true],
-  ['royalties', 'Royalties'], ['maquininha', 'Maquininhas e bancos', true], ['lojas', 'Lojas'],
-  ['usuarios', 'Usuários e permissões'], ['ponto', 'Controle de ponto'], ['relatorios', 'Relatórios'],
-  ['whatsapp', 'WhatsApp'], ['config', 'Configurações'],
-];
-
-const ATALHOS = [
-  ['vistorias', 'Vistorias'], ['financeiro', 'Financeiro'], ['royalties', 'Royalties'],
-  ['maquininha', 'Maquininhas'], ['ponto', 'Ponto'], ['relatorios', 'Relatórios'],
-  ['whatsapp', 'WhatsApp'], ['lojas', 'Lojas'], ['usuarios', 'Usuários'],
-];
+import EditorAtalhos from './EditorAtalhos.jsx';
+import UsuariosPermissoes from './UsuariosPermissoes.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [loja, setLoja] = useState('');
+  const [tela, setTela] = useState('inicio');
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [oculto, setOculto] = useState(false);
   const [paletaAberta, setPaletaAberta] = useState(false);
+  const [menuAberto, setMenuAberto] = useState(false);
+  const [editandoAtalhos, setEditandoAtalhos] = useState(false);
   const [aviso, setAviso] = useState('');
   const [consulta, setConsulta] = useState(null); // null = fechada; texto = placa digitada
   const [buscaCelular, setBuscaCelular] = useState('');
   const timerAviso = useRef();
 
+  const tem = criarTem(perfil, loja);
+  const modulos = MODULOS.filter((m) => tem(m.permissao));
+  // Atalhos: os escolhidos pelo usuário (que ele ainda pode ver) ou, sem escolha, todos os liberados
+  const atalhos = perfil.atalhos
+    ? perfil.atalhos.map((id) => modulos.find((m) => m.id === id)).filter(Boolean)
+    : modulos;
+
   useEffect(() => {
+    if (tela !== 'inicio') return;
     setErro('');
     api(`/inicio${loja ? `?loja=${loja}` : ''}`)
       .then(setDados)
       .catch((falha) => (falha.status === 401 ? aoSair() : setErro(falha.message)));
-  }, [loja]);
+  }, [loja, tela]);
 
   function emBreve() {
     setAviso('Este módulo será desenvolvido nas próximas etapas.');
     clearTimeout(timerAviso.current);
     timerAviso.current = setTimeout(() => setAviso(''), 2600);
+  }
+
+  function abrir(id) {
+    setMenuAberto(false);
+    if (id === 'inicio' || id === 'usuarios') setTela(id);
+    else if (id === 'busca') setConsulta('');
+    else emBreve();
   }
 
   async function trocarCor(cor) {
@@ -52,9 +59,20 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     }
   }
 
+  async function salvarAtalhos(lista) {
+    setPerfil({ ...perfil, atalhos: lista });
+    setEditandoAtalhos(false);
+    try {
+      await api('/atalhos', { metodo: 'PUT', corpo: { atalhos: lista } });
+    } catch (falha) {
+      setErro(falha.message);
+    }
+  }
+
   const valor = (v) => (oculto ? '••••' : moeda(v));
   const receber = dados?.receber, pagar = dados?.pagar, hoje = dados?.vistoriasHoje, mes = dados?.vistoriasMes;
   const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long' });
+  const empresa = perfil.lojas[0]?.empresa || perfil.usuario.nome;
 
   const contadores = (q) => (
     <div className="vistorias-hoje">
@@ -66,7 +84,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       ))}
     </div>
   );
-  const empresa = perfil.lojas[0]?.empresa || perfil.usuario.nome;
 
   const seletorLoja = (
     <select value={loja} onChange={(e) => setLoja(e.target.value)} aria-label="Loja">
@@ -97,6 +114,115 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     </div>
   );
 
+  const painelInicio = (
+    <>
+      <div className="cabecalho so-computador">
+        <h1>Visão geral</h1>
+        <button className="botao-contorno" onClick={() => setOculto(!oculto)}>
+          {oculto ? 'Mostrar valores' : 'Ocultar valores'} <Icone nome={oculto ? 'olho' : 'olhoFechado'} tamanho={18} />
+        </button>
+      </div>
+
+      {erro && <p className="erro" role="alert">{erro}</p>}
+
+      <section className="bloco" aria-label="Atalhos">
+        <div className="bloco-topo">
+          <h2>Atalhos</h2>
+          <button className="botao-contorno pequeno" onClick={() => setEditandoAtalhos(true)}>Personalizar</button>
+        </div>
+        {atalhos.length ? (
+          <div className="atalhos">
+            {atalhos.map((m) => (
+              <button key={m.id} className="cartao atalho" onClick={() => abrir(m.id)}>
+                <span className="bolha"><Icone nome={m.id} tamanho={22} /></span>{m.curto}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="cinza vazio">Nenhum atalho escolhido. Toque em Personalizar para escolher.</p>
+        )}
+      </section>
+
+      {tem('vistorias.ver') && (
+        <>
+          <section className="bloco">
+            <div className="bloco-topo">
+              <h2>Vistorias de hoje</h2>
+              {tem('vistorias.criar') && <button className="botao-contorno pequeno so-computador" onClick={emBreve}>+ Nova vistoria</button>}
+            </div>
+            {contadores(hoje)}
+          </section>
+
+          <section className="bloco">
+            <div className="bloco-topo">
+              <h2>Vistorias realizadas em {nomeMes}</h2>
+              <small className="cinza total">Total: {mes ? mes.carros + mes.motos + mes.caminhoes : '–'}</small>
+            </div>
+            {contadores(mes)}
+          </section>
+        </>
+      )}
+
+      {tem('financeiro.ver') && (
+        <>
+          <div className="linha-filtro so-computador">
+            <label>Mostrar
+              <select defaultValue="ambos"><option value="ambos">A receber e a pagar</option><option>Só a receber</option><option>Só a pagar</option></select>
+            </label>
+            <button className="botao-claro" onClick={emBreve}>Relação de contas a receber/pagar</button>
+          </div>
+
+          <div className="contas">
+            {[['A receber', receber, 'positivo', '+ Nova venda', 'vendas.criar'],
+              ['A pagar', pagar, 'negativo', '+ Nova despesa', 'financeiro.lancar']].map(([titulo, c, classe, acao, permissao]) => (
+              <section className="bloco" key={titulo} aria-label={titulo}>
+                <div className="bloco-topo">
+                  <h2>{titulo}</h2>
+                  {tem(permissao) && <button className="botao-contorno pequeno" onClick={emBreve}>{acao}</button>}
+                </div>
+                <div className="duas-colunas">
+                  <div className="cartao valor">
+                    <span className={classe}><small>R$ </small>{valor(c?.vencidos)}</span>
+                    <strong>Vencidos</strong>
+                  </div>
+                  <div className="cartao valor">
+                    <span className={classe}><small>R$ </small>{valor(c?.vencem_hoje)}</span>
+                    <strong>Vencem hoje</strong>
+                    <small className="cinza">Restante do mês: R$ {valor(c?.restante_mes)}</small>
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="tres-colunas">
+        {tem('royalties.ver') && (
+          <section className="cartao painel">
+            <h2>Royalties do mês</h2>
+            <span className="destaque">R$ {valor(dados?.royaltiesMes)}</span>
+            <small className="cinza">Calculado sobre o faturamento das lojas da franquia.</small>
+          </section>
+        )}
+        {tem('maquininhas.ver') && (
+          <section className="cartao painel">
+            <h2>Contas e maquininhas</h2>
+            <small className="cinza">Nenhum banco ou maquininha conectado.</small>
+            {tem('integracoes.gerenciar') && <button className="botao-primario pequeno" onClick={emBreve}>Conectar</button>}
+          </section>
+        )}
+        {tem('ponto.registrar') && (
+          <section className="cartao painel">
+            <h2>Ponto de hoje</h2>
+            <small className="cinza">Nenhum registro de entrada ainda.</small>
+            <button className="botao-primario pequeno" onClick={emBreve}>Registrar ponto</button>
+          </section>
+        )}
+      </div>
+    </>
+  );
+
   return (
     <div className="app">
       {/* ---------- Topo (computador) ---------- */}
@@ -105,8 +231,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <span className="marca-icone"><Icone nome="escudo" tamanho={22} /></span>
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
-        <button className="botao-texto" onClick={() => setConsulta('')}><Icone nome="busca" /> <span className="rotulo">Buscar placa</span></button>
-        <button className="botao-primario" onClick={emBreve}><Icone nome="mais" tamanho={18} /> <span className="rotulo">Nova vistoria</span></button>
+        {tem('placa.consultar') && <button className="botao-texto" onClick={() => setConsulta('')}><Icone nome="busca" /> <span className="rotulo">Buscar placa</span></button>}
+        {tem('vistorias.criar') && <button className="botao-primario" onClick={emBreve}><Icone nome="mais" tamanho={18} /> <span className="rotulo">Nova vistoria</span></button>}
         <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
         <div className="empresa">
@@ -126,122 +252,68 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <button onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
         </div>
         <label className="loja">Loja {seletorLoja}</label>
-        <form className="busca" onSubmit={(e) => { e.preventDefault(); setConsulta(buscaCelular); }}>
-          <label>
-            <Icone nome="busca" />
-            <input type="search" enterKeyHint="search" placeholder="Buscar placa" aria-label="Buscar placa"
-              value={buscaCelular} onChange={(e) => setBuscaCelular(e.target.value)} />
-          </label>
-          <button type="button" onClick={emBreve} aria-label="Ler placa pela câmera"><Icone nome="camera" tamanho={22} /></button>
-        </form>
+        {tem('placa.consultar') && (
+          <form className="busca" onSubmit={(e) => { e.preventDefault(); setConsulta(buscaCelular); }}>
+            <label>
+              <Icone nome="busca" />
+              <input type="search" enterKeyHint="search" placeholder="Buscar placa" aria-label="Buscar placa"
+                value={buscaCelular} onChange={(e) => setBuscaCelular(e.target.value)} />
+            </label>
+            {tem('placa.foto') && <button type="button" onClick={emBreve} aria-label="Ler placa pela câmera"><Icone nome="camera" tamanho={22} /></button>}
+          </form>
+        )}
       </header>
 
       {paleta}
 
       <div className="corpo">
         <nav className="menu so-computador" aria-label="Menu principal">
-          {MENU.map(([icone, nome, sub]) => (
-            <button key={icone} className={icone === 'inicio' ? 'ativo' : ''} title={nome} aria-label={nome}
-              onClick={icone === 'inicio' ? undefined : icone === 'busca' ? () => setConsulta('') : emBreve}>
-              <Icone nome={icone} /><span className="rotulo">{nome}</span>{sub && <span className="seta"><Icone nome="direita" tamanho={16} /></span>}
+          {[{ id: 'inicio', nome: 'Início' }, ...modulos].map((m) => (
+            <button key={m.id} className={tela === m.id ? 'ativo' : ''} title={m.nome} aria-label={m.nome} onClick={() => abrir(m.id)}>
+              <Icone nome={m.id} /><span className="rotulo">{m.nome}</span>
+              {m.sub && <span className="seta"><Icone nome="direita" tamanho={16} /></span>}
             </button>
           ))}
         </nav>
 
         <main className="conteudo">
-          <div className="cabecalho so-computador">
-            <h1>Visão geral</h1>
-            <button className="botao-contorno" onClick={() => setOculto(!oculto)}>
-              {oculto ? 'Mostrar valores' : 'Ocultar valores'} <Icone nome={oculto ? 'olho' : 'olhoFechado'} tamanho={18} />
-            </button>
-          </div>
-
-          {erro && <p className="erro" role="alert">{erro}</p>}
-
-          <section className="bloco">
-            <div className="bloco-topo">
-              <h2>Vistorias de hoje</h2>
-              <button className="botao-contorno pequeno so-computador" onClick={emBreve}>+ Nova vistoria</button>
-            </div>
-            {contadores(hoje)}
-          </section>
-
-          <section className="bloco">
-            <div className="bloco-topo">
-              <h2>Vistorias realizadas em {nomeMes}</h2>
-              <small className="cinza total">Total: {mes ? mes.carros + mes.motos + mes.caminhoes : '–'}</small>
-            </div>
-            {contadores(mes)}
-          </section>
-
-          <div className="linha-filtro so-computador">
-            <label>Mostrar
-              <select defaultValue="ambos"><option value="ambos">A receber e a pagar</option><option>Só a receber</option><option>Só a pagar</option></select>
-            </label>
-            <button className="botao-claro" onClick={emBreve}>Relação de contas a receber/pagar</button>
-          </div>
-
-          <div className="contas">
-            {[['A receber', receber, 'positivo', '+ Nova venda'], ['A pagar', pagar, 'negativo', '+ Nova despesa']].map(([titulo, c, classe, acao]) => (
-              <section className="bloco" key={titulo} aria-label={titulo}>
-                <div className="bloco-topo">
-                  <h2>{titulo}</h2>
-                  <button className="botao-contorno pequeno" onClick={emBreve}>{acao}</button>
-                </div>
-                <div className="duas-colunas">
-                  <div className="cartao valor">
-                    <span className={classe}><small>R$ </small>{valor(c?.vencidos)}</span>
-                    <strong>Vencidos</strong>
-                  </div>
-                  <div className="cartao valor">
-                    <span className={classe}><small>R$ </small>{valor(c?.vencem_hoje)}</span>
-                    <strong>Vencem hoje</strong>
-                    <small className="cinza">Restante do mês: R$ {valor(c?.restante_mes)}</small>
-                  </div>
-                </div>
-              </section>
-            ))}
-          </div>
-
-          <section className="bloco so-celular" aria-label="Atalhos">
-            <h2>Atalhos</h2>
-            <div className="atalhos">
-              {ATALHOS.map(([ic, nome]) => (
-                <button key={ic} className="cartao atalho" onClick={emBreve}>
-                  <span className="bolha"><Icone nome={ic} tamanho={22} /></span>{nome}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <div className="tres-colunas">
-            <section className="cartao painel">
-              <h2>Royalties do mês</h2>
-              <span className="destaque">R$ {valor(dados?.royaltiesMes)}</span>
-              <small className="cinza">Calculado sobre o faturamento das lojas da franquia.</small>
-            </section>
-            <section className="cartao painel">
-              <h2>Contas e maquininhas</h2>
-              <small className="cinza">Nenhum banco ou maquininha conectado.</small>
-              <button className="botao-primario pequeno" onClick={emBreve}>Conectar</button>
-            </section>
-            <section className="cartao painel">
-              <h2>Ponto de hoje</h2>
-              <small className="cinza">Nenhum registro de entrada ainda.</small>
-              <button className="botao-primario pequeno" onClick={emBreve}>Registrar ponto</button>
-            </section>
-          </div>
+          {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} /> : painelInicio}
         </main>
       </div>
 
       {/* ---------- Navegação inferior (celular) ---------- */}
       <nav className="barra-inferior so-celular" aria-label="Navegação">
-        <button className="ativo"><Icone nome="inicio" tamanho={22} />Início</button>
-        <button onClick={emBreve}><Icone nome="vistorias" tamanho={22} />Vistorias</button>
-        <span><button className="botao-central" onClick={emBreve} aria-label="Nova vistoria"><Icone nome="mais" tamanho={26} traco={2.6} /></button></span>
-        <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button>
-        <button onClick={emBreve}><Icone nome="menu" tamanho={22} />Menu</button>
+        <button className={tela === 'inicio' ? 'ativo' : ''} onClick={() => abrir('inicio')}><Icone nome="inicio" tamanho={22} />Início</button>
+        {tem('vistorias.ver') ? <button onClick={emBreve}><Icone nome="vistorias" tamanho={22} />Vistorias</button> : <span />}
+        <span>
+          {tem('vistorias.criar') && <button className="botao-central" onClick={emBreve} aria-label="Nova vistoria"><Icone nome="mais" tamanho={26} traco={2.6} /></button>}
+        </span>
+        {tem('financeiro.ver') ? <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}
+        <button className={menuAberto ? 'ativo' : ''} onClick={() => setMenuAberto(true)}><Icone nome="menu" tamanho={22} />Menu</button>
       </nav>
+
+      {menuAberto && (
+        <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && setMenuAberto(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-label="Menu">
+            <div className="modal-topo">
+              <h2>Menu</h2>
+              <button className="fechar" onClick={() => setMenuAberto(false)} aria-label="Fechar">×</button>
+            </div>
+            <div className="lista-menu">
+              {modulos.map((m) => (
+                <button key={m.id} onClick={() => abrir(m.id)}>
+                  <span className="bolha"><Icone nome={m.id} tamanho={20} /></span>{m.nome}
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {editandoAtalhos && (
+        <EditorAtalhos disponiveis={modulos} escolhidos={atalhos.map((m) => m.id)}
+          aoSalvar={salvarAtalhos} aoFechar={() => setEditandoAtalhos(false)} />
+      )}
 
       {consulta !== null && <ConsultaPlaca loja={loja} placaInicial={consulta} aoFechar={() => setConsulta(null)} />}
 
