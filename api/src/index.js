@@ -167,8 +167,9 @@ app.get('/api/placa/:placa', exigeLogin, rota(async (req, res) => {
         `insert into consultas_placa (loja_id, usuario_id, placa, origem, sucesso, resposta)
          values ($1, $2, $3, 'api_placas', false, $4)`,
         [loja, req.usuarioId, placa, { erro: erro.message, status: erro.status, request_id: erro.requestId }]);
-      // Sem a API, devolve o último dado guardado, se houver
-      if (salvo && erro.status !== 404) return { veiculo: salvo, origem: 'cache', aviso: erro.message };
+      // Sem a API, devolve o último dado já consultado, se houver. Veículo criado só
+      // pela digitação da placa numa venda (sem consulta) não conta como dado guardado.
+      if (salvo?.consultado_em && erro.status !== 404) return { veiculo: salvo, origem: 'cache', aviso: erro.message };
       return { status: erro.status === 404 ? 404 : 502, erro: erro.message };
     }
 
