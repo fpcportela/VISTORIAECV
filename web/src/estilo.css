@@ -425,3 +425,13 @@ fieldset.sem-borda { display: contents; }
 .ta-detalhe .etiqueta { margin-left: auto; }
 .etiqueta.uso { background: #e7f6ec; color: #1d7a3e; }
 div.linha-loja { display: flex; align-items: center; gap: 8px; }
+
+/* Vendas abertas em abas */
+.abas-vendas { display: flex; align-items: flex-end; gap: 4px; overflow-x: auto; border-bottom: 2px solid var(--borda); margin-bottom: 16px; scrollbar-width: thin; }
+.abas-vendas > button, .aba-venda { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; background: #eef1f5; border: 1px solid var(--borda); border-bottom: none; border-radius: 8px 8px 0 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--cinza); }
+.abas-vendas > button { padding: 9px 14px; cursor: pointer; }
+.aba-venda button { background: none; border: none; font: inherit; color: inherit; cursor: pointer; padding: 9px 4px 9px 14px; }
+.aba-venda .fechar-aba { padding: 4px 10px 4px 4px; font-size: 18px; line-height: 1; }
+.aba-venda .fechar-aba:hover { color: var(--negativo); }
+.abas-vendas .ativa { background: #fff; color: var(--forte); border-color: var(--borda); box-shadow: 0 2px 0 #fff; position: relative; top: 2px; }
+.abas-vendas .nova-aba { padding: 6px 12px; font-size: 20px; line-height: 1; color: var(--forte); background: transparent; border: none; }

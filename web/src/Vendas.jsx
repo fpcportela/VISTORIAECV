@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { api, moeda } from './api.js';
 import { Icone } from './icones.jsx';
 import { PlacaInput, placaValida } from './Placa.jsx';
@@ -110,7 +110,8 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
 // ---------------------------------------------------------------------------
 // Nova venda / edição
 // ---------------------------------------------------------------------------
-export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar, aoSalvo }) {
+export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar, aoSalvo, aoTitulo }) {
+  const grupo = useId(); // nomes únicos dos botões de opção (várias vendas abertas em abas)
   const [venda, setVenda] = useState(null); // carregada do servidor (null = nova)
   const [loja, setLoja] = useState(lojasPermitidas.includes(lojaInicial) ? lojaInicial : lojasPermitidas[0] || '');
   const [data, setData] = useState(hoje());
@@ -139,7 +140,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   async function carregar() {
     try {
       const v = await api(`/vendas/${id}`);
-      setVenda(v); setLoja(v.loja_id); setData(String(v.data_venda).slice(0, 10));
+      setVenda(v); setLoja(v.loja_id); aoTitulo?.(`Venda nº ${v.numero}`); setData(String(v.data_venda).slice(0, 10));
       setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' ? 'avulso' : 'atual');
       setItens(v.itens.map((i, k) => ({ servico_id: i.servico_id, placa: i.placa || '', tipo_veiculo: i.tipo_veiculo, veiculo: [i.marca, i.modelo].filter(Boolean).join(' '), quantidade: String(i.quantidade), valor_unit: String(i.valor_unit),
         mesma: k > 0 && !!i.placa && i.placa === v.itens[k - 1].placa })));
@@ -302,7 +303,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
             ['novo', 'Novo cadastro', podeLoja('clientes.editar')],
           ].filter(([, , ok]) => ok).map(([v, n]) => (
             <label key={v} className={modoCliente === v ? 'opcao marcada' : 'opcao'}>
-              <input type="radio" name="modo-cliente" checked={modoCliente === v} onChange={() => setModoCliente(v)} /><strong>{n}</strong>
+              <input type="radio" name={`${grupo}-modo-cliente`} checked={modoCliente === v} onChange={() => setModoCliente(v)} /><strong>{n}</strong>
             </label>
           ))}
         </div>
@@ -313,7 +314,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
               {clientes.filter((c) => c.tipo !== 'avulso').map((c) => (
                 <li key={c.id}>
                   <label className={cliente?.id === c.id ? 'opcao marcada' : 'opcao'}>
-                    <input type="radio" name="cliente-escolhido" checked={cliente?.id === c.id} onChange={() => setCliente(c)} />
+                    <input type="radio" name={`${grupo}-cliente`} checked={cliente?.id === c.id} onChange={() => setCliente(c)} />
                     <strong>{c.nome}</strong><small className="cinza">{c.tipo === 'pj' ? 'Empresa' : 'Pessoa física'}{c.cpf_cnpj && ` · ${formatarDoc(c.cpf_cnpj)}`}</small>
                   </label>
                 </li>

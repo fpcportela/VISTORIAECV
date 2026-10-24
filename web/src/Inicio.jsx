@@ -22,7 +22,10 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [editandoAtalhos, setEditandoAtalhos] = useState(false);
   const [novaVistoria, setNovaVistoria] = useState(false);
   const [vistoriaId, setVistoriaId] = useState(null);
-  const [vendaId, setVendaId] = useState(null); // null = lista; 'nova' = nova venda
+  // Vendas abertas em abas: { chave, id (null = nova, ainda não salva), titulo }
+  const [abasVenda, setAbasVenda] = useState([]);
+  const [abaVenda, setAbaVenda] = useState('lista'); // 'lista' ou a chave da aba
+  const contadorAbas = useRef(0);
   const [buscaVendas, setBuscaVendas] = useState('');
   const [organizandoMenu, setOrganizandoMenu] = useState(false);
   const [aviso, setAviso] = useState('');
@@ -55,7 +58,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   function abrir(id) {
     setMenuAberto(false);
     if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos'].includes(id)) {
-      setTela(id); setVistoriaId(null); setVendaId(null); setBuscaVendas('');
+      setTela(id); setVistoriaId(null); setBuscaVendas('');
+      if (id === 'vendas') setAbaVenda('lista');
     }
     else if (id === 'busca') setConsulta('');
     else emBreve();
@@ -71,9 +75,34 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     }
   }
 
-  const novaVenda = () => { setMenuAberto(false); setTela('vendas'); setVendaId('nova'); };
+  // Cada nova venda abre numa aba nova; uma venda já aberta só volta para a aba dela
+  const novaVenda = () => {
+    setMenuAberto(false); setTela('vendas');
+    const chave = `nova-${++contadorAbas.current}`;
+    setAbasVenda((abas) => [...abas, { chave, id: null, titulo: 'Nova venda' }]);
+    setAbaVenda(chave);
+  };
   const abrirVistoria = (id) => { setTela('vistorias'); setVistoriaId(id); };
-  const abrirVenda = (id) => { setTela('vendas'); setVendaId(id); };
+  const abrirVenda = (id) => {
+    setTela('vendas');
+    setAbasVenda((abas) => (abas.some((a) => a.id === id) ? abas : [...abas, { chave: id, id, titulo: 'Venda' }]));
+    setAbaVenda(id);
+  };
+  const vendaSalva = (chave, id) => {
+    // a aba da venda nova passa a ser a da venda salva (se ela já estava aberta em outra aba, junta as duas)
+    setAbasVenda((abas) => abas.filter((a) => a.id !== id || a.chave === chave).map((a) => (a.chave === chave ? { ...a, chave: id, id } : a)));
+    setAbaVenda(id);
+  };
+  const tituloAba = (chave, titulo) => setAbasVenda((abas) => abas.map((a) => (a.chave === chave ? { ...a, titulo } : a)));
+  function fecharAba(aba) {
+    if (!aba.id && !confirm('Fechar esta venda sem salvar?')) return;
+    const resto = abasVenda.filter((a) => a.chave !== aba.chave);
+    setAbasVenda(resto);
+    if (abaVenda === aba.chave) {
+      const i = abasVenda.findIndex((a) => a.chave === aba.chave);
+      setAbaVenda((resto[i] || resto[i - 1])?.chave || 'lista');
+    }
+  }
 
   async function salvarMenu(lista) {
     setPerfil({ ...perfil, menu: lista });
@@ -121,7 +150,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const pesquisa = (classe) => (tem('vistorias.ver') || tem('vendas.ver') || tem('clientes.ver') || tem('placa.consultar')) && (
     <Pesquisa classe={classe} loja={loja} podeConsultarPlaca={tem('placa.consultar')}
       aoVistoria={abrirVistoria} aoVenda={abrirVenda} aoConsultarPlaca={(p) => setConsulta(p)}
-      aoCliente={(c) => { setTela('vendas'); setVendaId(null); setBuscaVendas(c.cpf_cnpj || c.nome); }} />
+      aoCliente={(c) => { setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(c.cpf_cnpj || c.nome); }} />
   );
 
   const paleta = paletaAberta && (
@@ -309,19 +338,42 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         </nav>
 
         <main className="conteudo">
+          {tela === 'vendas' && abasVenda.length > 0 && (
+            <div className="abas-vendas" role="tablist" aria-label="Vendas abertas">
+              <button role="tab" aria-selected={abaVenda === 'lista'} className={abaVenda === 'lista' ? 'ativa' : ''} onClick={() => setAbaVenda('lista')}>
+                <Icone nome="vendas" tamanho={16} /> Lista
+              </button>
+              {abasVenda.map((a) => (
+                <span key={a.chave} className={abaVenda === a.chave ? 'aba-venda ativa' : 'aba-venda'}>
+                  <button role="tab" aria-selected={abaVenda === a.chave} onClick={() => setAbaVenda(a.chave)}>{a.titulo}</button>
+                  <button className="fechar-aba" aria-label={`Fechar ${a.titulo}`} title="Fechar" onClick={() => fecharAba(a)}>×</button>
+                </span>
+              ))}
+              {tem('vendas.criar') && <button className="nova-aba" onClick={novaVenda} title="Nova venda" aria-label="Nova venda em outra aba">+</button>}
+            </div>
+          )}
           {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
             : tela === 'servicos' ? (() => {
                 const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;
               })()
-            : tela === 'vendas' ? (vendaId
-              ? <EditorVenda key={vendaId} id={vendaId === 'nova' ? null : vendaId} perfil={perfil} lojaInicial={loja}
-                  lojasPermitidas={lojasCom('vendas.criar')} aoVoltar={() => setVendaId(null)} aoSalvo={(id) => setVendaId(id)} />
-              : <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} podeCriar={tem('vendas.criar')} aoAbrir={setVendaId} aoNova={novaVenda} />)
+            : tela === 'vendas' ? (abaVenda === 'lista' || !abasVenda.length) && (
+                <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
             : tela === 'vistorias' ? (vistoriaId
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)
             : painelInicio}
+          {/* As vendas abertas ficam montadas (escondidas) para não perder o que foi digitado ao trocar de aba ou de tela */}
+          {abasVenda.length > 0 && (
+            <div className="area-vendas" hidden={tela !== 'vendas'}>
+              {abasVenda.map((a) => (
+                <div key={a.chave} hidden={abaVenda !== a.chave}>
+                  <EditorVenda id={a.id} perfil={perfil} lojaInicial={loja} lojasPermitidas={lojasCom('vendas.criar')}
+                    aoVoltar={() => setAbaVenda('lista')} aoSalvo={(id) => vendaSalva(a.chave, id)} aoTitulo={(t) => tituloAba(a.chave, t)} />
+                </div>
+              ))}
+            </div>
+          )}
         </main>
       </div>
 
