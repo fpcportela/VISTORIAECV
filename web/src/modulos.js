@@ -4,7 +4,6 @@ export const MODULOS = [
   // Vistorias: oculto. A vistoria é feita no sistema obrigatório do Detran; aqui
   // ficam só as vendas. As telas continuam no código (Vistorias.jsx) se voltar.
   { id: 'busca', nome: 'Consulta de placa', curto: 'Placa', permissao: 'placa.consultar' },
-  { id: 'camera', nome: 'Ler placa por foto', curto: 'Foto da placa', permissao: 'placa.foto' },
   { id: 'vendas', nome: 'Vendas', curto: 'Vendas', permissao: 'vendas.ver' },
   { id: 'clientes', nome: 'Clientes', curto: 'Clientes', permissao: 'clientes.ver' },
   { id: 'financeiro', nome: 'Financeiro', curto: 'Financeiro', permissao: 'financeiro.ver', sub: true },

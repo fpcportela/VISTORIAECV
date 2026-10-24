@@ -996,7 +996,6 @@ insert into permissoes (codigo, modulo, descricao) values
   ('vistorias.concluir',   'Vistorias',            'Concluir e emitir laudo'),
   ('vistorias.cancelar',   'Vistorias',            'Cancelar vistorias'),
   ('placa.consultar',      'Consulta de placa',    'Consultar placa (API Placas)'),
-  ('placa.foto',           'Ler placa por foto',   'Ler a placa pela câmera'),
   ('clientes.ver',         'Clientes',             'Ver o módulo de clientes'),
   ('clientes.editar',      'Clientes',             'Cadastrar e editar clientes'),
   ('vendas.ver',           'Vendas',               'Ver vendas e orçamentos'),

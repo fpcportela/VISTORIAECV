@@ -285,7 +285,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         <label className="loja">Loja {seletorLoja}</label>
         <div className="linha-pesquisa">
           {pesquisa('')}
-          {tem('placa.foto') && <button type="button" className="botao-camera" onClick={emBreve} aria-label="Ler placa pela câmera"><Icone nome="camera" tamanho={22} /></button>}
         </div>
       </header>
 

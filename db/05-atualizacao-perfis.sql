@@ -31,3 +31,7 @@ select pp.perfil_id, n.ver
                ('usuarios.gerenciar', 'usuarios.ver'), ('whatsapp.enviar', 'whatsapp.ver'),
                ('config.gerenciar', 'config.ver')) n(uso, ver) on n.uso = pp.permissao
 on conflict do nothing;
+
+-- Leitura de placa por foto saiu do sistema (não será usada)
+delete from perfil_permissoes where permissao = 'placa.foto';
+delete from permissoes where codigo = 'placa.foto';
