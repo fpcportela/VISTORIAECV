@@ -7,7 +7,8 @@
     "banco": "docker compose up -d",
     "banco:parar": "docker compose stop",
     "banco:zerar": "docker compose down -v && docker compose up -d",
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev --prefix api\" \"npm run dev --prefix web\""
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev --prefix api\" \"npm run dev --prefix web\"",
+    "banco:atualizar": "docker exec vistoria-ecv-banco sh -c 'cd /docker-entrypoint-initdb.d && for f in 02-*.sql 05-*.sql; do psql -q -v ON_ERROR_STOP=1 -U vistoria -d vistoria_ecv -f $f || exit 1; done && echo Banco atualizado.'"
   },
   "devDependencies": {
     "concurrently": "9.1.0"

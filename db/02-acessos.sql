@@ -25,7 +25,21 @@ language sql stable security definer as $$
      where l.empresa_id = p_empresa and pode(l.id, 'usuarios.gerenciar'))
 $$;
 
--- Perfis que o usuário logado pode configurar, com suas permissões
+-- Pode ver (só consultar) os usuários e perfis desta empresa?
+create or replace function consulta_empresa(p_empresa uuid) returns boolean
+language sql stable security definer as $$
+  select gerencia_empresa(p_empresa) or exists (
+    select 1 from lojas l
+     where l.empresa_id = p_empresa and pode(l.id, 'usuarios.ver'))
+$$;
+
+-- Pode ver os usuários desta loja?
+create or replace function ve_usuarios_loja(p_loja uuid) returns boolean
+language sql stable security definer as $$
+  select eh_admin_rede() or pode(p_loja, 'usuarios.gerenciar') or pode(p_loja, 'usuarios.ver')
+$$;
+
+-- Perfis que o usuário logado pode ver ou configurar, com suas permissões
 create or replace function app_perfis()
 returns table (id uuid, empresa_id uuid, empresa text, nome text, descricao text,
                permissoes text[], usuarios integer)
@@ -36,7 +50,7 @@ language sql stable security definer as $$
     from perfis pf
     join empresas e on e.id = pf.empresa_id
     left join perfil_permissoes pp on pp.perfil_id = pf.id
-   where gerencia_empresa(pf.empresa_id)
+   where consulta_empresa(pf.empresa_id)
    group by pf.id, e.id
    order by e.razao_social, pf.nome
 $$;
@@ -86,28 +100,31 @@ begin
   delete from perfis where id = p_id;
 end $$;
 
--- Usuários das lojas que o usuário logado gerencia, com a loja e o perfil de cada vínculo
-create or replace function app_usuarios()
-returns table (id uuid, nome text, email text, ativo boolean, master boolean, vinculos jsonb)
+-- Usuários das lojas que o usuário logado vê ou gerencia, com a loja e o perfil de cada vínculo
+drop function if exists app_usuarios();
+create function app_usuarios()
+returns table (id uuid, nome text, email text, cpf text, telefone text, ativo boolean, master boolean, vinculos jsonb)
 language sql stable security definer as $$
-  select u.id, u.nome, u.email, u.ativo, u.admin_rede,
+  select u.id, u.nome, u.email, u.cpf, u.telefone, u.ativo, u.admin_rede,
          coalesce(jsonb_agg(jsonb_build_object('loja_id', ul.loja_id, 'perfil_id', ul.perfil_id))
                   filter (where ul.loja_id is not null), '[]')
     from usuarios u
     left join usuario_lojas ul on ul.usuario_id = u.id
-         and (eh_admin_rede() or pode(ul.loja_id, 'usuarios.gerenciar'))
+         and ve_usuarios_loja(ul.loja_id)
    where eh_admin_rede()
       or exists (select 1 from usuario_lojas x
-                  where x.usuario_id = u.id and pode(x.loja_id, 'usuarios.gerenciar'))
+                  where x.usuario_id = u.id and ve_usuarios_loja(x.loja_id))
    group by u.id
    order by u.nome
 $$;
 
 -- Cria (p_id nulo) ou altera um usuário e os seus vínculos (loja + perfil).
 -- Só mexe nos vínculos das lojas que quem está salvando gerencia.
--- p_vinculos: [{"loja_id": "...", "perfil_id": "..."}]
+-- p_vinculos: [{"loja_id": "...", "perfil_id": "..."}]. CPF e celular só com números.
+drop function if exists app_salvar_usuario(uuid, text, text, text, boolean, jsonb);
 create or replace function app_salvar_usuario(p_id uuid, p_nome text, p_email text, p_senha text,
-                                              p_ativo boolean, p_vinculos jsonb)
+                                              p_ativo boolean, p_vinculos jsonb,
+                                              p_cpf text, p_telefone text)
 returns uuid
 language plpgsql security definer as $$
 declare v_id uuid := p_id;
@@ -117,6 +134,15 @@ declare v_id uuid := p_id;
 begin
   if coalesce(trim(p_nome), '') = '' or coalesce(trim(p_email), '') = '' then
     raise exception 'Informe nome e e-mail.' using errcode = '22023';
+  end if;
+  if not eh_admin_rede() and not exists (select 1 from lojas l where pode(l.id, 'usuarios.gerenciar')) then
+    raise exception 'sem_permissao' using errcode = '42501';
+  end if;
+  if exists (select 1 from usuarios where email = lower(trim(p_email)) and id is distinct from v_id) then
+    raise exception 'Já existe um usuário com este e-mail.' using errcode = '22023';
+  end if;
+  if p_cpf is not null and exists (select 1 from usuarios where cpf = p_cpf and id is distinct from v_id) then
+    raise exception 'Já existe um usuário com este CPF.' using errcode = '22023';
   end if;
 
   -- precisa gerenciar todas as lojas pedidas
@@ -139,8 +165,8 @@ begin
     if jsonb_array_length(coalesce(p_vinculos, '[]')) = 0 and not eh_admin_rede() then
       raise exception 'Escolha pelo menos uma loja para o usuário.' using errcode = '22023';
     end if;
-    insert into usuarios (nome, email, senha_hash, ativo)
-    values (trim(p_nome), lower(trim(p_email)), crypt(p_senha, gen_salt('bf')), coalesce(p_ativo, true))
+    insert into usuarios (nome, email, cpf, telefone, senha_hash, ativo)
+    values (trim(p_nome), lower(trim(p_email)), p_cpf, p_telefone, crypt(p_senha, gen_salt('bf')), coalesce(p_ativo, true))
     returning id into v_id;
   else
     -- quem não é master só altera usuários das lojas que gerencia, e nunca um master
@@ -150,7 +176,8 @@ begin
                          where x.usuario_id = v_id and pode(x.loja_id, 'usuarios.gerenciar'))) then
       raise exception 'sem_permissao' using errcode = '42501';
     end if;
-    update usuarios set nome = trim(p_nome), email = lower(trim(p_email)), ativo = coalesce(p_ativo, ativo),
+    update usuarios set nome = trim(p_nome), email = lower(trim(p_email)), cpf = p_cpf, telefone = p_telefone,
+           ativo = coalesce(p_ativo, ativo), atualizado_em = now(),
            senha_hash = case when coalesce(length(p_senha), 0) >= 6 then crypt(p_senha, gen_salt('bf')) else senha_hash end
      where id = v_id;
     if p_senha is not null and length(p_senha) between 1 and 5 then

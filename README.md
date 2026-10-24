@@ -59,6 +59,16 @@ Com o celular no mesmo Wi-Fi do Mac, o Terminal mostra uma linha `Network: http:
 Abra esse endereço no celular. Para instalar como app: no iPhone, Compartilhar > "Adicionar à Tela de Início";
 no Android, menu do Chrome > "Instalar app".
 
+## Atualizar o banco sem perder os dados
+
+Quando uma versão nova muda as regras do banco (funções, permissões), com o banco ligado rode:
+
+```bash
+npm run banco:atualizar
+```
+
+Pode rodar mais de uma vez sem problema; as vendas e cadastros continuam lá.
+
 ## Apagar todos os dados e recomeçar
 
 ```bash

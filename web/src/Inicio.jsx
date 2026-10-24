@@ -311,7 +311,10 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
         <main className="conteudo">
           {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
-            : tela === 'servicos' ? <Servicos loja={lojasCom('servicos.gerenciar').includes(loja) ? loja : lojasCom('servicos.gerenciar')[0]} />
+            : tela === 'servicos' ? (() => {
+                const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];
+                return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;
+              })()
             : tela === 'vendas' ? (vendaId
               ? <EditorVenda key={vendaId} id={vendaId === 'nova' ? null : vendaId} perfil={perfil} lojaInicial={loja}
                   lojasPermitidas={lojasCom('vendas.criar')} aoVoltar={() => setVendaId(null)} aoSalvo={(id) => setVendaId(id)} />

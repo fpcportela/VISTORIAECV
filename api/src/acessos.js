@@ -1,4 +1,5 @@
 import { comoUsuario } from './db.js';
+import { cpfValido } from './documentos.js';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const lista = (v) => (Array.isArray(v) ? v.map(String) : []);
@@ -9,7 +10,7 @@ const lista = (v) => (Array.isArray(v) ? v.map(String) : []);
 export function rotasAcessos(app, { exigeLogin, rota }) {
   app.get('/api/permissoes', exigeLogin, rota(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) =>
-      (await db.query('select codigo, modulo, descricao from permissoes')).rows));
+      (await db.query('select codigo, modulo, descricao, nivel from permissoes')).rows));
   }));
 
   app.get('/api/perfis', exigeLogin, rota(async (req, res) => {
@@ -42,12 +43,16 @@ export function rotasAcessos(app, { exigeLogin, rota }) {
 
   const salvarUsuario = (id) => rota(async (req, res) => {
     const { nome, email, senha, ativo, vinculos } = req.body || {};
+    const cpf = String(req.body?.cpf || '').replace(/\D/g, '') || null;
+    const telefone = String(req.body?.telefone || '').replace(/\D/g, '') || null;
+    if (cpf && !cpfValido(cpf)) return res.status(400).json({ erro: 'CPF inválido. Confira os números.' });
+    if (telefone && !/^\d{10,11}$/.test(telefone)) return res.status(400).json({ erro: 'Celular inválido. Use DDD + número.' });
     const limpos = (Array.isArray(vinculos) ? vinculos : [])
       .filter((v) => UUID.test(v?.loja_id || '') && UUID.test(v?.perfil_id || ''))
       .map((v) => ({ loja_id: v.loja_id, perfil_id: v.perfil_id }));
     const novoId = await comoUsuario(req.usuarioId, async (db) =>
-      (await db.query('select app_salvar_usuario($1, $2, $3, $4, $5, $6) as id',
-        [id ?? null, nome, email, senha || null, ativo !== false, JSON.stringify(limpos)])).rows[0].id);
+      (await db.query('select app_salvar_usuario($1, $2, $3, $4, $5, $6, $7, $8) as id',
+        [id ?? null, nome, email, senha || null, ativo !== false, JSON.stringify(limpos), cpf, telefone])).rows[0].id);
     res.json({ id: novoId });
   });
   app.post('/api/usuarios', exigeLogin, (req, res) => salvarUsuario(undefined)(req, res));

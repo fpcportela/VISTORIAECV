@@ -3,7 +3,7 @@ import { api, moeda } from './api.js';
 import { TIPOS } from './Vistorias.jsx';
 
 // Cadastro de serviços e produtos do grupo, com preço por tipo de veículo
-export default function Servicos({ loja }) {
+export default function Servicos({ loja, podeEditar }) {
   const [lista, setLista] = useState(null);
   const [editando, setEditando] = useState(undefined); // undefined = fechado; null = novo
   const [erro, setErro] = useState('');
@@ -15,7 +15,7 @@ export default function Servicos({ loja }) {
     <>
       <div className="cabecalho">
         <h1>Serviços e produtos</h1>
-        <button className="botao-primario" onClick={() => setEditando(null)}>+ Novo</button>
+        {podeEditar && <button className="botao-primario" onClick={() => setEditando(null)}>+ Novo</button>}
       </div>
       <p className="cinza ajuda">O cadastro vale para todas as lojas do grupo. Na venda, o valor vem do preço do tipo de veículo da placa; sem preço específico, usa o valor padrão.</p>
       {erro && <p className="erro" role="alert">{erro}</p>}
@@ -39,14 +39,14 @@ export default function Servicos({ loja }) {
         </div>
       )}
       {editando !== undefined && (
-        <EditorServico item={editando} loja={loja} aoFechar={() => setEditando(undefined)}
+        <EditorServico item={editando} loja={loja} somenteLeitura={!podeEditar} aoFechar={() => setEditando(undefined)}
           aoSalvar={() => { setEditando(undefined); carregar(); }} />
       )}
     </>
   );
 }
 
-function EditorServico({ item, loja, aoFechar, aoSalvar }) {
+function EditorServico({ item, loja, somenteLeitura, aoFechar, aoSalvar }) {
   const [f, setF] = useState({
     nome: item?.nome || '', tipo: item?.tipo || 'servico', descricao: item?.descricao || '',
     valor_padrao: item ? String(item.valor_padrao) : '', gera_vistoria: item?.gera_vistoria ?? true, ativo: item?.ativo ?? true,
@@ -72,10 +72,11 @@ function EditorServico({ item, loja, aoFechar, aoSalvar }) {
     <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
       <section className="modal" role="dialog" aria-modal="true" aria-label="Serviço ou produto">
         <div className="modal-topo">
-          <h2>{item ? 'Editar' : 'Novo'} {f.tipo === 'produto' ? 'produto' : 'serviço'}</h2>
+          <h2>{somenteLeitura ? 'Ver' : item ? 'Editar' : 'Novo'} {f.tipo === 'produto' ? 'produto' : 'serviço'}</h2>
           <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
         </div>
         <form className="formulario" onSubmit={salvar}>
+          <fieldset className="sem-borda" disabled={somenteLeitura}>
           <div className="opcoes">
             {[['servico', 'Serviço'], ['produto', 'Produto']].map(([v, n]) => (
               <label key={v} className={f.tipo === v ? 'opcao marcada' : 'opcao'}>
@@ -101,10 +102,11 @@ function EditorServico({ item, loja, aoFechar, aoSalvar }) {
             <label className="linha-check"><input type="checkbox" checked={f.gera_vistoria} onChange={muda('gera_vistoria')} /> Aparece na abertura de vistoria</label>
           )}
           <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={muda('ativo')} /> Ativo</label>
+          </fieldset>
           {erro && <p className="erro" role="alert">{erro}</p>}
           <div className="acoes-modal">
-            <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
-            <button className="botao-primario" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+            <button type="button" className="botao-contorno" onClick={aoFechar}>{somenteLeitura ? 'Fechar' : 'Cancelar'}</button>
+            {!somenteLeitura && <button className="botao-primario" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>}
           </div>
         </form>
       </section>

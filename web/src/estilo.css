@@ -223,9 +223,9 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 .perigo { color: var(--negativo); }
 .modal.largo { max-width: 760px; }
 .formulario { display: flex; flex-direction: column; gap: 14px; }
-.formulario > label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
+.formulario > label, .formulario > .sem-borda > label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
 .formulario input:not([type=checkbox]), .formulario select { border: 1px solid var(--borda); border-radius: 6px; padding: 10px 12px; font-size: 16px; min-height: 44px; font-weight: 400; color: var(--texto); }
-.formulario > label.linha-check { flex-direction: row; align-items: center; gap: 10px; }
+.formulario > label.linha-check, .formulario > .sem-borda > label.linha-check { flex-direction: row; align-items: center; gap: 10px; }
 .grade-permissoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 12px; }
 .grupo-permissoes { margin: 0; border: 1px solid #e3e7ee; border-radius: 8px; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .grupo-permissoes legend { padding: 0 4px; font-weight: 800; color: var(--forte); }
@@ -409,3 +409,20 @@ fieldset:disabled .placa-br input { color: #374151; }
 /* "Mesma placa": a partir do segundo item da venda */
 .placa-item label.mesma-placa { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--forte); cursor: pointer; }
 .placa-item .mesma-placa input { min-height: 0; padding: 0; border: none; width: 16px; height: 16px; accent-color: var(--forte); }
+fieldset.sem-borda { display: contents; }
+
+/* Perfis: consulta e uso por módulo */
+.tabela-acessos { border: 1px solid #e3e7ee; border-radius: 8px; overflow: hidden; }
+.ta-linha { display: grid; grid-template-columns: 1fr 90px 90px; align-items: center; padding: 6px 12px; min-height: 44px; }
+.ta-linha > span { text-align: center; }
+.ta-linha input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--forte); cursor: pointer; }
+.ta-cabecalho { background: var(--clara); color: var(--forte); font-weight: 800; font-size: 13px; min-height: 36px; }
+.ta-cabecalho > span:first-child { text-align: left; }
+.ta-grupo + .ta-grupo { border-top: 1px solid #eef1f5; }
+.ta-modulo { background: none; border: none; padding: 0; font: inherit; font-weight: 700; color: var(--texto); text-align: left; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.ta-seta { color: var(--cinza); width: 12px; }
+.ta-detalhe { padding: 4px 12px 10px 30px; display: flex; flex-direction: column; gap: 2px; background: #fafbfc; }
+.ta-detalhe label { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 32px; }
+.ta-detalhe .etiqueta { margin-left: auto; }
+.etiqueta.uso { background: #e7f6ec; color: #1d7a3e; }
+div.linha-loja { display: flex; align-items: center; gap: 8px; }
