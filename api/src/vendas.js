@@ -161,7 +161,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const loja = existente?.loja_id || b.loja_id;
     const empresa = await empresaDaLoja(db, loja);
     await exigir(db, loja, 'vendas.criar', 'Seu perfil não pode criar ou alterar vendas.');
-    const tipo = b.tipo === 'orcamento' ? 'orcamento' : 'venda_avulsa';
+    const tipo = 'venda_avulsa'; // orçamento não é usado: toda venda é avulsa
     const data = dataValida(b.data_venda) || new Date().toISOString().slice(0, 10);
     const desconto = dinheiro(b.desconto || 0);
     if (desconto === null) throw new Recusa(400, 'Desconto inválido.');

@@ -6,13 +6,12 @@ import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 
 const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Cancelada' };
-const TIPOS_VENDA = { orcamento: 'Orçamento', venda_avulsa: 'Venda avulsa' };
 const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', cancelada: 'Cancelou' };
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const dataBR = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
 const numero = (v) => Number(String(v ?? '').replace(',', '.')) || 0;
 const Etiqueta = ({ situacao }) => <span className={`etiqueta venda-${situacao}`}>{SITUACOES[situacao]}</span>;
-const itemVazio = () => ({ servico_id: '', placa: '', tipo_veiculo: null, veiculo: '', quantidade: '1', valor_unit: '' });
+const itemVazio = () => ({ servico_id: '', placa: '', tipo_veiculo: null, veiculo: '', quantidade: '1', valor_unit: '', mesma: false });
 
 // ---------------------------------------------------------------------------
 // Lista de vendas e orçamentos
@@ -28,7 +27,6 @@ const PERIODOS = {
 export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', empresa }) {
   const [[de, ate], setIntervalo] = useState(buscaInicial ? PERIODOS.todas() : PERIODOS.mes());
   const [situacao, setSituacao] = useState('');
-  const [tipo, setTipo] = useState('');
   const [cliente, setCliente] = useState(buscaInicial);
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState(null);
@@ -36,13 +34,13 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
   const [gerando, setGerando] = useState(false);
 
   useEffect(() => {
-    const q = new URLSearchParams({ ...(loja && { loja }), ...(de && { de }), ...(ate && { ate }), ...(situacao && { situacao }), ...(tipo && { tipo }),
+    const q = new URLSearchParams({ ...(loja && { loja }), ...(de && { de }), ...(ate && { ate }), ...(situacao && { situacao }),
       ...(cliente.trim() && { cliente: cliente.trim() }), ...(busca.trim() && { busca: busca.trim() }) });
     const t = setTimeout(() => api(`/vendas?${q}`).then((l) => { setLista(l); setErro(''); }).catch((f) => setErro(f.message)), busca || cliente ? 300 : 0);
     return () => clearTimeout(t);
-  }, [loja, de, ate, situacao, tipo, cliente, busca]);
+  }, [loja, de, ate, situacao, cliente, busca]);
 
-  const total = (lista || []).filter((v) => v.situacao !== 'cancelada' && v.tipo === 'venda_avulsa').reduce((t, v) => t + v.valor_total, 0);
+  const total = (lista || []).filter((v) => v.situacao !== 'cancelada').reduce((t, v) => t + v.valor_total, 0);
   const periodoAtivo = Object.keys(PERIODOS).find((k) => { const [a, b] = PERIODOS[k](); return a === de && b === ate; });
 
   async function pdf() {
@@ -51,7 +49,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
       const filtros = [
         de || ate ? `Período: ${de ? dataBR(de) : 'início'} a ${ate ? dataBR(ate) : 'hoje'}` : 'Todo o período',
         cliente.trim() && `Cliente: ${cliente.trim()}`, busca.trim() && `Busca: ${busca.trim()}`,
-        tipo && TIPOS_VENDA[tipo], situacao && SITUACOES[situacao],
+        situacao && SITUACOES[situacao],
       ].filter(Boolean);
       const { gerarPdfVendas } = await import('./relatorioVendas.js');
       await gerarPdfVendas({ lista, filtros, empresa });
@@ -79,10 +77,6 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
         </div>
         <label className="filtro-data">De<input type="date" value={de} max={ate || undefined} onChange={(e) => setIntervalo([e.target.value, ate])} /></label>
         <label className="filtro-data">Até<input type="date" value={ate} min={de || undefined} onChange={(e) => setIntervalo([de, e.target.value])} /></label>
-        <select value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo">
-          <option value="">Vendas e orçamentos</option>
-          {Object.entries(TIPOS_VENDA).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-        </select>
         <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação">
           <option value="">Todas as situações</option>
           {Object.entries(SITUACOES).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
@@ -99,7 +93,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
           <div className="tabela-vendas" role="table">
             {lista.map((v) => (
               <button key={v.id} className="cartao linha-venda" role="row" onClick={() => aoAbrir(v.id)}>
-                <span className="lv-num"><strong>Nº {v.numero}</strong><small className="cinza">{TIPOS_VENDA[v.tipo]}</small></span>
+                <span className="lv-num"><strong>Nº {v.numero}</strong></span>
                 <span className="lv-cliente"><strong>{v.cliente}</strong><small className="cinza">{v.cpf_cnpj && `${formatarDoc(v.cpf_cnpj)} · `}{v.placas || 'Sem placa'}{!loja && ` · ${v.loja}`}</small></span>
                 <span className="lv-data">{dataBR(v.data_venda)}</span>
                 <span className="lv-valor">R$ {moeda(v.valor_total)}</span>
@@ -119,7 +113,6 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
 export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar, aoSalvo }) {
   const [venda, setVenda] = useState(null); // carregada do servidor (null = nova)
   const [loja, setLoja] = useState(lojasPermitidas.includes(lojaInicial) ? lojaInicial : lojasPermitidas[0] || '');
-  const [tipo, setTipo] = useState('venda_avulsa');
   const [data, setData] = useState(hoje());
   const [modoCliente, setModoCliente] = useState('avulso');
   const [cliente, setCliente] = useState(null);
@@ -146,9 +139,10 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   async function carregar() {
     try {
       const v = await api(`/vendas/${id}`);
-      setVenda(v); setLoja(v.loja_id); setTipo(v.tipo); setData(String(v.data_venda).slice(0, 10));
+      setVenda(v); setLoja(v.loja_id); setData(String(v.data_venda).slice(0, 10));
       setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' ? 'avulso' : 'atual');
-      setItens(v.itens.map((i) => ({ servico_id: i.servico_id, placa: i.placa || '', tipo_veiculo: i.tipo_veiculo, veiculo: [i.marca, i.modelo].filter(Boolean).join(' '), quantidade: String(i.quantidade), valor_unit: String(i.valor_unit) })));
+      setItens(v.itens.map((i, k) => ({ servico_id: i.servico_id, placa: i.placa || '', tipo_veiculo: i.tipo_veiculo, veiculo: [i.marca, i.modelo].filter(Boolean).join(' '), quantidade: String(i.quantidade), valor_unit: String(i.valor_unit),
+        mesma: k > 0 && !!i.placa && i.placa === v.itens[k - 1].placa })));
       setDesconto(v.desconto ? String(v.desconto) : ''); setObservacoes(v.observacoes || '');
     } catch (falha) {
       setErro(falha.message);
@@ -194,7 +188,16 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     if (!s) return '';
     return String(s.precos?.[tipoVeiculo || 'carro'] ?? s.valor_padrao);
   };
-  const mudarItem = (n, campos) => setItens(itens.map((i, k) => (k === n ? { ...i, ...campos } : i)));
+  // Itens com "Mesma placa" copiam a placa (e o veículo) do item de cima; se o tipo do veículo muda, o preço acompanha
+  const repetirPlacas = (lista) => lista.reduce((saida, i, k) => {
+    const ant = saida[k - 1];
+    if (!k || !i.mesma) return [...saida, k ? i : { ...i, mesma: false }];
+    const tipoMudou = i.tipo_veiculo !== ant.tipo_veiculo;
+    return [...saida, { ...i, placa: ant.placa, tipo_veiculo: ant.tipo_veiculo, veiculo: ant.veiculo,
+      valor_unit: tipoMudou && i.servico_id ? precoDe(i.servico_id, ant.tipo_veiculo) : i.valor_unit }];
+  }, []);
+  const trocarItens = (lista) => setItens(repetirPlacas(lista));
+  const mudarItem = (n, campos) => trocarItens(itens.map((i, k) => (k === n ? { ...i, ...campos } : i)));
   const escolherServico = (n, servicoId) => mudarItem(n, { servico_id: servicoId, valor_unit: precoDe(servicoId, itens[n].tipo_veiculo) });
 
   // Placa consultada na API: preenche o item e ajusta o preço ao tipo do veículo
@@ -203,7 +206,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     const lista = n < itens.length ? [...itens] : [...itens, itemVazio()];
     const i = lista[n];
     lista[n] = { ...i, placa: v.placa, tipo_veiculo: v.tipo, veiculo: [v.marca, v.modelo].filter(Boolean).join(' '), valor_unit: i.servico_id ? precoDe(i.servico_id, v.tipo) : i.valor_unit };
-    setItens(lista);
+    trocarItens(lista);
     setConsulta(null);
   }
 
@@ -221,7 +224,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     setOcupado(true);
     try {
       const corpo = {
-        loja_id: loja, tipo, data_venda: data, desconto: numero(desconto), observacoes,
+        loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
         itens: itens.filter((i) => i.servico_id).map(({ servico_id, placa, tipo_veiculo, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) })),
         ...(modoCliente === 'avulso' && { cliente_avulso: true }),
         ...((modoCliente === 'buscar' || modoCliente === 'atual') && cliente && { cliente_id: cliente.id }),
@@ -261,7 +264,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     <>
       <div className="cabecalho">
         <button className="botao-texto" onClick={aoVoltar}>‹ Vendas</button>
-        <h1>{venda ? `${TIPOS_VENDA[venda.tipo]} nº ${venda.numero}` : 'Nova venda'}</h1>
+        <h1>{venda ? `Venda nº ${venda.numero}` : 'Nova venda'}</h1>
         {venda ? <Etiqueta situacao={venda.situacao} /> : <span />}
       </div>
 
@@ -272,14 +275,6 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       <fieldset className="cartao secao-venda" disabled={!editavel}>
         <legend>Informações</legend>
         <div className="grade-venda">
-          <div className="campo">
-            <span className="rotulo-campo">Tipo</span>
-            <div className="alternador">
-              {Object.entries(TIPOS_VENDA).map(([v, n]) => (
-                <button type="button" key={v} className={tipo === v ? 'ativo' : ''} onClick={() => setTipo(v)}>{n}</button>
-              ))}
-            </div>
-          </div>
           <label className="campo">Número<input value={venda ? venda.numero : 'Gerado ao salvar'} readOnly className="somente-leitura" /></label>
           <label className="campo">Data do serviço<input type="date" value={data} onChange={(e) => setData(e.target.value)} /></label>
           <label className="campo">Centro de custo (loja)
@@ -360,9 +355,15 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
                 </select>
               </label>
               <div className="placa-item">
-                <PlacaInput valor={i.placa} tamanho="item" aoMudar={(p) => mudarItem(n, { placa: p, veiculo: '', tipo_veiculo: null })} aria-label={`Placa do item ${n + 1}`} />
+                <PlacaInput key={i.mesma ? `mesma-${i.placa}` : 'propria'} valor={i.placa} tamanho="item" disabled={i.mesma}
+                  aoMudar={(p) => mudarItem(n, { placa: p, veiculo: '', tipo_veiculo: null })} aria-label={`Placa do item ${n + 1}`} />
                 <button type="button" className="botao-redondo clara" title="Consultar esta placa" aria-label="Consultar esta placa"
-                  disabled={!podeLoja('placa.consultar')} onClick={() => setConsulta({ indice: n, placa: i.placa })}><Icone nome="busca" tamanho={18} /></button>
+                  disabled={i.mesma || !podeLoja('placa.consultar')} onClick={() => setConsulta({ indice: n, placa: i.placa })}><Icone nome="busca" tamanho={18} /></button>
+                {n > 0 && (
+                  <label className="mesma-placa">
+                    <input type="checkbox" checked={i.mesma} onChange={(e) => mudarItem(n, { mesma: e.target.checked, ...(!e.target.checked && { placa: '', veiculo: '', tipo_veiculo: null }) })} /> Mesma placa
+                  </label>
+                )}
                 {i.veiculo && <small className="cinza">{i.veiculo}</small>}
               </div>
               <label><span className="so-celular rotulo-campo">Quantidade</span>
@@ -373,7 +374,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
               </label>
               <strong className="total-item">R$ {moeda(numero(i.quantidade) * numero(i.valor_unit))}</strong>
               <button type="button" className="fechar" aria-label={`Remover item ${n + 1}`} disabled={itens.length === 1}
-                onClick={() => setItens(itens.filter((_, k) => k !== n))}>×</button>
+                onClick={() => trocarItens(itens.filter((_, k) => k !== n))}>×</button>
             </div>
           ))}
           <button type="button" className="botao-texto" onClick={() => setItens([...itens, itemVazio()])}><Icone nome="mais" tamanho={18} /> Adicionar item</button>

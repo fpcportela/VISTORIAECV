@@ -405,3 +405,7 @@ fieldset:disabled .placa-br input { color: #374151; }
 .filtro-data { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--cinza); }
 .filtros .filtro-data input { flex: none; min-width: 0; }
 @media (max-width: 820px) { .filtro-data { flex: 1; } .filtros .filtro-data input { flex: 1; } }
+
+/* "Mesma placa": a partir do segundo item da venda */
+.placa-item label.mesma-placa { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--forte); cursor: pointer; }
+.placa-item .mesma-placa input { min-height: 0; padding: 0; border: none; width: 16px; height: 16px; accent-color: var(--forte); }
