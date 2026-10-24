@@ -1,9 +1,29 @@
-// Placa no padrão Mercosul: faixa azul "BRASIL" com bandeira, "BR" e os
-// caracteres grandes. Serve para mostrar (Placa) e para digitar (PlacaInput).
+import { useState } from 'react';
+
+// Placa no padrão Mercosul (faixa azul "BRASIL", bandeira, "BR") ou no modelo
+// antigo (cinza, ABC-1234). Serve para mostrar (Placa) e para digitar (PlacaInput).
+
+const MERCOSUL = /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/;
+const ANTIGA = /^[A-Z]{3}[0-9]{4}$/;
 
 export const limparPlaca = (texto) => String(texto || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
-export const formatarPlaca = (placa) => (placa.length > 3 ? `${placa.slice(0, 3)} ${placa.slice(3)}` : placa);
-export const placaValida = (placa) => /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa);
+export const ehAntiga = (placa) => ANTIGA.test(placa);
+export const placaValida = (placa) => MERCOSUL.test(placa) || ANTIGA.test(placa);
+export const formatarPlaca = (placa, antiga = ehAntiga(placa)) =>
+  placa.length > 3 ? `${placa.slice(0, 3)}${antiga ? '-' : ' '}${placa.slice(3)}` : placa;
+
+// Aceita só o caractere certo em cada posição: Mercosul ABC1D23, antiga ABC1234
+export function filtrarPlaca(texto, antiga) {
+  let saida = '';
+  for (const c of String(texto || '').toUpperCase().replace(/[^A-Z0-9]/g, '')) {
+    const i = saida.length;
+    if (i >= 7) break;
+    const letra = /[A-Z]/.test(c);
+    const querLetra = i < 3 || (i === 4 && !antiga);
+    if (querLetra === letra) saida += c;
+  }
+  return saida;
+}
 
 const Bandeira = () => (
   <svg className="bandeira" viewBox="0 0 20 14" aria-hidden="true">
@@ -13,14 +33,14 @@ const Bandeira = () => (
   </svg>
 );
 
-function Moldura({ tamanho = 'media', children, rotulo }) {
+function Moldura({ tamanho = 'media', antiga, children, rotulo }) {
   return (
-    <div className={`placa-br ${tamanho}`} aria-label={rotulo}>
+    <div className={`placa-br ${tamanho}${antiga ? ' antiga' : ''}`} aria-label={rotulo}>
       <div className="placa-br-faixa">
-        <small>MERCOSUL</small><span>BRASIL</span><Bandeira />
+        {antiga ? <span>BRASIL</span> : <><small>MERCOSUL</small><span>BRASIL</span><Bandeira /></>}
       </div>
       <div className="placa-br-corpo">
-        <small className="placa-br-pais">BR</small>
+        {!antiga && <small className="placa-br-pais">BR</small>}
         {children}
       </div>
     </div>
@@ -29,18 +49,26 @@ function Moldura({ tamanho = 'media', children, rotulo }) {
 
 export function Placa({ placa, tamanho }) {
   return (
-    <Moldura tamanho={tamanho} rotulo={`Placa ${placa}`}>
+    <Moldura tamanho={tamanho} antiga={ehAntiga(placa)} rotulo={`Placa ${placa}`}>
       <strong>{formatarPlaca(placa)}</strong>
     </Moldura>
   );
 }
 
-export function PlacaInput({ valor, aoMudar, tamanho, ...props }) {
+// Padrão Mercosul (ABC1D23). A caixa "Placa antiga" troca para ABC1234.
+export function PlacaInput({ valor, aoMudar, tamanho, disabled, ...props }) {
+  const [antiga, setAntiga] = useState(ehAntiga(valor));
+  const trocar = (marcado) => { setAntiga(marcado); aoMudar(filtrarPlaca(valor, marcado)); };
   return (
-    <Moldura tamanho={tamanho}>
-      <input value={formatarPlaca(valor)} onChange={(e) => aoMudar(limparPlaca(e.target.value))}
-        placeholder="ABC 1D23" aria-label="Placa" autoComplete="off" autoCapitalize="characters" spellCheck={false}
-        maxLength={8} {...props} />
-    </Moldura>
+    <div className={`placa-campo ${tamanho || ''}`}>
+      <Moldura tamanho={tamanho} antiga={antiga}>
+        <input value={formatarPlaca(valor, antiga)} onChange={(e) => aoMudar(filtrarPlaca(e.target.value, antiga))}
+          placeholder={antiga ? 'ABC-1234' : 'ABC 1D23'} aria-label="Placa" autoComplete="off" autoCapitalize="characters"
+          spellCheck={false} maxLength={8} disabled={disabled} {...props} />
+      </Moldura>
+      <label className="placa-antiga">
+        <input type="checkbox" checked={antiga} disabled={disabled} onChange={(e) => trocar(e.target.checked)} /> Placa antiga
+      </label>
+    </div>
   );
 }

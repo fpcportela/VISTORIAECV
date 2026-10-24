@@ -392,3 +392,11 @@ fieldset:disabled .placa-br input { color: #374151; }
   .resumo-valor .total-venda { margin-left: 0; }
   .lista-menu + .botao-contorno, .modal > .botao-primario { width: 100%; justify-content: center; }
 }
+.placa-campo { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+.placa-antiga { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--cinza); cursor: pointer; }
+.placa-antiga input { width: 16px; height: 16px; accent-color: var(--forte); }
+.placa-br.antiga { background: #d4d7dc; }
+.placa-br.antiga .placa-br-faixa { background: transparent; color: #374151; justify-content: center; border-bottom: 1px solid #9ca3af; }
+.placa-br.antiga .placa-br-corpo input::placeholder { color: #8b919b; }
+.placa-campo label.placa-antiga { flex-direction: row; gap: 6px; }
+.placa-campo .placa-antiga input { min-height: 0; padding: 0; border: none; width: 16px; height: 16px; }
