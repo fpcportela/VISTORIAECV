@@ -3,6 +3,7 @@ import { api, moeda } from './api.js';
 import { Icone } from './icones.jsx';
 import { PlacaInput, placaValida } from './Placa.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
+import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 
 const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Cancelada' };
 const TIPOS_VENDA = { orcamento: 'Orçamento', venda_avulsa: 'Venda avulsa' };
@@ -90,6 +91,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   const [busca, setBusca] = useState('');
   const [clientes, setClientes] = useState([]);
   const [novo, setNovo] = useState({ tipo: 'pf', nome: '', cpf_cnpj: '', whatsapp: '', email: '' });
+  const [receita, setReceita] = useState(''); // situação da busca do CNPJ
   const [itens, setItens] = useState([itemVazio()]);
   const [desconto, setDesconto] = useState('');
   const [observacoes, setObservacoes] = useState('');
@@ -131,6 +133,27 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     return () => clearTimeout(t);
   }, [busca, modoCliente, loja]);
 
+  // CNPJ completo e válido: busca razão social e contato nos dados públicos da Receita
+  async function mudarDocumento(valor) {
+    const doc = novo.tipo === 'pj' ? mascaraCnpj(valor) : mascaraCpf(valor);
+    setNovo((n) => ({ ...n, cpf_cnpj: doc }));
+    setReceita('');
+    if (novo.tipo !== 'pj' || doc.replace(/\D/g, '').length < 14) return;
+    if (!cnpjValido(doc)) return setReceita('CNPJ inválido. Confira os números.');
+    setReceita('Buscando na Receita…');
+    try {
+      const r = await api(`/cnpj/${doc.replace(/\D/g, '')}`);
+      setNovo((n) => ({
+        ...n, nome: r.razao_social || n.nome,
+        whatsapp: n.whatsapp || (r.telefone ? mascaraTelefone(r.telefone) : ''), email: n.email || r.email || '',
+        cep: r.cep, endereco: r.endereco, cidade: r.cidade, uf: r.uf,
+      }));
+      setReceita(`Encontrado na Receita${r.situacao ? ` · situação: ${r.situacao}` : ''}${r.cidade ? ` · ${r.cidade}/${r.uf}` : ''}`);
+    } catch (falha) {
+      setReceita(falha.message);
+    }
+  }
+
   const precoDe = (servicoId, tipoVeiculo) => {
     const s = servicos.find((x) => x.id === servicoId);
     if (!s) return '';
@@ -156,7 +179,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     setErro('');
     if (modoCliente === 'buscar' && !cliente) return setErro('Escolha o cliente na lista.');
     if (modoCliente === 'novo' && !novo.nome.trim()) return setErro('Informe o nome do cliente.');
-    if (modoCliente === 'novo' && novo.tipo !== 'avulso' && !novo.cpf_cnpj.trim()) return setErro(`Informe o ${novo.tipo === 'pj' ? 'CNPJ' : 'CPF'}.`);
+    if (modoCliente === 'novo' && novo.tipo === 'pf' && !cpfValido(novo.cpf_cnpj)) return setErro('CPF inválido. Confira os números.');
+    if (modoCliente === 'novo' && novo.tipo === 'pj' && !cnpjValido(novo.cpf_cnpj)) return setErro('CNPJ inválido. Confira os números.');
     const placaRuim = itens.findIndex((i) => i.placa && !placaValida(i.placa));
     if (placaRuim >= 0) return setErro(`Item ${placaRuim + 1}: placa incompleta.`);
     setOcupado(true);
@@ -260,7 +284,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
                 <li key={c.id}>
                   <label className={cliente?.id === c.id ? 'opcao marcada' : 'opcao'}>
                     <input type="radio" name="cliente-escolhido" checked={cliente?.id === c.id} onChange={() => setCliente(c)} />
-                    <strong>{c.nome}</strong><small className="cinza">{c.tipo === 'pj' ? 'Empresa' : 'Pessoa física'}{c.cpf_cnpj && ` · ${c.cpf_cnpj}`}</small>
+                    <strong>{c.nome}</strong><small className="cinza">{c.tipo === 'pj' ? 'Empresa' : 'Pessoa física'}{c.cpf_cnpj && ` · ${formatarDoc(c.cpf_cnpj)}`}</small>
                   </label>
                 </li>
               ))}
@@ -270,14 +294,18 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
         {modoCliente === 'novo' && (
           <div className="dados-veiculo">
             <label>Tipo
-              <select value={novo.tipo} onChange={(e) => setNovo({ ...novo, tipo: e.target.value })}>
+              <select value={novo.tipo} onChange={(e) => { setNovo({ ...novo, tipo: e.target.value, cpf_cnpj: '' }); setReceita(''); }}>
                 <option value="pf">Pessoa física</option><option value="pj">Empresa</option>
               </select>
             </label>
+            <label>{novo.tipo === 'pj' ? 'CNPJ' : 'CPF'}
+              <input value={novo.cpf_cnpj} inputMode="numeric" placeholder={novo.tipo === 'pj' ? '12.345.678/0001-90' : '123.456.789-10'}
+                onChange={(e) => mudarDocumento(e.target.value)} />
+            </label>
             <label>{novo.tipo === 'pj' ? 'Razão social' : 'Nome'}<input value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} /></label>
-            <label>{novo.tipo === 'pj' ? 'CNPJ' : 'CPF'}<input value={novo.cpf_cnpj} inputMode="numeric" onChange={(e) => setNovo({ ...novo, cpf_cnpj: e.target.value })} /></label>
-            <label>WhatsApp<input value={novo.whatsapp} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => setNovo({ ...novo, whatsapp: e.target.value })} /></label>
+            <label>WhatsApp<input value={novo.whatsapp} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => setNovo({ ...novo, whatsapp: mascaraTelefone(e.target.value) })} /></label>
             <label>E-mail<input value={novo.email} type="email" placeholder="Opcional" onChange={(e) => setNovo({ ...novo, email: e.target.value })} /></label>
+            {receita && <small className="aviso-receita">{receita}</small>}
           </div>
         )}
       </fieldset>

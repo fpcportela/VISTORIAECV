@@ -1,4 +1,5 @@
 // Peças usadas pelas rotas dos módulos
+import { cnpjValido, cpfValido } from './documentos.js';
 
 export const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -37,6 +38,8 @@ export async function resolverCliente(db, { empresa, loja, cliente_id, cliente_n
     const n = cliente_novo;
     const doc = texto(n.cpf_cnpj, 20)?.replace(/\D/g, '') || null;
     if (doc && ![11, 14].includes(doc.length)) throw new Recusa(400, 'CPF deve ter 11 números e CNPJ 14.');
+    if (doc?.length === 11 && !cpfValido(doc)) throw new Recusa(400, 'CPF inválido. Confira os números.');
+    if (doc?.length === 14 && !cnpjValido(doc)) throw new Recusa(400, 'CNPJ inválido. Confira os números.');
     let tipo = ['pf', 'pj'].includes(n.tipo) ? n.tipo : (doc?.length === 14 ? 'pj' : doc ? 'pf' : 'avulso');
     if (tipo !== 'avulso' && !doc) tipo = 'avulso';
     if (doc) {
@@ -44,10 +47,12 @@ export async function resolverCliente(db, { empresa, loja, cliente_id, cliente_n
       if (existe) return existe.id;
     }
     return (await db.query(
-      `insert into clientes (empresa_id, tipo, nome, cpf_cnpj, whatsapp, email)
-       values ($1, $2, $3, $4, $5, $6) returning id`,
+      `insert into clientes (empresa_id, tipo, nome, cpf_cnpj, whatsapp, email, cep, endereco, cidade, uf)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
       [empresa, tipo, texto(n.nome, 120).toUpperCase(), doc,
-       texto(n.whatsapp, 20)?.replace(/\D/g, '') || null, texto(n.email, 120)?.toLowerCase() || null])).rows[0].id;
+       texto(n.whatsapp, 20)?.replace(/\D/g, '') || null, texto(n.email, 120)?.toLowerCase() || null,
+       texto(n.cep, 9)?.replace(/\D/g, '') || null, texto(n.endereco, 200), texto(n.cidade, 80),
+       /^[A-Z]{2}$/i.test(n.uf || '') ? n.uf.toUpperCase() : null])).rows[0].id;
   }
   return (await db.query(
     "select id from clientes where empresa_id = $1 and tipo = 'avulso' and nome = 'CLIENTE PARTICULAR / AVULSO'", [empresa])).rows[0]?.id

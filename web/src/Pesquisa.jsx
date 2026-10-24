@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, moeda } from './api.js';
 import { Icone } from './icones.jsx';
+import { formatarDoc } from './documentos.js';
 
 // Pesquisa geral do topo: placa, cliente (nome, CPF) ou empresa (razão social, CNPJ).
 // Mostra vistorias, vendas e clientes; com placa completa, oferece a consulta na API.
@@ -53,7 +54,7 @@ export default function Pesquisa({ loja, podeConsultarPlaca, aoVistoria, aoVenda
           {r.clientes.length > 0 && <h3>Clientes e empresas</h3>}
           {r.clientes.map((c) => (
             <button key={c.id} onClick={ir(() => aoCliente(c))}>
-              <strong>{c.nome}</strong> <small className="cinza">{c.tipo === 'pj' ? 'Empresa' : 'Pessoa física'}{c.cpf_cnpj && ` · ${c.cpf_cnpj}`}</small>
+              <strong>{c.nome}</strong> <small className="cinza">{c.tipo === 'pj' ? 'Empresa' : 'Pessoa física'}{c.cpf_cnpj && ` · ${formatarDoc(c.cpf_cnpj)}`}</small>
             </button>
           ))}
           {vazio && !(r.placa && podeConsultarPlaca) && <p className="cinza">Nada encontrado para “{q}”.</p>}

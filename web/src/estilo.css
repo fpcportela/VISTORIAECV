@@ -400,3 +400,4 @@ fieldset:disabled .placa-br input { color: #374151; }
 .placa-br.antiga .placa-br-corpo input::placeholder { color: #8b919b; }
 .placa-campo label.placa-antiga { flex-direction: row; gap: 6px; }
 .placa-campo .placa-antiga input { min-height: 0; padding: 0; border: none; width: 16px; height: 16px; }
+.aviso-receita { grid-column: 1 / -1; font-size: 13px; color: var(--cinza); }

@@ -1,6 +1,7 @@
 import { comoUsuario } from './db.js';
 import { normalizarPlaca } from './placas.js';
 import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './comum.js';
+import { cnpjValido, consultarCnpj } from './documentos.js';
 
 const TIPOS_VEICULO = ['carro', 'moto', 'caminhao', 'outro'];
 const dinheiro = (v) => {
@@ -268,6 +269,15 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, 'cancelada', $3)", [v.id, req.usuarioId, motivo]);
     });
     res.json({ ok: true });
+  }));
+
+  // Razão social e contato pelo CNPJ (dados públicos da Receita via BrasilAPI)
+  app.get('/api/cnpj/:cnpj', exigeLogin, comRecusa(async (req, res) => {
+    const cnpj = String(req.params.cnpj).replace(/\D/g, '');
+    if (!cnpjValido(cnpj)) throw new Recusa(400, 'CNPJ inválido. Confira os números.');
+    const r = await consultarCnpj(cnpj);
+    if (r.erro) throw new Recusa(r.status, r.erro);
+    res.json(r);
   }));
 
   // ---------------------------------------------------------------- pesquisa geral
