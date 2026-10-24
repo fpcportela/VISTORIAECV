@@ -342,7 +342,7 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 /* ---------- Vendas ---------- */
 .venda-aberta { background: #fef3c7; color: #92400e; }
 .venda-finalizada { background: #dcfce7; color: var(--positivo); }
-.venda-cancelada { background: #f1f5f9; color: var(--cinza); }
+.venda-cancelada { background: #fde8e8; color: var(--negativo); }
 .tabela-vendas { display: flex; flex-direction: column; gap: 8px; }
 .linha-venda { border: none; padding: 12px 16px; display: grid; grid-template-columns: 120px minmax(0, 1fr) 100px 130px 100px; align-items: center; gap: 12px; text-align: left; color: var(--texto); font-size: 14px; }
 .linha-venda > span { display: flex; flex-direction: column; min-width: 0; }
@@ -401,3 +401,7 @@ fieldset:disabled .placa-br input { color: #374151; }
 .placa-campo label.placa-antiga { flex-direction: row; gap: 6px; }
 .placa-campo .placa-antiga input { min-height: 0; padding: 0; border: none; width: 16px; height: 16px; }
 .aviso-receita { grid-column: 1 / -1; font-size: 13px; color: var(--cinza); }
+.acoes-cabecalho { display: flex; flex-wrap: wrap; gap: 8px; }
+.filtro-data { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--cinza); }
+.filtros .filtro-data input { flex: none; min-width: 0; }
+@media (max-width: 820px) { .filtro-data { flex: 1; } .filtros .filtro-data input { flex: 1; } }

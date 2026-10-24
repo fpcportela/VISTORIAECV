@@ -315,7 +315,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'vendas' ? (vendaId
               ? <EditorVenda key={vendaId} id={vendaId === 'nova' ? null : vendaId} perfil={perfil} lojaInicial={loja}
                   lojasPermitidas={lojasCom('vendas.criar')} aoVoltar={() => setVendaId(null)} aoSalvo={(id) => setVendaId(id)} />
-              : <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} podeCriar={tem('vendas.criar')} aoAbrir={setVendaId} aoNova={novaVenda} />)
+              : <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} podeCriar={tem('vendas.criar')} aoAbrir={setVendaId} aoNova={novaVenda} />)
             : tela === 'vistorias' ? (vistoriaId
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)

@@ -17,34 +17,68 @@ const itemVazio = () => ({ servico_id: '', placa: '', tipo_veiculo: null, veicul
 // ---------------------------------------------------------------------------
 // Lista de vendas e orçamentos
 // ---------------------------------------------------------------------------
-export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '' }) {
-  const [periodo, setPeriodo] = useState(buscaInicial ? '' : 'mes');
+const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const PERIODOS = {
+  hoje: () => [hoje(), hoje()],
+  mes: () => { const d = new Date(); return [iso(new Date(d.getFullYear(), d.getMonth(), 1)), hoje()]; },
+  anterior: () => { const d = new Date(); return [iso(new Date(d.getFullYear(), d.getMonth() - 1, 1)), iso(new Date(d.getFullYear(), d.getMonth(), 0))]; },
+  todas: () => ['', ''],
+};
+
+export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', empresa }) {
+  const [[de, ate], setIntervalo] = useState(buscaInicial ? PERIODOS.todas() : PERIODOS.mes());
   const [situacao, setSituacao] = useState('');
   const [tipo, setTipo] = useState('');
-  const [busca, setBusca] = useState(buscaInicial);
+  const [cliente, setCliente] = useState(buscaInicial);
+  const [busca, setBusca] = useState('');
   const [lista, setLista] = useState(null);
   const [erro, setErro] = useState('');
+  const [gerando, setGerando] = useState(false);
 
   useEffect(() => {
-    const q = new URLSearchParams({ ...(loja && { loja }), ...(periodo && { periodo }), ...(situacao && { situacao }), ...(tipo && { tipo }), ...(busca.trim() && { busca: busca.trim() }) });
-    const t = setTimeout(() => api(`/vendas?${q}`).then((l) => { setLista(l); setErro(''); }).catch((f) => setErro(f.message)), busca ? 300 : 0);
+    const q = new URLSearchParams({ ...(loja && { loja }), ...(de && { de }), ...(ate && { ate }), ...(situacao && { situacao }), ...(tipo && { tipo }),
+      ...(cliente.trim() && { cliente: cliente.trim() }), ...(busca.trim() && { busca: busca.trim() }) });
+    const t = setTimeout(() => api(`/vendas?${q}`).then((l) => { setLista(l); setErro(''); }).catch((f) => setErro(f.message)), busca || cliente ? 300 : 0);
     return () => clearTimeout(t);
-  }, [loja, periodo, situacao, tipo, busca]);
+  }, [loja, de, ate, situacao, tipo, cliente, busca]);
 
   const total = (lista || []).filter((v) => v.situacao !== 'cancelada' && v.tipo === 'venda_avulsa').reduce((t, v) => t + v.valor_total, 0);
+  const periodoAtivo = Object.keys(PERIODOS).find((k) => { const [a, b] = PERIODOS[k](); return a === de && b === ate; });
+
+  async function pdf() {
+    setGerando(true);
+    try {
+      const filtros = [
+        de || ate ? `Período: ${de ? dataBR(de) : 'início'} a ${ate ? dataBR(ate) : 'hoje'}` : 'Todo o período',
+        cliente.trim() && `Cliente: ${cliente.trim()}`, busca.trim() && `Busca: ${busca.trim()}`,
+        tipo && TIPOS_VENDA[tipo], situacao && SITUACOES[situacao],
+      ].filter(Boolean);
+      const { gerarPdfVendas } = await import('./relatorioVendas.js');
+      await gerarPdfVendas({ lista, filtros, empresa });
+    } catch (falha) {
+      setErro(`Não foi possível gerar o PDF: ${falha.message}`);
+    } finally {
+      setGerando(false);
+    }
+  }
 
   return (
     <>
       <div className="cabecalho">
         <h1>Vendas</h1>
-        {podeCriar && <button className="botao-primario" onClick={aoNova}><Icone nome="mais" tamanho={18} /> Nova venda</button>}
+        <span className="acoes-cabecalho">
+          <button className="botao-contorno" onClick={pdf} disabled={gerando || !lista?.length}>{gerando ? 'Gerando…' : 'Gerar PDF'}</button>
+          {podeCriar && <button className="botao-primario" onClick={aoNova}><Icone nome="mais" tamanho={18} /> Nova venda</button>}
+        </span>
       </div>
       <div className="filtros">
         <div className="abas" role="tablist">
-          {[['hoje', 'Hoje'], ['mes', 'Este mês'], ['', 'Todas']].map(([v, n]) => (
-            <button key={v} role="tab" aria-selected={periodo === v} className={periodo === v ? 'ativa' : ''} onClick={() => setPeriodo(v)}>{n}</button>
+          {[['hoje', 'Hoje'], ['mes', 'Este mês'], ['anterior', 'Mês passado'], ['todas', 'Todas']].map(([v, n]) => (
+            <button key={v} role="tab" aria-selected={periodoAtivo === v} className={periodoAtivo === v ? 'ativa' : ''} onClick={() => setIntervalo(PERIODOS[v]())}>{n}</button>
           ))}
         </div>
+        <label className="filtro-data">De<input type="date" value={de} max={ate || undefined} onChange={(e) => setIntervalo([e.target.value, ate])} /></label>
+        <label className="filtro-data">Até<input type="date" value={ate} min={de || undefined} onChange={(e) => setIntervalo([de, e.target.value])} /></label>
         <select value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo">
           <option value="">Vendas e orçamentos</option>
           {Object.entries(TIPOS_VENDA).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
@@ -53,7 +87,8 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
           <option value="">Todas as situações</option>
           {Object.entries(SITUACOES).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
         </select>
-        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Placa, cliente, CPF/CNPJ ou nº" aria-label="Buscar venda" />
+        <input type="search" value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Cliente, CPF ou CNPJ" aria-label="Filtrar por cliente, CPF ou CNPJ" />
+        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Placa ou nº da venda" aria-label="Buscar por placa ou número" />
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {lista === null ? <p className="cinza">Carregando…</p> : lista.length === 0 ? (
@@ -65,7 +100,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
             {lista.map((v) => (
               <button key={v.id} className="cartao linha-venda" role="row" onClick={() => aoAbrir(v.id)}>
                 <span className="lv-num"><strong>Nº {v.numero}</strong><small className="cinza">{TIPOS_VENDA[v.tipo]}</small></span>
-                <span className="lv-cliente"><strong>{v.cliente}</strong><small className="cinza">{v.placas || 'Sem placa'}{!loja && ` · ${v.loja}`}</small></span>
+                <span className="lv-cliente"><strong>{v.cliente}</strong><small className="cinza">{v.cpf_cnpj && `${formatarDoc(v.cpf_cnpj)} · `}{v.placas || 'Sem placa'}{!loja && ` · ${v.loja}`}</small></span>
                 <span className="lv-data">{dataBR(v.data_venda)}</span>
                 <span className="lv-valor">R$ {moeda(v.valor_total)}</span>
                 <Etiqueta situacao={v.situacao} />

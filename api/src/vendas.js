@@ -90,9 +90,13 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const tipo = ['orcamento', 'venda_avulsa'].includes(req.query.tipo) ? req.query.tipo : null;
     const periodo = ['hoje', 'mes'].includes(req.query.periodo) ? req.query.periodo : null;
     const busca = texto(req.query.busca, 60);
+    // Cliente: nome, CPF ou CNPJ (com ou sem pontuação)
+    const cliente = texto(req.query.cliente, 60);
+    const docCliente = cliente?.replace(/\D/g, '') || '';
+    const de = dataValida(req.query.de), ate = dataValida(req.query.ate);
     const lista = await comoUsuario(req.usuarioId, async (db) => (await db.query(
-      `select v.id, v.numero, v.tipo, v.situacao, v.data_venda, v.valor_total, v.loja_id, l.nome as loja,
-              c.nome as cliente, u.nome as vendedor,
+      `select v.id, v.numero, v.tipo, v.situacao, v.data_venda, v.valor_bruto, v.desconto, v.valor_total, v.loja_id, l.nome as loja,
+              c.nome as cliente, c.cpf_cnpj, u.nome as vendedor,
               (select string_agg(distinct ve.placa, ', ') from venda_itens i join veiculos ve on ve.id = i.veiculo_id
                 where i.venda_id = v.id) as placas
          from vendas v
@@ -109,8 +113,11 @@ export function rotasVendas(app, { exigeLogin, rota }) {
                or c.cpf_cnpj like regexp_replace($5, '\\D', '', 'g') || '%' and regexp_replace($5, '\\D', '', 'g') <> ''
                or exists (select 1 from venda_itens i join veiculos ve on ve.id = i.veiculo_id
                            where i.venda_id = v.id and ve.placa ilike '%' || regexp_replace($5, '[^A-Za-z0-9]', '', 'g') || '%'))
+          and ($6::text is null or c.nome ilike '%' || $6 || '%' or ($7 <> '' and length($7) >= 3 and c.cpf_cnpj like $7 || '%'))
+          and ($8::date is null or v.data_venda >= $8)
+          and ($9::date is null or v.data_venda <= $9)
         order by v.data_venda desc, v.numero desc
-        limit 200`, [loja, situacao, tipo, periodo, busca])).rows);
+        limit 1000`, [loja, situacao, tipo, periodo, busca, cliente, docCliente, de, ate])).rows);
     res.json(lista);
   }));
 
