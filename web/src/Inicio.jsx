@@ -175,19 +175,19 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         )}
       </section>
 
-      {tem('vistorias.ver') && (
+      {tem('vendas.ver') && (
         <>
           <section className="bloco">
             <div className="bloco-topo">
-              <h2>Vistorias de hoje</h2>
-              {tem('vistorias.criar') && <button className="botao-contorno pequeno so-computador" onClick={() => setNovaVistoria(true)}>+ Nova vistoria</button>}
+              <h2>Vistorias vendidas hoje</h2>
+              {tem('vendas.criar') && <button className="botao-contorno pequeno so-computador" onClick={novaVenda}>+ Nova venda</button>}
             </div>
             {contadores(hoje)}
           </section>
 
           <section className="bloco">
             <div className="bloco-topo">
-              <h2>Vistorias realizadas em {nomeMes}</h2>
+              <h2>Vistorias vendidas em {nomeMes}</h2>
               <small className="cinza total">Total: {mes ? mes.carros + mes.motos + mes.caminhoes : '–'}</small>
             </div>
             {contadores(mes)}
@@ -264,7 +264,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
         {pesquisa('so-computador')}
-        {tem('vistorias.criar') && <button className="botao-primario" onClick={() => setNovaVistoria(true)}><Icone nome="mais" tamanho={18} /> <span className="rotulo">Nova vistoria</span></button>}
         <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
         <div className="empresa">
@@ -327,9 +326,9 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       {/* ---------- Navegação inferior (celular) ---------- */}
       <nav className="barra-inferior so-celular" aria-label="Navegação">
         <button className={tela === 'inicio' ? 'ativo' : ''} onClick={() => abrir('inicio')}><Icone nome="inicio" tamanho={22} />Início</button>
-        {tem('vistorias.ver') ? <button className={tela === 'vistorias' ? 'ativo' : ''} onClick={() => abrir('vistorias')}><Icone nome="vistorias" tamanho={22} />Vistorias</button> : <span />}
+        {tem('placa.consultar') ? <button onClick={() => setConsulta('')}><Icone nome="busca" tamanho={22} />Placa</button> : <span />}
         <span>
-          {tem('vistorias.criar') && <button className="botao-central" onClick={() => setNovaVistoria(true)} aria-label="Nova vistoria"><Icone nome="mais" tamanho={26} traco={2.6} /></button>}
+          {tem('vendas.criar') && <button className="botao-central" onClick={novaVenda} aria-label="Nova venda"><Icone nome="mais" tamanho={26} traco={2.6} /></button>}
         </span>
         {tem('vendas.ver') ? <button className={tela === 'vendas' ? 'ativo' : ''} onClick={() => abrir('vendas')}><Icone nome="vendas" tamanho={22} />Vendas</button>
           : tem('financeiro.ver') ? <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}

@@ -1,7 +1,8 @@
 // Módulos do sistema: aparecem no menu e nos atalhos só para quem tem a
 // permissão no perfil da loja (o master vê todos).
 export const MODULOS = [
-  { id: 'vistorias', nome: 'Vistorias', curto: 'Vistorias', permissao: 'vistorias.ver', sub: true },
+  // Vistorias: oculto. A vistoria é feita no sistema obrigatório do Detran; aqui
+  // ficam só as vendas. As telas continuam no código (Vistorias.jsx) se voltar.
   { id: 'busca', nome: 'Consulta de placa', curto: 'Placa', permissao: 'placa.consultar' },
   { id: 'camera', nome: 'Ler placa por foto', curto: 'Foto da placa', permissao: 'placa.foto' },
   { id: 'vendas', nome: 'Vendas', curto: 'Vendas', permissao: 'vendas.ver' },

@@ -94,19 +94,23 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
          from resumo_contas
         where ($1::uuid is null or loja_id = $1) and pode(loja_id, 'financeiro.ver')
         group by tipo`, [loja])).rows;
-    // Hoje: vistorias do dia (exceto canceladas). Mês: realizadas (concluídas)
-    // no mês corrente, que zera sozinho na virada do mês.
+    // A vistoria é feita no sistema do Detran; aqui conta o que foi vendido:
+    // itens de serviço que geram vistoria, nas vendas finalizadas, por tipo de veículo.
+    // Mês corrente zera sozinho na virada do mês.
     const vistorias = (await db.query(
-      `select v.tipo,
-              count(vi.id) filter (where vi.status <> 'cancelada'
-                and coalesce(vi.agendada_para, vi.criado_em)::date = current_date)::int as hoje,
-              count(vi.id) filter (where vi.status = 'concluida'
-                and vi.concluida_em >= date_trunc('month', current_date))::int as mes
-         from unnest(enum_range(null::tipo_veiculo)) as v(tipo)
-         left join veiculos ve on ve.tipo = v.tipo
-         left join vistorias vi on vi.veiculo_id = ve.id
-              and ($1::uuid is null or vi.loja_id = $1) and pode(vi.loja_id, 'vistorias.ver')
-        group by v.tipo`, [loja])).rows;
+      `select t.tipo,
+              coalesce(sum(i.quantidade) filter (where v.data_venda = current_date), 0)::int as hoje,
+              coalesce(sum(i.quantidade), 0)::int as mes
+         from unnest(enum_range(null::tipo_veiculo)) as t(tipo)
+         left join veiculos ve on ve.tipo = t.tipo
+         left join venda_itens i on i.veiculo_id = ve.id
+              and exists (select 1 from servicos s where s.id = i.servico_id and s.gera_vistoria)
+         left join vendas v on v.id = i.venda_id
+              and v.situacao = 'finalizada' and v.tipo = 'venda_avulsa'
+              and v.data_venda >= date_trunc('month', current_date)
+              and ($1::uuid is null or v.loja_id = $1) and pode(v.loja_id, 'vendas.ver')
+        where v.id is not null or i.id is null
+        group by t.tipo`, [loja])).rows;
     const royalties = (await db.query(
       `select coalesce(sum(valor_total), 0) as total
          from apuracoes_royalty
