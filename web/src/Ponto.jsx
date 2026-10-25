@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, sessao } from './api.js';
 import { criarTem } from './modulos.js';
 import { Icone } from './icones.jsx';
+import { abrirArquivo } from './Colaboradores.jsx';
 
 // Controle de ponto dos colaboradores: registro com foto (entrada, saída para o
 // almoço, volta do almoço, saída) e espelho do mês com edição e justificativa.
@@ -80,6 +81,7 @@ function Registrar({ loja }) {
         <div className="ponto-feito" role="status">
           <strong>{MARCACOES[feito.tipo]} registrada às {horaBR(feito.hora)}</strong>
           <span>{feito.nome}</span>
+          {feito.comprovante && <small>O comprovante do dia vai para o WhatsApp do colaborador.</small>}
         </div>
       )}
       {erro && <p className="erro" role="alert">{erro}</p>}
@@ -203,6 +205,7 @@ function Espelho({ loja }) {
   const [detalhe, setDetalhe] = useState(null); // { data, tipo }
   const [justificando, setJustificando] = useState(null); // data
   const [foto, setFoto] = useState(null); // { id, titulo }
+  const [relatorio, setRelatorio] = useState(false);
   const [erro, setErro] = useState('');
 
   useEffect(() => {
@@ -218,6 +221,7 @@ function Espelho({ loja }) {
   const dias = Array.from({ length: new Date(ano, m, 0).getDate() }, (_, i) => `${mes}-${String(i + 1).padStart(2, '0')}`);
   const doDia = (d) => Object.fromEntries((dados?.registros || []).filter((r) => r.data === d && r.ativo).map((r) => [r.tipo, r]));
   const justificativa = (d) => dados?.justificativas.find((j) => j.data === d);
+  const comprovante = (d) => dados?.comprovantes?.find((c) => c.data === d);
   const totalMes = dias.reduce((t, d) => t + minutosDia(doDia(d)), 0);
 
   return (
@@ -228,6 +232,9 @@ function Espelho({ loja }) {
           {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
         </select>
         <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês" />
+        <button className="botao-contorno" onClick={() => setRelatorio(true)} disabled={!colaboradores.length}>
+          <Icone nome="relatorios" tamanho={18} /> Gerar relatório
+        </button>
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {dados && (
@@ -263,9 +270,20 @@ function Espelho({ loja }) {
                       ) : <span className="cinza">—</span>}
                     </span>
                   ))}
-                  <span data-rotulo="Horas">{minutosDia(marcas) ? duracao(minutosDia(marcas)) : ''}</span>
+                  <span data-rotulo="Horas" className="tp-horas">
+                    {minutosDia(marcas) ? duracao(minutosDia(marcas)) : ''}
+                    {comprovante(d) && (
+                      <button className={`tp-comprovante ${comprovante(d).envio}`} title={`Comprovante do dia nº ${comprovante(d).nsr}: ${ENVIO[comprovante(d).envio] || comprovante(d).envio}${comprovante(d).erro ? ` (${comprovante(d).erro})` : ''}`}
+                        aria-label={`Comprovante do dia ${new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}`}
+                        onClick={() => abrirArquivo(`/ponto/comprovante?colaborador=${colab}&data=${d}`).catch((f) => setErro(f.message))}>🧾</button>
+                    )}
+                  </span>
                   <span data-rotulo="Justificativa" className="tp-justificativa">
                     {j && <small title={`${j.criado_por || ''}`}>{j.texto}</small>}
+                    {j?.arquivos?.map((a) => (
+                      <button key={a.id} className="botao-texto tp-anexo" title="Abrir documento"
+                        onClick={() => abrirArquivo(`/ponto/justificativa/arquivos/${a.id}`).catch((f) => setErro(f.message))}>📎 {a.nome}</button>
+                    ))}
                     {dados.pode.justificar && <button className="botao-texto" onClick={() => setJustificando(d)}>{j ? 'Alterar' : 'Justificar'}</button>}
                   </span>
                 </div>
@@ -292,8 +310,10 @@ function Espelho({ loja }) {
       )}
       {justificando && dados && (
         <Justificar colaborador={dados.colaborador.id} data={justificando} atual={justificativa(justificando)?.texto || ''}
+          arquivos={justificativa(justificando)?.arquivos || []} aoMudar={carregar}
           aoFechar={() => setJustificando(null)} aoSalvar={() => { setJustificando(null); carregar(); }} />
       )}
+      {relatorio && <RelatorioPonto loja={loja} colaboradores={colaboradores} colab={colab} mes={mes} aoFechar={() => setRelatorio(false)} />}
     </>
   );
 }
@@ -363,17 +383,32 @@ function DetalheMarcacao({ dados, data, tipo, aoFechar, aoSalvar }) {
   );
 }
 
-function Justificar({ colaborador, data, atual, aoFechar, aoSalvar }) {
+function Justificar({ colaborador, data, atual, arquivos, aoMudar, aoFechar, aoSalvar }) {
   const [texto, setTexto] = useState(atual);
+  const [novos, setNovos] = useState([]); // arquivos escolhidos, enviados ao salvar
   const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
   async function salvar(e) {
     e.preventDefault();
+    if (novos.length && !texto.trim()) return setErro('Escreva a justificativa para anexar o documento.');
+    setSalvando(true); setErro('');
     try {
       await api('/ponto/justificativa', { metodo: 'PUT', corpo: { colaborador_id: colaborador, data, texto } });
+      for (const arq of novos) {
+        const q = new URLSearchParams({ colaborador, data, nome: arq.name, mime: arq.type || 'application/octet-stream' });
+        const r = await fetch(`/api/ponto/justificativa/arquivos?${q}`, {
+          method: 'POST', body: arq, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || (r.status === 413 ? `"${arq.name}" passa de 15 MB.` : `Não foi possível enviar "${arq.name}".`));
+      }
       aoSalvar();
     } catch (falha) {
-      setErro(falha.message);
+      setErro(falha.message); setSalvando(false);
     }
+  }
+  async function excluir(a) {
+    if (!confirm(`Excluir o documento "${a.nome}"?`)) return;
+    try { await api(`/ponto/justificativa/arquivos/${a.id}`, { metodo: 'DELETE' }); aoMudar(); } catch (falha) { setErro(falha.message); }
   }
   return (
     <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
@@ -384,11 +419,75 @@ function Justificar({ colaborador, data, atual, aoFechar, aoSalvar }) {
         </div>
         <form className="formulario" onSubmit={salvar}>
           <label>Justificativa<textarea rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ex.: atestado médico, folga combinada…" autoFocus /></label>
-          <small className="cinza">Deixe em branco e salve para apagar a justificativa.</small>
+          <small className="cinza">Deixe em branco e salve para apagar a justificativa (e os documentos dela).</small>
+          <fieldset className="grupo-permissoes">
+            <legend>Documentos (atestado, declaração…)</legend>
+            {arquivos.length > 0 && (
+              <ul className="lista-arquivos">
+                {arquivos.map((a) => (
+                  <li key={a.id}>
+                    <button type="button" className="botao-texto" onClick={() => abrirArquivo(`/ponto/justificativa/arquivos/${a.id}`).catch((f) => setErro(f.message))}>📎 {a.nome}</button>
+                    <button type="button" className="fechar" aria-label={`Excluir ${a.nome}`} onClick={() => excluir(a)}>×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {novos.map((a, i) => (
+              <small key={i} className="cinza">Vai anexar: {a.name} <button type="button" className="botao-texto" onClick={() => setNovos(novos.filter((_, k) => k !== i))}>tirar</button></small>
+            ))}
+            <input type="file" multiple aria-label="Anexar documento" onChange={(e) => { setNovos([...novos, ...e.target.files]); e.target.value = ''; }} />
+          </fieldset>
           {erro && <p className="erro" role="alert">{erro}</p>}
           <div className="acoes-modal">
             <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
-            <button className="botao-primario">Salvar</button>
+            <button className="botao-primario" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+const ENVIO = { enviado: 'enviado pelo WhatsApp', simulado: 'WhatsApp em modo teste', sem_celular: 'colaborador sem celular', sem_whatsapp: 'grupo sem WhatsApp', falhou: 'não enviado', pendente: 'enviando' };
+
+// Relatório do mês em PDF: um colaborador ou todos, com a linha de assinatura
+function RelatorioPonto({ loja, colaboradores, colab, mes, aoFechar }) {
+  const [quem, setQuem] = useState(colab || '');
+  const [mesR, setMesR] = useState(mes);
+  const [erro, setErro] = useState('');
+  const [gerando, setGerando] = useState(false);
+  async function gerar(e) {
+    e.preventDefault(); setErro(''); setGerando(true);
+    try {
+      const d = await api(`/ponto/relatorio?loja=${loja}&mes=${mesR}${quem ? `&colaborador=${quem}` : ''}`);
+      if (!d.colaboradores.length) throw new Error('Nenhum colaborador com ponto neste mês.');
+      const { gerarPdfPonto } = await import('./relatorioPonto.js');
+      await gerarPdfPonto({ ...d, mes: mesR });
+      aoFechar();
+    } catch (falha) {
+      setErro(falha.message); setGerando(false);
+    }
+  }
+  return (
+    <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-label="Relatório do ponto">
+        <div className="modal-topo">
+          <h2>Relatório do ponto</h2>
+          <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+        <form className="formulario" onSubmit={gerar}>
+          <label>Colaborador
+            <select value={quem} onChange={(e) => setQuem(e.target.value)}>
+              <option value="">Todos os colaboradores</option>
+              {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </label>
+          <label>Mês<input type="month" value={mesR} onChange={(e) => setMesR(e.target.value)} required /></label>
+          <small className="cinza">Sai um PDF com uma página por colaborador e, embaixo, o nome dele com a linha para assinatura.</small>
+          {erro && <p className="erro" role="alert">{erro}</p>}
+          <div className="acoes-modal">
+            <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
+            <button className="botao-primario" disabled={gerando}>{gerando ? 'Gerando…' : 'Gerar PDF'}</button>
           </div>
         </form>
       </section>

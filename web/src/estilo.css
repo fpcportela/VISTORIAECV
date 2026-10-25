@@ -826,3 +826,8 @@ button.tf-linha:hover { border-color: var(--forte); }
   .robo-config .grade-2 { grid-template-columns: 1fr; }
   .robo-etapas li { grid-template-columns: 1fr; }
 }
+.tp-horas { display: inline-flex; align-items: center; gap: 4px; }
+.tp-comprovante { background: none; border: 1px solid transparent; padding: 0 3px; cursor: pointer; border-radius: 6px; font-size: 14px; line-height: 1.4; }
+.tp-comprovante:hover { background: #eef1f6; }
+.tp-comprovante.falhou, .tp-comprovante.sem_celular, .tp-comprovante.sem_whatsapp { border-color: #f5b5b5; }
+.tp-anexo { white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }

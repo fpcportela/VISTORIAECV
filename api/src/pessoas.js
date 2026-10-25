@@ -2,6 +2,7 @@ import express from 'express';
 import { comoUsuario } from './db.js';
 import { cpfValido } from './documentos.js';
 import { Recusa, UUID, criarComRecusa, exigir, texto } from './comum.js';
+import { comprovanteDoDia } from './comprovantePonto.js';
 
 // Colaboradores (cadastro de funcionários, com arquivos) e controle de ponto com foto.
 // O acesso por loja vem do banco (RLS); aqui ficam as permissões de cada ação.
@@ -252,10 +253,12 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       if (!tipo) throw new Recusa(400, 'As quatro marcações de hoje já foram registradas. Para corrigir, use a edição no espelho do ponto.');
       return (await db.query(
         `insert into ponto_registros (colaborador_id, loja_id, data, tipo, hora, foto, foto_mime, registrado_por)
-         values ($1, $2, (now() at time zone '${FUSO}')::date, $3, now(), $4, $5, $6) returning id, tipo, hora`,
+         values ($1, $2, (now() at time zone '${FUSO}')::date, $3, now(), $4, $5, $6) returning id, tipo, hora, data::text, colaborador_id`,
         [c.id, lojaPonto, tipo, foto.bytes, foto.mime, req.usuarioId])).rows[0];
     });
-    res.json(r);
+    res.json({ id: r.id, tipo: r.tipo, hora: r.hora, comprovante: r.tipo === 'saida' });
+    // saída final: comprovante do dia para o colaborador pelo WhatsApp
+    if (r.tipo === 'saida') comprovanteDoDia(req.usuarioId, r.colaborador_id, r.data).catch((e) => console.error('[comprovante ponto]', e.message));
   }));
 
   // ------------------------------------------------------------ ponto: espelho, foto, edição e justificativa
@@ -272,11 +275,16 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
           where r.colaborador_id = $1 and to_char(r.data, 'YYYY-MM') = $2
           order by r.data, r.criado_em`, [c.id, mes])).rows;
       const justificativas = (await db.query(
-        `select j.data, j.texto, u.nome as criado_por, j.criado_em
+        `select j.data, j.texto, u.nome as criado_por, j.criado_em,
+                coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'nome', a.nome_arquivo, 'tamanho', a.tamanho) order by a.criado_em)
+                            from ponto_justificativa_arquivos a where a.justificativa_id = j.id), '[]') as arquivos
            from ponto_justificativas j left join usuarios u on u.id = j.criado_por
           where j.colaborador_id = $1 and to_char(j.data, 'YYYY-MM') = $2`, [c.id, mes])).rows;
+      const comprovantes = (await db.query(
+        `select data, nsr, envio, erro, criado_em from ponto_comprovantes
+          where colaborador_id = $1 and to_char(data, 'YYYY-MM') = $2`, [c.id, mes])).rows;
       const pode = (await db.query("select pode_colaborador($1, 'ponto.ajustar') as ajustar, pode_colaborador($1, 'ponto.justificar') as justificar", [c.id])).rows[0];
-      return { colaborador: { id: c.id, nome: c.nome, cargo: c.cargo, loja_id: c.loja_id }, registros, justificativas, pode };
+      return { colaborador: { id: c.id, nome: c.nome, cargo: c.cargo, loja_id: c.loja_id }, registros, justificativas, comprovantes, pode };
     }));
   }));
 
@@ -330,5 +338,110 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
         [c.id, data, textoJ, req.usuarioId]);
     });
     res.json({ ok: true });
+  }));
+
+  // Comprovante do dia (PDF) e reenvio pelo WhatsApp
+  app.get('/api/ponto/comprovante', exigeLogin, comRecusa(async (req, res) => {
+    const data = dataValida(req.query.data);
+    if (!data) throw new Recusa(400, 'Data inválida.');
+    const p = await comoUsuario(req.usuarioId, async (db) => {
+      const c = await colaborador(db, req.query.colaborador);
+      await exigirColab(db, c, 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
+      return (await db.query('select pdf from ponto_comprovantes where colaborador_id = $1 and data = $2', [c.id, data])).rows[0];
+    });
+    if (!p) throw new Recusa(404, 'Comprovante não encontrado.');
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', `inline; filename="comprovante-ponto-${data}.pdf"`);
+    res.send(p.pdf);
+  }));
+
+  app.post('/api/ponto/comprovante/reenviar', exigeLogin, comRecusa(async (req, res) => {
+    const data = dataValida(req.body?.data);
+    if (!data) throw new Recusa(400, 'Data inválida.');
+    const c = await comoUsuario(req.usuarioId, async (db) => {
+      const x = await colaborador(db, req.body?.colaborador_id);
+      await exigirColab(db, x, 'ponto.ajustar', 'Seu perfil não pode reenviar o comprovante.');
+      if (!(await db.query('select 1 from ponto_registros where colaborador_id = $1 and data = $2 and ativo', [x.id, data])).rowCount) {
+        throw new Recusa(400, 'Não há marcações neste dia.');
+      }
+      return x;
+    });
+    await comprovanteDoDia(req.usuarioId, c.id, data);
+    const r = await comoUsuario(req.usuarioId, async (db) => (await db.query('select envio, erro from ponto_comprovantes where colaborador_id = $1 and data = $2', [c.id, data])).rows[0]);
+    res.json(r);
+  }));
+
+  // Documentos anexados à justificativa (o corpo é o próprio arquivo)
+  app.post('/api/ponto/justificativa/arquivos', exigeLogin,
+    express.raw({ type: () => true, limit: MAX_ARQUIVO }),
+    comRecusa(async (req, res) => {
+      const conteudo = req.body;
+      if (!Buffer.isBuffer(conteudo) || !conteudo.length) throw new Recusa(400, 'Escolha o arquivo.');
+      const data = dataValida(req.query.data);
+      if (!data) throw new Recusa(400, 'Data inválida.');
+      const nome = texto(req.query.nome, 150) || 'documento';
+      const mime = /^[\w.+-]+\/[\w.+-]+$/.test(req.query.mime || '') ? req.query.mime : 'application/octet-stream';
+      const id = await comoUsuario(req.usuarioId, async (db) => {
+        const c = await colaborador(db, req.query.colaborador);
+        await exigirColab(db, c, 'ponto.justificar', 'Seu perfil não pode justificar o ponto.');
+        const j = (await db.query('select id from ponto_justificativas where colaborador_id = $1 and data = $2', [c.id, data])).rows[0];
+        if (!j) throw new Recusa(400, 'Escreva a justificativa antes de anexar o documento.');
+        return (await db.query(
+          `insert into ponto_justificativa_arquivos (justificativa_id, nome_arquivo, mime, tamanho, conteudo, enviado_por)
+           values ($1, $2, $3, $4, $5, $6) returning id`, [j.id, nome, mime, conteudo.length, conteudo, req.usuarioId])).rows[0].id;
+      });
+      res.json({ id });
+    }));
+
+  const arquivoJustificativa = async (db, id) => {
+    if (!UUID.test(id || '')) throw new Recusa(404, 'Arquivo não encontrado.');
+    const a = (await db.query(
+      `select a.*, j.colaborador_id from ponto_justificativa_arquivos a join ponto_justificativas j on j.id = a.justificativa_id where a.id = $1`, [id])).rows[0];
+    if (!a) throw new Recusa(404, 'Arquivo não encontrado.');
+    return a;
+  };
+
+  app.get('/api/ponto/justificativa/arquivos/:id', exigeLogin, comRecusa(async (req, res) => {
+    const a = await comoUsuario(req.usuarioId, async (db) => {
+      const x = await arquivoJustificativa(db, req.params.id);
+      await exigirColab(db, await colaborador(db, x.colaborador_id), 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
+      return x;
+    });
+    res.set('Content-Type', a.mime);
+    res.set('Content-Disposition', `${req.query.baixar ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(a.nome_arquivo)}`);
+    res.send(a.conteudo);
+  }));
+
+  app.delete('/api/ponto/justificativa/arquivos/:id', exigeLogin, comRecusa(async (req, res) => {
+    await comoUsuario(req.usuarioId, async (db) => {
+      const x = await arquivoJustificativa(db, req.params.id);
+      await exigirColab(db, await colaborador(db, x.colaborador_id), 'ponto.justificar', 'Seu perfil não pode justificar o ponto.');
+      await db.query('delete from ponto_justificativa_arquivos where id = $1', [x.id]);
+    });
+    res.json({ ok: true });
+  }));
+
+  // Relatório do ponto (PDF montado no app): um colaborador ou todos da filial, no mês
+  app.get('/api/ponto/relatorio', exigeLogin, comRecusa(async (req, res) => {
+    const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : null;
+    if (!mes) throw new Recusa(400, 'Mês inválido.');
+    if (!UUID.test(req.query.loja || '')) throw new Recusa(400, 'Escolha a filial.');
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      await exigir(db, req.query.loja, 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
+      const loja = (await db.query('select l.id, l.nome, l.cnpj, l.empresa_id, e.razao_social, e.cnpj as cnpj_grupo, e.logo from lojas l join empresas e on e.id = l.empresa_id where l.id = $1', [req.query.loja])).rows[0];
+      const um = UUID.test(req.query.colaborador || '') ? req.query.colaborador : null;
+      const colaboradores = (await db.query(
+        `select c.id, c.nome, c.cpf, c.cargo,
+                coalesce((select jsonb_agg(jsonb_build_object('data', r.data, 'tipo', r.tipo, 'hora', r.hora, 'ajuste', r.origem = 'ajuste') order by r.hora)
+                            from ponto_registros r where r.colaborador_id = c.id and r.ativo and to_char(r.data, 'YYYY-MM') = $2), '[]') as registros,
+                coalesce((select jsonb_agg(jsonb_build_object('data', j.data, 'texto', j.texto))
+                            from ponto_justificativas j where j.colaborador_id = c.id and to_char(j.data, 'YYYY-MM') = $2), '[]') as justificativas
+           from colaboradores c
+          where (c.loja_id = $1 or exists (select 1 from colaborador_lojas cl where cl.colaborador_id = c.id and cl.loja_id = $1))
+            and ($3::uuid is null or c.id = $3)
+            and (c.ativo or exists (select 1 from ponto_registros r where r.colaborador_id = c.id and to_char(r.data, 'YYYY-MM') = $2))
+          order by c.nome`, [loja.id, mes, um])).rows;
+      return { loja, colaboradores };
+    }));
   }));
 }

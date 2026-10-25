@@ -64,6 +64,11 @@ WHATSAPP_MODELO_CODIGO=codigo_acesso
 Pela regra do WhatsApp, uma resposta livre só pode ser enviada até 24 horas depois da última
 mensagem do cliente.
 
+O **comprovante do ponto** (gerado na saída final do dia) vai para o celular do colaborador por um
+modelo aprovado com cabeçalho de **documento**, chamado `comprovante_ponto`, com o corpo usando
+{{1}} para o nome e {{2}} para a data. Para usar outro nome, coloque `WHATSAPP_MODELO_PONTO=nome-do-modelo`
+no `api/.env`. O comprovante também fica guardado no espelho do ponto (ícone 🧾 na coluna Horas).
+
 ### Robô de atendimento
 
 Em WhatsApp > Robô de atendimento cada grupo monta as perguntas (nome, CPF/CNPJ, placa, tipo de

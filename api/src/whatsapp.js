@@ -60,6 +60,45 @@ export async function enviarTexto(phoneNumberId, para, corpo) {
   return { id_externo: id, status: 'enviada' };
 }
 
+// Documento (PDF) por modelo aprovado: serve para mandar a quem não falou com a loja nas últimas
+// 24 horas (ex.: comprovante do ponto). O modelo precisa ter cabeçalho de DOCUMENTO e o corpo com
+// {{1}} = nome e {{2}} = data. Devolve { id_externo, status }.
+//   WHATSAPP_MODELO_PONTO=comprovante_ponto
+export async function enviarDocumento(phoneNumberId, para, { bytes, nome, mime = 'application/pdf', parametros = [] }) {
+  if (provedor() === 'teste') {
+    console.log(`[WhatsApp modo teste] documento ${nome} (${bytes.length} bytes) para ${para}`);
+    return { id_externo: `teste-${crypto.randomUUID()}`, status: 'simulada' };
+  }
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!token) throw new ErroWhatsApp('O WhatsApp ainda não foi configurado. Coloque o WHATSAPP_TOKEN no arquivo api/.env.');
+  if (!phoneNumberId) throw new ErroWhatsApp('Cadastre o número do WhatsApp deste grupo em WhatsApp > Configurar.');
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mime);
+  form.append('file', new Blob([bytes], { type: mime }), nome);
+  const up = await fetch(`${GRAPH}/${encodeURIComponent(phoneNumberId)}/media`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form, signal: AbortSignal.timeout(30000),
+  }).catch(() => { throw new ErroWhatsApp('Não foi possível enviar o arquivo ao WhatsApp agora.'); });
+  const midia = await up.json().catch(() => ({}));
+  if (!up.ok || !midia.id) throw new ErroWhatsApp(`O WhatsApp recusou o arquivo${midia?.error?.message ? `: ${midia.error.message}` : '.'}`);
+  const id = await chamarMeta(phoneNumberId, {
+    to: para, type: 'template',
+    template: {
+      name: process.env.WHATSAPP_MODELO_PONTO || 'comprovante_ponto',
+      language: { code: process.env.WHATSAPP_IDIOMA || 'pt_BR' },
+      components: [
+        { type: 'header', parameters: [{ type: 'document', document: { id: midia.id, filename: nome } }] },
+        ...(parametros.length ? [{ type: 'body', parameters: parametros.map((t) => ({ type: 'text', text: String(t) })) }] : []),
+      ],
+    },
+  });
+  return { id_externo: id, status: 'enviada' };
+}
+
+// Número de WhatsApp do grupo da loja (para mensagens que não são de uma conversa)
+export const numeroDoGrupo = async (db, loja) =>
+  (await db.query('select n.phone_number_id from whatsapp_numeros n join lojas l on l.empresa_id = n.empresa_id where l.id = $1 and n.ativo', [loja])).rows[0]?.phone_number_id || null;
+
 async function enviarCodigo(phoneNumberId, para, codigo) {
   if (provedor() === 'teste') {
     // modo teste: o código aparece só no terminal da API (quem tem acesso ao servidor)
