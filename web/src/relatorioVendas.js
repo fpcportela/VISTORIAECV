@@ -23,18 +23,18 @@ export async function gerarPdfVendas({ lista, filtros, empresa }) {
   const validas = lista.filter((v) => v.situacao !== 'cancelada');
   autoTable(doc, {
     startY: 32,
-    head: [['Nº', 'Data', 'Cliente', 'CPF/CNPJ', 'Placas', 'Loja', 'Situação', 'Desconto', 'Total']],
-    body: lista.map((v) => [v.numero, dataBR(v.data_venda), v.cliente, formatarDoc(v.cpf_cnpj), v.placas || '',
+    head: [['Nº', 'Data', 'Cliente', 'CPF/CNPJ', 'Placas', 'Marca/Modelo', 'Loja', 'Situação', 'Desconto', 'Total']],
+    body: lista.map((v) => [v.numero, dataBR(v.data_venda), v.cliente, formatarDoc(v.cpf_cnpj), v.placas || '', v.veiculos || '',
       v.loja, SITUACOES[v.situacao], v.desconto ? real(v.desconto) : '', real(v.valor_total)]),
-    foot: [['', '', `${lista.length} registro(s)`, '', '', '', 'Vendas (sem canceladas)', '', real(validas.reduce((t, v) => t + v.valor_total, 0))]],
+    foot: [['', '', `${lista.length} registro(s)`, '', '', '', '', 'Vendas (sem canceladas)', '', real(validas.reduce((t, v) => t + v.valor_total, 0))]],
     styles: { fontSize: 8, cellPadding: 1.8 },
     headStyles: { fillColor: rgb },
     footStyles: { fillColor: [241, 245, 249], textColor: 30, fontStyle: 'bold' },
-    columnStyles: { 0: { cellWidth: 12 }, 7: { halign: 'right' }, 8: { halign: 'right' } },
+    columnStyles: { 0: { cellWidth: 12 }, 5: { cellWidth: 48 }, 8: { halign: 'right' }, 9: { halign: 'right' } },
     didParseCell: (d) => {
       if (d.section !== 'body' || lista[d.row.index]?.situacao !== 'cancelada') return;
-      d.cell.styles.textColor = d.column.index === 6 ? [197, 34, 31] : [150, 150, 150];
-      if (d.column.index === 6) d.cell.styles.fontStyle = 'bold';
+      d.cell.styles.textColor = d.column.index === 7 ? [197, 34, 31] : [150, 150, 150];
+      if (d.column.index === 7) d.cell.styles.fontStyle = 'bold';
     },
   });
   const paginas = doc.getNumberOfPages();
