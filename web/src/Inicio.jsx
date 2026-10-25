@@ -12,6 +12,7 @@ import Servicos from './Servicos.jsx';
 import Colaboradores from './Colaboradores.jsx';
 import Ponto from './Ponto.jsx';
 import Financeiro from './Financeiro.jsx';
+import Configuracoes from './Configuracoes.jsx';
 import { Placa } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
@@ -62,7 +63,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   function abrir(id) {
     setMenuAberto(false);
-    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro'].includes(id)) {
+    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config'].includes(id)) {
       setTela(id); setVistoriaId(null); setBuscaVendas('');
       if (id === 'vendas') setAbaVenda('lista');
       if (id === 'financeiro') setFinanceiroAbre((f) => ({ aba: 'receber', novo: false, chave: f.chave + 1 }));
@@ -369,6 +370,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
             : tela === 'colaboradores' ? <Colaboradores perfil={perfil} loja={loja} />
             : tela === 'ponto' ? <Ponto perfil={perfil} loja={loja} />
+            : tela === 'config' ? <Configuracoes perfil={perfil} />
             : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} />
             : tela === 'servicos' ? (() => {
                 const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];

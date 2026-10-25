@@ -559,3 +559,18 @@ button.tf-linha:hover { border-color: var(--forte); }
   .tf-linha > span[data-rotulo] { display: none; }
   .tf-desc { grid-column: 1 / -1; order: -1; }
 }
+
+/* Venda: bloco Veículo acima dos itens */
+.bloco-veiculo { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; }
+.bloco-veiculo .placa-item { flex-wrap: nowrap; }
+@media (max-width: 760px) { .bloco-veiculo { grid-template-columns: 1fr; } }
+
+/* Configurações: backup */
+.painel-backup { display: flex; flex-direction: column; gap: 12px; max-width: 760px; padding: 20px 22px; }
+.painel-backup h2 { margin: 0; font-size: 18px; }
+.painel-backup h3 { margin: 8px 0 0; font-size: 15px; }
+.pasta-backup { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px dashed var(--borda); border-radius: 8px; background: #f8fafc; }
+.pasta-backup > span { flex: 1; min-width: 200px; }
+.painel-backup .sucesso { margin: 0; padding: 10px 12px; border-radius: 8px; background: #e8f7ee; color: #166534; font-weight: 600; }
+.painel-backup .aviso-texto { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff7e6; color: #8a5a00; }
+.painel-backup .acoes-modal { justify-content: flex-start; }

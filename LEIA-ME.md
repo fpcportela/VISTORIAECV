@@ -69,6 +69,20 @@ npm run banco:atualizar
 
 Pode rodar mais de uma vez sem problema; as vendas e cadastros continuam lá.
 
+## Backup
+
+Em **Configurações → Backup** (só o usuário master), clique em **Escolher pasta** e depois em **Fazer backup agora**. Cada backup é um arquivo novo, com dia, mês, ano e hora no nome (por exemplo `vistoria-ecv_backup_25-10-2026_22h35m10s.dump`); nenhum anterior é apagado ou substituído.
+
+- Para guardar no Google Drive, escolha uma pasta dentro do "Google Drive" do Mac (programa Google Drive para computador).
+- Escolher a pasta funciona no Google Chrome e no Edge. No Safari o arquivo vai para a pasta Downloads.
+- O Docker precisa estar ligado.
+
+Para voltar um backup (apaga os dados atuais e põe os do arquivo no lugar):
+
+```bash
+docker exec -i vistoria-ecv-banco pg_restore -U vistoria -d vistoria_ecv --clean --if-exists < caminho/do/arquivo.dump
+```
+
 ## Apagar todos os dados e recomeçar
 
 ```bash
