@@ -70,7 +70,7 @@ function Registrar({ loja }) {
   const filtrados = (lista || []).filter((c) => c.nome.toLowerCase().includes(busca.trim().toLowerCase()));
 
   if (escolhido) {
-    return <Camera colaborador={escolhido} tipo={proxima(escolhido)} aoVoltar={() => setEscolhido(null)}
+    return <Camera loja={loja} colaborador={escolhido} tipo={proxima(escolhido)} aoVoltar={() => setEscolhido(null)}
       aoRegistrar={(r) => { setFeito({ ...r, nome: escolhido.nome }); setEscolhido(null); setBusca(''); carregar(); }} />;
   }
   return (
@@ -120,7 +120,7 @@ function reduzir(fonte, largura, altura) {
 
 // Câmera ao vivo quando o navegador permite (https ou o próprio computador);
 // senão, o botão abre a câmera do celular pelo seletor de arquivo
-function Camera({ colaborador, tipo, aoVoltar, aoRegistrar }) {
+function Camera({ loja, colaborador, tipo, aoVoltar, aoRegistrar }) {
   const video = useRef(null);
   const [aoVivo, setAoVivo] = useState(false);
   const [foto, setFoto] = useState('');
@@ -156,7 +156,7 @@ function Camera({ colaborador, tipo, aoVoltar, aoRegistrar }) {
   async function registrar() {
     setEnviando(true); setErro('');
     try {
-      aoRegistrar(await api('/ponto/registrar', { metodo: 'POST', corpo: { colaborador_id: colaborador.id, foto } }));
+      aoRegistrar(await api('/ponto/registrar', { metodo: 'POST', corpo: { colaborador_id: colaborador.id, loja_id: loja, foto } }));
     } catch (falha) {
       setErro(falha.message); setEnviando(false);
     }

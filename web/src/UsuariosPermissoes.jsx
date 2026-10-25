@@ -11,6 +11,7 @@ export default function UsuariosPermissoes({ perfil }) {
   const [permissoes, setPermissoes] = useState([]);
   const [perfis, setPerfis] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [cargos, setCargos] = useState([]);
   const [editando, setEditando] = useState(null); // { tipo: 'perfil' | 'usuario', item }
   const [erro, setErro] = useState('');
 
@@ -23,8 +24,8 @@ export default function UsuariosPermissoes({ perfil }) {
   async function carregar() {
     setErro('');
     try {
-      const [p, f, u] = await Promise.all([api('/permissoes'), api('/perfis'), api('/usuarios')]);
-      setPermissoes(p); setPerfis(f); setUsuarios(u);
+      const [p, f, u, c] = await Promise.all([api('/permissoes'), api('/perfis'), api('/usuarios'), api('/cargos')]);
+      setPermissoes(p); setPerfis(f); setUsuarios(u); setCargos(c);
     } catch (falha) {
       setErro(falha.message);
     }
@@ -49,8 +50,8 @@ export default function UsuariosPermissoes({ perfil }) {
       <div className="cabecalho">
         <h1>Usuários e permissões</h1>
         {podeEditar && (
-          <button className="botao-primario" onClick={() => setEditando({ tipo: aba === 'usuarios' ? 'usuario' : 'perfil', item: null })}>
-            + {aba === 'usuarios' ? 'Novo usuário' : 'Novo perfil'}
+          <button className="botao-primario" onClick={() => setEditando({ tipo: { usuarios: 'usuario', perfis: 'perfil', cargos: 'cargo' }[aba], item: null })}>
+            + {{ usuarios: 'Novo usuário', perfis: 'Novo perfil', cargos: 'Novo cargo' }[aba]}
           </button>
         )}
       </div>
@@ -58,6 +59,7 @@ export default function UsuariosPermissoes({ perfil }) {
       <div className="abas" role="tablist">
         <button role="tab" aria-selected={aba === 'usuarios'} className={aba === 'usuarios' ? 'ativa' : ''} onClick={() => setAba('usuarios')}>Usuários</button>
         <button role="tab" aria-selected={aba === 'perfis'} className={aba === 'perfis' ? 'ativa' : ''} onClick={() => setAba('perfis')}>Perfis (funções)</button>
+        <button role="tab" aria-selected={aba === 'cargos'} className={aba === 'cargos' ? 'ativa' : ''} onClick={() => setAba('cargos')}>Cargos</button>
       </div>
 
       {erro && <p className="erro" role="alert">{erro}</p>}
@@ -69,6 +71,7 @@ export default function UsuariosPermissoes({ perfil }) {
               <span className="item-titulo">
                 <strong>{u.nome}</strong>
                 {u.master && <span className="etiqueta">Master</span>}
+                {u.cargo && <span className="etiqueta">{u.cargo}</span>}
                 {!u.ativo && <span className="etiqueta inativa">Inativo</span>}
               </span>
               <small className="cinza">{[u.email, u.cpf && mascaraCpf(u.cpf), u.telefone && mascaraTelefone(u.telefone)].filter(Boolean).join(' · ')}</small>
@@ -77,6 +80,21 @@ export default function UsuariosPermissoes({ perfil }) {
                   : u.vinculos.length ? u.vinculos.map((v) => `${nomeLoja(v.loja_id)}: ${nomePerfil(v.perfil_id)}`).join(' · ')
                   : 'Sem loja'}
               </small>
+            </button>
+          ))}
+        </div>
+      ) : aba === 'cargos' ? (
+        <div className="lista-cadastro">
+          <p className="cinza ajuda">O cargo (ex.: SÊNIOR, ATENDENTE, VISTORIADOR) aparece no usuário e no colaborador. Se tiver um perfil sugerido, ao escolher o cargo no usuário esse perfil já vem marcado nas filiais.</p>
+          {cargos.length === 0 && <p className="cinza">Nenhum cargo cadastrado.</p>}
+          {cargos.map((c) => (
+            <button key={c.id} className="cartao item-cadastro" onClick={() => setEditando({ tipo: 'cargo', item: c })}>
+              <span className="item-titulo">
+                <strong>{c.nome}</strong>
+                {empresas.length > 1 && <span className="etiqueta">{c.empresa}</span>}
+                {!c.ativo && <span className="etiqueta inativa">Inativo</span>}
+              </span>
+              <small className="cinza">{c.perfil ? `Perfil sugerido: ${c.perfil}` : 'Sem perfil sugerido'} · {c.usos} pessoa(s)</small>
             </button>
           ))}
         </div>
@@ -101,12 +119,16 @@ export default function UsuariosPermissoes({ perfil }) {
         </div>
       )}
 
+      {editando?.tipo === 'cargo' && (
+        <EditorCargo item={editando.item} empresas={empresas} perfis={perfis} somenteLeitura={!podeEditar}
+          aoFechar={() => setEditando(null)} aoSalvar={() => { setEditando(null); carregar(); }} />
+      )}
       {editando?.tipo === 'perfil' && (
         <EditorPerfil item={editando.item} empresas={empresas} permissoes={permissoes} somenteLeitura={!podeEditar}
           aoFechar={() => setEditando(null)} aoSalvar={() => { setEditando(null); carregar(); }} />
       )}
       {editando?.tipo === 'usuario' && (
-        <EditorUsuario item={editando.item} lojas={podeEditar ? lojas : lojasVer} perfis={perfis} somenteLeitura={!podeEditar}
+        <EditorUsuario item={editando.item} lojas={podeEditar ? lojas : lojasVer} perfis={perfis} cargos={cargos} somenteLeitura={!podeEditar}
           aoFechar={() => setEditando(null)} aoSalvar={() => { setEditando(null); carregar(); }} />
       )}
     </>
@@ -266,7 +288,55 @@ function EditorPerfil({ item, empresas, permissoes, somenteLeitura, aoFechar, ao
   );
 }
 
-function EditorUsuario({ item, lojas, perfis, somenteLeitura, aoFechar, aoSalvar }) {
+function EditorCargo({ item, empresas, perfis, somenteLeitura, aoFechar, aoSalvar }) {
+  const [nome, setNome] = useState(item?.nome || '');
+  const [empresa, setEmpresa] = useState(item?.empresa_id || empresas[0]?.[0] || '');
+  const [perfilId, setPerfilId] = useState(item?.perfil_id || '');
+  const [ativo, setAtivo] = useState(item?.ativo ?? true);
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  async function salvar(e) {
+    e.preventDefault();
+    setSalvando(true); setErro('');
+    try {
+      const corpo = { nome, empresa_id: empresa, perfil_id: perfilId || null, ativo };
+      await (item ? api(`/cargos/${item.id}`, { metodo: 'PUT', corpo }) : api('/cargos', { metodo: 'POST', corpo }));
+      aoSalvar();
+    } catch (falha) { setErro(falha.message); setSalvando(false); }
+  }
+  return (
+    <Modal titulo={item ? 'Cargo' : 'Novo cargo'} aoFechar={aoFechar}>
+      <form className="formulario" onSubmit={salvar}>
+        <fieldset className="sem-borda" disabled={somenteLeitura}>
+          <label>Nome do cargo<input value={nome} onChange={(e) => setNome(e.target.value)} required autoFocus placeholder="Ex.: SÊNIOR" /></label>
+          {!item && empresas.length > 1 && (
+            <label>Grupo
+              <select value={empresa} onChange={(e) => { setEmpresa(e.target.value); setPerfilId(''); }}>
+                {empresas.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
+              </select>
+            </label>
+          )}
+          <label>Perfil sugerido
+            <select value={perfilId} onChange={(e) => setPerfilId(e.target.value)}>
+              <option value="">Nenhum</option>
+              {perfis.filter((p) => p.empresa_id === empresa).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </label>
+          {item && <label className="linha-check"><input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} /> Cargo ativo</label>}
+        </fieldset>
+        {erro && <p className="erro" role="alert">{erro}</p>}
+        <div className="acoes-modal">
+          <button type="button" className="botao-contorno" onClick={aoFechar}>{somenteLeitura ? 'Fechar' : 'Cancelar'}</button>
+          {!somenteLeitura && <button className="botao-primario" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>}
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFechar, aoSalvar }) {
+  const [cargoId, setCargoId] = useState(item?.cargo_id || '');
   const [nome, setNome] = useState(item?.nome || '');
   const [cpf, setCpf] = useState(item?.cpf ? mascaraCpf(item.cpf) : '');
   const [telefone, setTelefone] = useState(item?.telefone ? mascaraTelefone(item.telefone) : '');
@@ -306,7 +376,7 @@ function EditorUsuario({ item, lojas, perfis, somenteLeitura, aoFechar, aoSalvar
     setSalvando(true);
     try {
       const corpo = {
-        nome, cpf, telefone, email, senha: senha || undefined, ativo,
+        nome, cpf, telefone, email, senha: senha || undefined, ativo, cargo_id: cargoId || null,
         vinculos: Object.entries(vinculos).filter(([, p]) => p).map(([loja_id, perfil_id]) => ({ loja_id, perfil_id })),
       };
       await (item ? api(`/usuarios/${item.id}`, { metodo: 'PUT', corpo }) : api('/usuarios', { metodo: 'POST', corpo }));
@@ -325,6 +395,20 @@ function EditorUsuario({ item, lojas, perfis, somenteLeitura, aoFechar, aoSalvar
             <label>CPF<input value={cpf} inputMode="numeric" placeholder="123.456.789-10" onChange={(e) => setCpf(mascaraCpf(e.target.value))} autoComplete="off" /></label>
             <label>Celular<input value={telefone} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => setTelefone(mascaraTelefone(e.target.value))} autoComplete="off" /></label>
           </div>
+          <label>Cargo
+            <select value={cargoId} onChange={(e) => {
+              const c = cargos.find((x) => x.id === e.target.value);
+              setCargoId(e.target.value);
+              // cargo com perfil sugerido: já marca esse perfil nas filiais do grupo dele que estão sem perfil
+              if (c?.perfil_id) {
+                setVinculos((v) => Object.fromEntries(Object.entries(v).map(([loja, p]) =>
+                  [loja, !p && lojas.find((l) => l.id === loja)?.empresa_id === c.empresa_id ? c.perfil_id : p])));
+              }
+            }}>
+              <option value="">Sem cargo</option>
+              {cargos.filter((c) => c.ativo || c.id === cargoId).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </label>
           <label>E-mail (login)<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" /></label>
           {!somenteLeitura && (
             <label>{item ? 'Nova senha (deixe em branco para manter)' : 'Senha'}

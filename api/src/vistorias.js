@@ -46,26 +46,6 @@ export function rotasVistorias(app, { exigeLogin, rota }) {
     res.json(lista);
   }));
 
-  // Busca de clientes do grupo da loja (nome, CPF/CNPJ ou telefone)
-  app.get('/api/clientes', exigeLogin, comRecusa(async (req, res) => {
-    if (!UUID.test(req.query.loja || '')) throw new Recusa(400, 'Escolha a loja.');
-    const busca = texto(req.query.busca, 60);
-    const lista = await comoUsuario(req.usuarioId, async (db) => {
-      await exigir(db, req.query.loja, 'clientes.ver', 'Seu perfil não pode ver clientes.');
-      return (await db.query(
-        `select c.id, c.tipo, c.nome, c.cpf_cnpj, c.whatsapp, c.telefone
-           from clientes c join lojas l on l.empresa_id = c.empresa_id
-          where l.id = $1 and c.ativo
-            and ($2::text is null or c.nome ilike '%' || $2 || '%'
-                 or regexp_replace(coalesce(c.cpf_cnpj, ''), '\\D', '', 'g') like regexp_replace($2, '\\D', '', 'g') || '%'
-                    and regexp_replace($2, '\\D', '', 'g') <> ''
-                 or regexp_replace(coalesce(c.whatsapp, c.telefone, ''), '\\D', '', 'g') like '%' || nullif(regexp_replace($2, '\\D', '', 'g'), '') || '%')
-          order by c.tipo = 'avulso' desc, c.nome
-          limit 20`, [req.query.loja, busca])).rows;
-    });
-    res.json(lista);
-  }));
-
   // Abre a vistoria: garante o veículo e o cliente, copia o checklist e já
   // deixa "em andamento" com quem abriu como vistoriador.
   app.post('/api/vistorias', exigeLogin, comRecusa(async (req, res) => {

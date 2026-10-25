@@ -223,7 +223,7 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 .perigo { color: var(--negativo); }
 .modal.largo { max-width: 760px; }
 .formulario { display: flex; flex-direction: column; gap: 14px; }
-.formulario > label, .formulario > .sem-borda > label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
+.formulario > label, .formulario > .sem-borda > label, .formulario .linha-campos > label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
 .formulario input:not([type=checkbox]), .formulario select { border: 1px solid var(--borda); border-radius: 6px; padding: 10px 12px; font-size: 16px; min-height: 44px; font-weight: 400; color: var(--texto); }
 .formulario > label.linha-check, .formulario > .sem-borda > label.linha-check { flex-direction: row; align-items: center; gap: 10px; }
 .grade-permissoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 12px; }
@@ -652,3 +652,17 @@ button.tf-linha:hover { border-color: var(--forte); }
 @media (max-width: 1100px) {
   .pagamento-venda.com-cartao { grid-template-columns: 1fr 1fr; }
 }
+
+/* Clientes */
+.etiqueta.tipo-cliente.pj { background: #e0ecff; color: #1d4ed8; }
+.etiqueta.tipo-cliente.grupo { background: #f3e8ff; color: #7e22ce; }
+.grupo-do-cliente { font-size: 12px; font-weight: 700; color: #7e22ce; }
+.formulario .linha-campos.dois { grid-template-columns: 1fr 1fr; }
+.formulario .linha-campos.cep { grid-template-columns: 130px 1fr; }
+.empresas-grupo { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #e3e7ee; padding-top: 12px; }
+.empresas-grupo .titulo-secao { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.botao-link { background: none; border: none; padding: 0; color: var(--forte); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+@media (max-width: 600px) { .formulario .linha-campos.dois, .formulario .linha-campos.cep { grid-template-columns: 1fr; } }
+.unidade-venda { display: flex; align-items: center; gap: 6px; }
+.unidade-venda input { flex: 1; min-width: 0; }
+.unidade-venda .botao-texto { min-height: 36px; padding: 6px 8px; }

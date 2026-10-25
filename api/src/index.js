@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { comoUsuario, contexto } from './db.js';
 import { rotasGrupos } from './grupos.js';
+import { rotasClientes } from './clientes.js';
 import { rotasAcessos } from './acessos.js';
 import { rotasVistorias } from './vistorias.js';
 import { rotasVendas } from './vendas.js';
@@ -219,5 +220,6 @@ rotasFipe(app, { exigeLogin, rota });
 rotasFinanceiro(app, { exigeLogin, rota });
 rotasBackup(app, { exigeLogin, rota });
 rotasGrupos(app, { exigeLogin, rota });
+rotasClientes(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));

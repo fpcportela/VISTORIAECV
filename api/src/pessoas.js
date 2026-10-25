@@ -27,6 +27,12 @@ function lerFoto(dataUrl) {
   return { bytes, mime: m[1] };
 }
 
+// Permissão em alguma das unidades do colaborador
+async function exigirColab(db, c, permissao, mensagem) {
+  const ok = (await db.query('select pode_colaborador($1, $2) as ok', [c.id, permissao])).rows[0].ok;
+  if (!ok) throw new Recusa(403, mensagem);
+}
+
 export function rotasPessoas(app, { exigeLogin, rota }) {
   const comRecusa = criarComRecusa(rota);
 
@@ -35,11 +41,13 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     const loja = UUID.test(req.query.loja || '') ? req.query.loja : null;
     const busca = texto(req.query.busca, 60);
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
-      `select c.id, c.loja_id, l.nome as loja, c.nome, c.data_nascimento, c.cpf, c.celular, c.cargo, c.ativo,
+      `select c.id, c.loja_id, c.nome, c.data_nascimento, c.cpf, c.celular, c.cargo, c.ativo,
+              (select string_agg(l.nome, ', ' order by l.codigo) from colaborador_lojas cl join lojas l on l.id = cl.loja_id
+                where cl.colaborador_id = c.id) as loja,
               (select count(*)::int from colaborador_arquivos a where a.colaborador_id = c.id) as arquivos
-         from colaboradores c join lojas l on l.id = c.loja_id
-        where (pode(c.loja_id, 'colaboradores.ver') or pode(c.loja_id, 'colaboradores.editar'))
-          and ($1::uuid is null or c.loja_id = $1)
+         from colaboradores c
+        where (pode_colaborador(c.id, 'colaboradores.ver') or pode_colaborador(c.id, 'colaboradores.editar'))
+          and ($1::uuid is null or c.loja_id = $1 or exists (select 1 from colaborador_lojas cl where cl.colaborador_id = c.id and cl.loja_id = $1))
           and ($2::text is null or c.nome ilike '%' || $2 || '%' or c.cpf like regexp_replace($2, '\\D', '', 'g') || '%')
           and ($3 or c.ativo)
         order by c.ativo desc, c.nome`, [loja, busca, req.query.inativos === '1'])).rows));
@@ -48,13 +56,14 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
   app.get('/api/colaboradores/:id', exigeLogin, comRecusa(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.params.id);
-      const ve = (await db.query("select pode($1, 'colaboradores.ver') or pode($1, 'colaboradores.editar') as ok", [c.loja_id])).rows[0].ok;
+      const ve = (await db.query("select pode_colaborador($1, 'colaboradores.ver') or pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
       if (!ve) throw new Recusa(403, 'Seu perfil não pode ver colaboradores.');
+      c.loja_ids = (await db.query('select loja_id from colaborador_lojas where colaborador_id = $1', [c.id])).rows.map((x) => x.loja_id);
       c.arquivos = (await db.query(
         `select a.id, a.tipo_id, t.nome as tipo, a.nome_arquivo, a.mime, a.tamanho, a.observacao, a.enviado_em, u.nome as enviado_por
            from colaborador_arquivos a left join tipos_arquivo t on t.id = a.tipo_id left join usuarios u on u.id = a.enviado_por
           where a.colaborador_id = $1 order by a.enviado_em desc`, [c.id])).rows;
-      c.pode_editar = (await db.query("select pode($1, 'colaboradores.editar') as ok", [c.loja_id])).rows[0].ok;
+      c.pode_editar = (await db.query("select pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
       return c;
     }));
   }));
@@ -69,25 +78,37 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (celular && !/^\d{10,11}$/.test(celular)) throw new Recusa(400, 'Celular inválido. Use DDD + número.');
     const nascimento = b.data_nascimento ? dataValida(b.data_nascimento) : null;
     if (b.data_nascimento && !nascimento) throw new Recusa(400, 'Data de nascimento inválida.');
-    if (!UUID.test(b.loja_id || '')) throw new Recusa(400, 'Escolha a filial do colaborador.');
+    // Unidades em que trabalha (a primeira é a principal); aceita o formato antigo, com uma só
+    const lojas = [...new Set((Array.isArray(b.loja_ids) ? b.loja_ids : [b.loja_id]).filter((l) => UUID.test(String(l || ''))))];
+    if (!lojas.length) throw new Recusa(400, 'Escolha pelo menos uma unidade do colaborador.');
     const novoId = await comoUsuario(req.usuarioId, async (db) => {
-      await exigir(db, b.loja_id, 'colaboradores.editar', 'Seu perfil não pode cadastrar colaboradores nesta filial.');
-      const empresa = (await db.query('select empresa_id from lojas where id = $1', [b.loja_id])).rows[0]?.empresa_id;
-      if (!empresa) throw new Recusa(403, 'Você não tem acesso a esta filial.');
+      for (const l of lojas) await exigir(db, l, 'colaboradores.editar', 'Seu perfil não pode cadastrar colaboradores em uma das unidades escolhidas.');
+      const empresas = (await db.query('select distinct empresa_id from lojas where id = any($1)', [lojas])).rows;
+      if (empresas.length !== 1) throw new Recusa(400, 'As unidades precisam ser do mesmo grupo.');
+      const empresa = empresas[0].empresa_id;
       if (cpf && (await db.query('select 1 from colaboradores where empresa_id = $1 and cpf = $2 and id is distinct from $3',
         [empresa, cpf, id ?? null])).rowCount) throw new Recusa(400, 'Já existe um colaborador com este CPF.');
-      const campos = [b.loja_id, nome.toUpperCase(), nascimento, cpf, celular, texto(b.cargo, 60), b.ativo !== false];
-      if (id) {
-        const atual = await colaborador(db, id);
-        await exigir(db, atual.loja_id, 'colaboradores.editar', 'Seu perfil não pode alterar este colaborador.');
+      // cargo do cadastro de cargos (o nome fica gravado também, para o ponto e os relatórios)
+      const cargoId = UUID.test(b.cargo_id || '') ? b.cargo_id : null;
+      const cargoNome = cargoId ? (await db.query('select nome from cargos where id = $1 and empresa_id = $2', [cargoId, empresa])).rows[0]?.nome : null;
+      if (cargoId && !cargoNome) throw new Recusa(400, 'Cargo não encontrado.');
+      const campos = [lojas[0], nome.toUpperCase(), nascimento, cpf, celular, cargoNome ?? (texto(b.cargo, 60)?.toUpperCase() || null), b.ativo !== false, cargoId];
+      let cid = id;
+      if (cid) {
+        const atual = await colaborador(db, cid);
+        await exigirColab(db, atual, 'colaboradores.editar', 'Seu perfil não pode alterar este colaborador.');
         await db.query(
-          `update colaboradores set loja_id = $2, nome = $3, data_nascimento = $4, cpf = $5, celular = $6, cargo = $7, ativo = $8
-            where id = $1`, [id, ...campos]);
-        return id;
+          `update colaboradores set loja_id = $2, nome = $3, data_nascimento = $4, cpf = $5, celular = $6, cargo = $7, ativo = $8, cargo_id = $9
+            where id = $1`, [cid, ...campos]);
+        // tira só as unidades que a pessoa pode gerenciar; as outras ficam
+        await db.query("delete from colaborador_lojas where colaborador_id = $1 and pode(loja_id, 'colaboradores.editar')", [cid]);
+      } else {
+        cid = (await db.query(
+          `insert into colaboradores (empresa_id, loja_id, nome, data_nascimento, cpf, celular, cargo, ativo, cargo_id)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`, [empresa, ...campos])).rows[0].id;
       }
-      return (await db.query(
-        `insert into colaboradores (empresa_id, loja_id, nome, data_nascimento, cpf, celular, cargo, ativo)
-         values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`, [empresa, ...campos])).rows[0].id;
+      for (const l of lojas) await db.query('insert into colaborador_lojas (colaborador_id, loja_id) values ($1, $2) on conflict do nothing', [cid, l]);
+      return cid;
     });
     res.json({ id: novoId });
   });
@@ -147,7 +168,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       const mime = /^[\w.+-]+\/[\w.+-]+$/.test(req.query.mime || '') ? req.query.mime : 'application/octet-stream';
       const id = await comoUsuario(req.usuarioId, async (db) => {
         const c = await colaborador(db, req.params.id);
-        await exigir(db, c.loja_id, 'colaboradores.editar', 'Seu perfil não pode anexar arquivos.');
+        await exigirColab(db, c, 'colaboradores.editar', 'Seu perfil não pode anexar arquivos.');
         if (tipo && !(await db.query('select 1 from tipos_arquivo where id = $1 and empresa_id = $2', [tipo, c.empresa_id])).rowCount) {
           throw new Recusa(400, 'Tipo de arquivo inválido.');
         }
@@ -163,7 +184,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!UUID.test(req.params.arq)) throw new Recusa(404, 'Arquivo não encontrado.');
     const a = await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.params.id);
-      const ve = (await db.query("select pode($1, 'colaboradores.ver') or pode($1, 'colaboradores.editar') as ok", [c.loja_id])).rows[0].ok;
+      const ve = (await db.query("select pode_colaborador($1, 'colaboradores.ver') or pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
       if (!ve) throw new Recusa(403, 'Seu perfil não pode ver os arquivos.');
       return (await db.query('select nome_arquivo, mime, conteudo from colaborador_arquivos where id = $1 and colaborador_id = $2',
         [req.params.arq, c.id])).rows[0];
@@ -178,7 +199,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!UUID.test(req.params.arq)) throw new Recusa(404, 'Arquivo não encontrado.');
     await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.params.id);
-      await exigir(db, c.loja_id, 'colaboradores.editar', 'Seu perfil não pode excluir arquivos.');
+      await exigirColab(db, c, 'colaboradores.editar', 'Seu perfil não pode excluir arquivos.');
       await db.query('delete from colaborador_arquivos where id = $1 and colaborador_id = $2', [req.params.arq, c.id]);
     });
     res.json({ ok: true });
@@ -197,7 +218,8 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
                             from ponto_registros r
                            where r.colaborador_id = c.id and r.ativo and r.data = (now() at time zone '${FUSO}')::date), '[]') as hoje
            from colaboradores c
-          where c.loja_id = $1 and (c.ativo or $2) order by c.nome`, [req.query.loja, req.query.inativos === '1'])).rows;
+          where (c.loja_id = $1 or exists (select 1 from colaborador_lojas cl where cl.colaborador_id = c.id and cl.loja_id = $1))
+            and (c.ativo or $2) order by c.nome`, [req.query.loja, req.query.inativos === '1'])).rows;
     }));
   }));
 
@@ -206,7 +228,11 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     const r = await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.body?.colaborador_id);
       if (!c.ativo) throw new Recusa(400, 'Este colaborador está inativo.');
-      await exigir(db, c.loja_id, 'ponto.registrar', 'Seu perfil não pode registrar ponto nesta filial.');
+      // o ponto fica na unidade em que foi batido (se o colaborador trabalha nela); senão, na principal
+      const lojaPonto = UUID.test(req.body?.loja_id || '')
+        && (await db.query('select 1 from colaborador_lojas where colaborador_id = $1 and loja_id = $2', [c.id, req.body.loja_id])).rowCount
+        ? req.body.loja_id : c.loja_id;
+      await exigir(db, lojaPonto, 'ponto.registrar', 'Seu perfil não pode registrar ponto nesta unidade.');
       const feitos = (await db.query(
         `select tipo from ponto_registros where colaborador_id = $1 and ativo and data = (now() at time zone '${FUSO}')::date`, [c.id]))
         .rows.map((x) => x.tipo);
@@ -215,7 +241,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       return (await db.query(
         `insert into ponto_registros (colaborador_id, loja_id, data, tipo, hora, foto, foto_mime, registrado_por)
          values ($1, $2, (now() at time zone '${FUSO}')::date, $3, now(), $4, $5, $6) returning id, tipo, hora`,
-        [c.id, c.loja_id, tipo, foto.bytes, foto.mime, req.usuarioId])).rows[0];
+        [c.id, lojaPonto, tipo, foto.bytes, foto.mime, req.usuarioId])).rows[0];
     });
     res.json(r);
   }));
@@ -226,7 +252,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!mes) throw new Recusa(400, 'Mês inválido.');
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.query.colaborador);
-      await exigir(db, c.loja_id, 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
+      await exigirColab(db, c, 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
       const registros = (await db.query(
         `select r.id, r.data, r.tipo, r.hora, r.origem, r.motivo, r.ativo, r.ajuste_de, r.foto is not null as tem_foto,
                 u.nome as registrado_por, r.criado_em
@@ -237,7 +263,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
         `select j.data, j.texto, u.nome as criado_por, j.criado_em
            from ponto_justificativas j left join usuarios u on u.id = j.criado_por
           where j.colaborador_id = $1 and to_char(j.data, 'YYYY-MM') = $2`, [c.id, mes])).rows;
-      const pode = (await db.query("select pode($1, 'ponto.ajustar') as ajustar, pode($1, 'ponto.justificar') as justificar", [c.loja_id])).rows[0];
+      const pode = (await db.query("select pode_colaborador($1, 'ponto.ajustar') as ajustar, pode_colaborador($1, 'ponto.justificar') as justificar", [c.id])).rows[0];
       return { colaborador: { id: c.id, nome: c.nome, cargo: c.cargo, loja_id: c.loja_id }, registros, justificativas, pode };
     }));
   }));
@@ -265,7 +291,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!motivo) throw new Recusa(400, 'Informe o motivo da alteração.');
     const id = await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, b.colaborador_id);
-      await exigir(db, c.loja_id, 'ponto.ajustar', 'Seu perfil não pode editar o ponto.');
+      await exigirColab(db, c, 'ponto.ajustar', 'Seu perfil não pode editar o ponto.');
       const anterior = (await db.query(
         'update ponto_registros set ativo = false where colaborador_id = $1 and data = $2 and tipo = $3 and ativo returning id, foto, foto_mime',
         [c.id, data, b.tipo])).rows[0];
@@ -284,7 +310,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     const textoJ = texto(b.texto, 500);
     await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, b.colaborador_id);
-      await exigir(db, c.loja_id, 'ponto.justificar', 'Seu perfil não pode justificar o ponto.');
+      await exigirColab(db, c, 'ponto.justificar', 'Seu perfil não pode justificar o ponto.');
       if (!textoJ) return db.query('delete from ponto_justificativas where colaborador_id = $1 and data = $2', [c.id, data]);
       return db.query(
         `insert into ponto_justificativas (colaborador_id, data, texto, criado_por) values ($1, $2, $3, $4)

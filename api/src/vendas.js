@@ -137,7 +137,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const dados = await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
       const extra = (await db.query(
-        `select l.nome as loja, to_jsonb(c) - 'consulta_serasa' as cliente, u.nome as vendedor
+        `select l.nome as loja, to_jsonb(c) - 'consulta_serasa' || jsonb_build_object('grupo_nome', (select g.nome from clientes g where g.id = c.grupo_cliente_id)) as cliente, u.nome as vendedor
            from lojas l, clientes c left join usuarios u on u.id = $3
           where l.id = $1 and c.id = $2`, [v.loja_id, v.cliente_id, v.vendedor_id])).rows[0];
       const itens = (await db.query(
@@ -351,6 +351,24 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       return { alteradas, puladas };
     });
     res.json(resultado);
+  }));
+
+  // Trocar a unidade (centro de custo) de uma venda aberta: só com a senha de um supervisor/administrador
+  app.post('/api/vendas/:id/unidade', exigeLogin, comRecusa(async (req, res) => {
+    const { loja_id: loja, email, senha } = req.body || {};
+    if (!UUID.test(loja || '')) throw new Recusa(400, 'Escolha a nova unidade.');
+    await comoUsuario(req.usuarioId, async (db) => {
+      const v = await buscarVenda(db, req.params.id);
+      if (v.situacao !== 'aberta') throw new Recusa(400, 'Esta venda não está aberta. Peça a liberação antes.');
+      const nova = (await db.query('select id, empresa_id, nome from lojas where id = $1 and tem_loja(id)', [loja])).rows[0];
+      if (!nova || nova.empresa_id !== v.empresa_id) throw new Recusa(400, 'A nova unidade precisa ser do mesmo grupo.');
+      const autorizador = (await db.query("select app_autorizar_permissao($1, $2, $3, 'vendas.autorizar') as id", [v.loja_id, email, senha])).rows[0].id;
+      const antiga = (await db.query('select nome from lojas where id = $1', [v.loja_id])).rows[0]?.nome;
+      await db.query('update vendas set loja_id = $2 where id = $1', [v.id, nova.id]);
+      await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe, autorizado_por) values ($1, $2, 'alterada', $3, $4)",
+        [v.id, req.usuarioId, `Unidade trocada de ${antiga} para ${nova.nome}`, autorizador]);
+    });
+    res.json({ ok: true });
   }));
 
   // Reabrir venda finalizada: master/autorizador direto; os demais com e-mail e senha de quem autoriza

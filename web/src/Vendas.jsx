@@ -213,6 +213,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   const grupo = useId(); // nomes únicos dos botões de opção (várias vendas abertas em abas)
   const [venda, setVenda] = useState(null); // carregada do servidor (null = nova)
   const [loja, setLoja] = useState(lojasPermitidas.includes(lojaInicial) ? lojaInicial : lojasPermitidas[0] || '');
+  // venda aberta com uma unidade escolhida no topo: fica nessa unidade
+  const [lojaFixa] = useState(Boolean(lojaInicial) && lojasPermitidas.includes(lojaInicial));
+  const [trocandoUnidade, setTrocandoUnidade] = useState(false);
   const [data, setData] = useState(hoje());
   const [modoCliente, setModoCliente] = useState('avulso');
   const [cliente, setCliente] = useState(null);
@@ -269,7 +272,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
 
   useEffect(() => {
     if (modoCliente !== 'buscar' || !loja) return;
-    const t = setTimeout(() => api(`/clientes?loja=${loja}&busca=${encodeURIComponent(busca)}`).then(setClientes).catch((f) => setErro(f.message)), 300);
+    const t = setTimeout(() => api(`/clientes?loja=${loja}&venda=1&busca=${encodeURIComponent(busca)}`).then(setClientes).catch((f) => setErro(f.message)), 300);
     return () => clearTimeout(t);
   }, [busca, modoCliente, loja]);
 
@@ -412,13 +415,22 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
         <div className="grade-venda">
           <label className="campo">Número<input value={venda ? venda.numero : 'Gerado ao salvar'} readOnly className="somente-leitura" /></label>
           <label className="campo">Data do serviço<input type="date" value={data} onChange={(e) => setData(e.target.value)} /></label>
-          <label className="campo">Centro de custo (loja)
-            {venda || lojasPermitidas.length < 2 ? <input value={nomeLoja || ''} readOnly className="somente-leitura" /> : (
-              <select value={loja} onChange={(e) => setLoja(e.target.value)}>
+          <div className="campo">
+            <span className="rotulo-campo">Unidade (centro de custo)</span>
+            {/* Escolhe a unidade só quando a venda nasce em "Todas as lojas"; depois, troca só com senha */}
+            {venda || lojaFixa || lojasPermitidas.length < 2 ? (
+              <span className="unidade-venda">
+                <input value={nomeLoja || ''} readOnly className="somente-leitura" aria-label="Unidade" />
+                {venda?.situacao === 'aberta' && lojasPermitidas.length > 1 && (
+                  <button type="button" className="botao-texto" onClick={() => setTrocandoUnidade(true)}>Trocar</button>
+                )}
+              </span>
+            ) : (
+              <select value={loja} onChange={(e) => setLoja(e.target.value)} aria-label="Unidade">
                 {lojasPermitidas.map((l) => <option key={l} value={l}>{perfil.lojas.find((x) => x.id === l)?.nome}</option>)}
               </select>
             )}
-          </label>
+          </div>
           <label className="campo">Responsável<input value={venda?.vendedor || perfil.usuario.nome} readOnly className="somente-leitura" /></label>
           <div className="campo">
             <span className="rotulo-campo">Placa</span>
@@ -445,6 +457,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
           <div className="dados-cliente">
             <span><small className="cinza">Nome completo</small><strong>{cliente.nome}</strong></span>
             <span><small className="cinza">{String(cliente.cpf_cnpj || '').replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'}</small><strong>{cliente.cpf_cnpj ? formatarDoc(cliente.cpf_cnpj) : 'NÃO INFORMADO'}</strong></span>
+            {cliente.grupo_nome && <span><small className="cinza">Grupo</small><strong>{cliente.grupo_nome}</strong></span>}
             {cliente.whatsapp && <span><small className="cinza">WhatsApp</small><strong>{mascaraTelefone(cliente.whatsapp)}</strong></span>}
           </div>
         )}
@@ -456,7 +469,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
                 <li key={c.id}>
                   <label className={cliente?.id === c.id ? 'opcao marcada' : 'opcao'}>
                     <input type="radio" name={`${grupo}-cliente`} checked={cliente?.id === c.id} onChange={() => setCliente(c)} />
-                    <strong>{c.nome}</strong><small className="cinza">{c.tipo === 'pj' ? 'Empresa' : 'Pessoa física'}{c.cpf_cnpj && ` · ${formatarDoc(c.cpf_cnpj)}`}</small>
+                    <strong>{c.nome}</strong><small className="cinza">{c.tipo === 'pj' ? 'Empresa' : c.tipo === 'avulso' ? 'Avulso' : 'Pessoa física'}{c.cpf_cnpj && ` · ${formatarDoc(c.cpf_cnpj)}`}{c.grupo_nome && ` · Grupo ${c.grupo_nome}`}</small>
                   </label>
                 </li>
               ))}
@@ -613,6 +626,11 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       {consulta && (
         <ConsultaPlaca loja={loja} placaInicial={consulta.placa} aoUsar={editavel ? usarVeiculo : undefined} aoFechar={() => setConsulta(null)} />
       )}
+      {trocandoUnidade && (
+        <TrocarUnidade venda={venda} lojas={lojasPermitidas.filter((l) => l !== venda.loja_id && perfil.lojas.find((x) => x.id === l)?.empresa_id === perfil.lojas.find((x) => x.id === venda.loja_id)?.empresa_id)
+          .map((l) => perfil.lojas.find((x) => x.id === l))} emailSugerido={pode.autorizar ? perfil.usuario.email : ''}
+          aoFechar={() => setTrocandoUnidade(false)} aoTrocar={() => { setTrocandoUnidade(false); carregar(); }} />
+      )}
       {autorizando && (
         <AutorizarDesconto desconto={numero(desconto)} emailSugerido={pode.desconto ? perfil.usuario.email : ''}
           aoFechar={() => setAutorizando(null)}
@@ -624,6 +642,47 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       )}
       {aviso && <div className="aviso" role="status">{aviso}</div>}
     </>
+  );
+}
+
+// Troca a unidade de uma venda aberta com a senha de um supervisor/administrador
+function TrocarUnidade({ venda, lojas, emailSugerido, aoFechar, aoTrocar }) {
+  const [loja, setLoja] = useState(lojas[0]?.id || '');
+  const [email, setEmail] = useState(emailSugerido);
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function trocar(e) {
+    e.preventDefault();
+    setEnviando(true); setErro('');
+    try { await api(`/vendas/${venda.id}/unidade`, { metodo: 'POST', corpo: { loja_id: loja, email, senha } }); aoTrocar(); }
+    catch (falha) { setErro(falha.message); setEnviando(false); }
+  }
+  return (
+    <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-label="Trocar unidade">
+        <div className="modal-topo">
+          <h2>Trocar a unidade da venda nº {venda.numero}</h2>
+          <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+        {lojas.length === 0 ? <p className="cinza">Não há outra unidade do mesmo grupo para escolher.</p> : (
+          <form className="formulario" onSubmit={trocar}>
+            <label>Nova unidade
+              <select value={loja} onChange={(e) => setLoja(e.target.value)}>{lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}</select>
+            </label>
+            <p className="cinza ajuda">Precisa da senha de um supervisor ou administrador (perfil com "Autorizar alteração de venda"). Fica registrado no histórico.</p>
+            <label>E-mail de quem autoriza<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" /></label>
+            <label>Senha de quem autoriza<input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} required autoComplete="new-password" /></label>
+            {erro && <p className="erro" role="alert">{erro}</p>}
+            <div className="acoes-modal">
+              <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
+              <button className="botao-primario" disabled={enviando}>{enviando ? 'Conferindo…' : 'Trocar unidade'}</button>
+            </div>
+          </form>
+        )}
+      </section>
+    </div>
   );
 }
 

@@ -74,8 +74,10 @@ export default function Colaboradores({ perfil, loja }) {
 
 function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSalvar }) {
   const [c, setC] = useState(null);
-  const [f, setF] = useState({ nome: '', data_nascimento: '', cpf: '', celular: '', cargo: '',
-    loja_id: lojasEditar.some((l) => l.id === lojaPadrao) ? lojaPadrao : lojasEditar[0]?.id || '', ativo: true });
+  const [f, setF] = useState({ nome: '', data_nascimento: '', cpf: '', celular: '', cargo: '', cargo_id: '',
+    loja_ids: [lojasEditar.some((l) => l.id === lojaPadrao) ? lojaPadrao : lojasEditar[0]?.id].filter(Boolean), ativo: true });
+  const [cargos, setCargos] = useState([]);
+  useEffect(() => { api('/cargos').then((l) => setCargos(l.filter((x) => x.ativo))).catch(() => {}); }, []);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -84,7 +86,8 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
       const d = await api(`/colaboradores/${id}`);
       setC(d);
       setF({ nome: d.nome, data_nascimento: d.data_nascimento || '', cpf: d.cpf ? mascaraCpf(d.cpf) : '',
-        celular: d.celular ? mascaraTelefone(d.celular) : '', cargo: d.cargo || '', loja_id: d.loja_id, ativo: d.ativo });
+        celular: d.celular ? mascaraTelefone(d.celular) : '', cargo: d.cargo || '', cargo_id: d.cargo_id || '',
+        loja_ids: d.loja_ids?.length ? d.loja_ids : [d.loja_id], ativo: d.ativo });
     } catch (falha) {
       setErro(falha.message);
     }
@@ -98,6 +101,7 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
     e.preventDefault();
     setErro('');
     if (f.cpf && !cpfValido(f.cpf)) return setErro('CPF inválido. Confira os números.');
+    if (!f.loja_ids.length) return setErro('Marque pelo menos uma unidade.');
     setSalvando(true);
     try {
       const r = await (id ? api(`/colaboradores/${id}`, { metodo: 'PUT', corpo: f }) : api('/colaboradores', { metodo: 'POST', corpo: f }));
@@ -110,9 +114,17 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
     }
   }
 
-  // Filiais que aparecem no campo: as que pode editar, mais a atual (se for só consulta)
-  const lojasCampo = c && !lojasEditar.some((l) => l.id === c.loja_id)
-    ? [...lojasEditar, perfil.lojas.find((l) => l.id === c.loja_id) || { id: c.loja_id, nome: c.loja_id }] : lojasEditar;
+  // Unidades que aparecem: as que pode editar, mais as que o colaborador já tem (se forem só consulta)
+  const lojasCampo = [...lojasEditar, ...f.loja_ids.filter((id) => !lojasEditar.some((l) => l.id === id))
+    .map((id) => perfil.lojas.find((l) => l.id === id) || { id, nome: 'OUTRA UNIDADE' })];
+  // as unidades precisam ser do mesmo grupo: mostra só as do grupo da primeira marcada
+  const grupoDe = (id) => perfil.lojas.find((l) => l.id === id)?.empresa_id;
+  const grupoAtual = grupoDe(f.loja_ids[0]);
+  const lojasDoGrupo = grupoAtual ? lojasCampo.filter((l) => !l.empresa_id || l.empresa_id === grupoAtual || !grupoDe(l.id)) : lojasCampo;
+  const editaveis = lojasDoGrupo.filter((l) => lojasEditar.some((x) => x.id === l.id));
+  const todas = editaveis.length > 0 && editaveis.every((l) => f.loja_ids.includes(l.id));
+  const marcar = (id, sim) => setF({ ...f, loja_ids: sim ? [...f.loja_ids, id] : f.loja_ids.filter((x) => x !== id) });
+  const cargosDoGrupo = cargos.filter((x) => !grupoAtual || x.empresa_id === grupoAtual);
 
   return (
     <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
@@ -130,13 +142,30 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
                   <label>Data de nascimento<input type="date" value={f.data_nascimento} onChange={muda('data_nascimento')} /></label>
                   <label>CPF<input value={f.cpf} inputMode="numeric" placeholder="123.456.789-10" onChange={muda('cpf', mascaraCpf)} /></label>
                   <label>Celular<input value={f.celular} inputMode="tel" placeholder="(11) 99999-9999" onChange={muda('celular', mascaraTelefone)} /></label>
-                  <label>Cargo / função<input value={f.cargo} onChange={muda('cargo')} placeholder="Ex.: Vistoriador" /></label>
-                  <label>Filial
-                    <select value={f.loja_id} onChange={muda('loja_id')} required>
-                      {lojasCampo.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
-                    </select>
-                  </label>
+                  {cargosDoGrupo.length > 0 ? (
+                    <label>Cargo
+                      <select value={f.cargo_id} onChange={(e) => setF({ ...f, cargo_id: e.target.value })}>
+                        <option value="">{f.cargo && !f.cargo_id ? f.cargo : 'Sem cargo'}</option>
+                        {cargosDoGrupo.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+                      </select>
+                    </label>
+                  ) : (
+                    <label>Cargo / função<input value={f.cargo} onChange={muda('cargo')} placeholder="Cadastre cargos em Usuários e permissões" /></label>
+                  )}
                 </div>
+                <fieldset className="grupo-permissoes">
+                  <legend>Unidades em que trabalha</legend>
+                  {editaveis.length > 1 && (
+                    <label className="linha-check"><input type="checkbox" checked={todas}
+                      onChange={(e) => setF({ ...f, loja_ids: e.target.checked ? [...new Set([...f.loja_ids, ...editaveis.map((l) => l.id)])] : f.loja_ids.filter((id) => !editaveis.some((l) => l.id === id)) })} /> <strong>Todas as unidades</strong></label>
+                  )}
+                  {lojasDoGrupo.map((l) => (
+                    <label key={l.id} className="linha-check">
+                      <input type="checkbox" checked={f.loja_ids.includes(l.id)} disabled={!lojasEditar.some((x) => x.id === l.id)}
+                        onChange={(e) => marcar(l.id, e.target.checked)} /> {l.nome}
+                    </label>
+                  ))}
+                </fieldset>
                 {id && <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={muda('ativo')} /> Colaborador ativo (aparece no ponto)</label>}
               </fieldset>
               {erro && <p className="erro" role="alert">{erro}</p>}

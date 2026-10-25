@@ -110,7 +110,7 @@ export function NovaVistoria({ perfil, lojaInicial, lojasPermitidas, tem, aoCria
   useEffect(() => {
     if (modoCliente !== 'buscar' || !loja) return;
     const t = setTimeout(() => {
-      api(`/clientes?loja=${loja}&busca=${encodeURIComponent(busca)}`).then(setClientes).catch((f) => setErro(f.message));
+      api(`/clientes?loja=${loja}&venda=1&busca=${encodeURIComponent(busca)}`).then(setClientes).catch((f) => setErro(f.message));
     }, 300);
     return () => clearTimeout(t);
   }, [busca, modoCliente, loja]);
