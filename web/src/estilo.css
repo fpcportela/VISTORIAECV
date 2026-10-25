@@ -677,3 +677,13 @@ button.tf-linha:hover { border-color: var(--forte); }
 .campo-data-nativo { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; min-height: 0 !important; }
 .filtro-data .campo-data { flex: none; width: 140px; }
 @media (max-width: 820px) { .filtro-data .campo-data { flex: 1; width: auto; } }
+
+/* Logo do grupo: no menu (abaixo de Vistoria ECV), no topo do celular e no cadastro do grupo */
+.logo-grupo { margin: 4px 16px 12px; padding: 10px; background: #fff; border-radius: 10px; display: flex; align-items: center; justify-content: center; min-height: 56px; }
+.logo-grupo img { max-width: 100%; max-height: 64px; object-fit: contain; display: block; }
+.logo-celular { height: 28px; max-width: 90px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px 4px; }
+.campo-logo { display: flex; flex-direction: column; gap: 6px; }
+.linha-logo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.previa-logo { width: 160px; height: 64px; border: 1px dashed var(--borda); border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #fff; overflow: hidden; }
+.previa-logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.linha-logo label.botao-contorno { cursor: pointer; }

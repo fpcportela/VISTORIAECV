@@ -334,6 +334,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         <div className="linha">
           <Icone nome="escudo" tamanho={26} />
           <strong className="titulo">Vistoria ECV</strong>
+          {perfil.logo && <img className="logo-celular" src={perfil.logo} alt={`Logo ${empresa}`} />}
           <button onClick={() => setOculto(!oculto)} aria-label={oculto ? 'Mostrar valores' : 'Ocultar valores'}><Icone nome={oculto ? 'olhoFechado' : 'olho'} tamanho={22} /></button>
           <button onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
           <button onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
@@ -349,6 +350,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
       <div className="corpo">
         <nav className="menu so-computador" aria-label="Menu principal">
+          {perfil.logo && <div className="logo-grupo"><img src={perfil.logo} alt={`Logo ${empresa}`} /></div>}
           {tem('vendas.criar') && (
             <button className="nova-venda" onClick={novaVenda} title="Nova venda" aria-label="Nova venda">
               <Icone nome="mais" /><span className="rotulo">Nova venda</span>
@@ -395,7 +397,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;
               })()
             : tela === 'vendas' ? (abaVenda === 'lista' || !abasVenda.length) && (
-                <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} lojasLote={perfil.lojas.filter((l) => lojasCom('vendas.criar').includes(l.id))} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
+                <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} logo={perfil.logo} lojasLote={perfil.lojas.filter((l) => lojasCom('vendas.criar').includes(l.id))} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
             : tela === 'vistorias' ? (vistoriaId
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)

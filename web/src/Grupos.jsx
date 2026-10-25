@@ -78,8 +78,25 @@ function Modal({ titulo, aoFechar, children }) {
   );
 }
 
+// Reduz a imagem no navegador (até 480 × 200, PNG) para o logo ficar leve
+async function reduzirLogo(arquivo) {
+  if (!/^image\/(png|jpeg|webp)$/.test(arquivo.type)) throw new Error('Use uma imagem PNG ou JPG.');
+  if (arquivo.size > 8 * 1024 * 1024) throw new Error('A imagem é grande demais (máximo 8 MB).');
+  const url = URL.createObjectURL(arquivo);
+  try {
+    const img = await new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => falha(new Error('Não foi possível abrir a imagem.')); i.src = url; });
+    const escala = Math.min(1, 480 / img.width, 200 / img.height);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * escala)); c.height = Math.max(1, Math.round(img.height * escala));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    let dados = c.toDataURL('image/png');
+    if (dados.length > 380000) dados = c.toDataURL('image/jpeg', 0.85);
+    return dados;
+  } finally { URL.revokeObjectURL(url); }
+}
+
 function EditorGrupo({ item, aoFechar, aoSalvar }) {
-  const [f, setF] = useState({ razao_social: item?.razao_social || '', nome_fantasia: item?.nome_fantasia || '', cnpj: item?.cnpj ? mascaraCnpj(item.cnpj) : '', ativo: item?.ativo ?? true });
+  const [f, setF] = useState({ razao_social: item?.razao_social || '', nome_fantasia: item?.nome_fantasia || '', cnpj: item?.cnpj ? mascaraCnpj(item.cnpj) : '', ativo: item?.ativo ?? true, logo: item?.logo || '' });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -97,6 +114,22 @@ function EditorGrupo({ item, aoFechar, aoSalvar }) {
       <form className="formulario" onSubmit={salvar}>
         <label>Nome do grupo (razão social)<input value={f.razao_social} onChange={(e) => setF({ ...f, razao_social: e.target.value })} required autoFocus /></label>
         <label>Nome fantasia<input value={f.nome_fantasia} onChange={(e) => setF({ ...f, nome_fantasia: e.target.value })} placeholder="Opcional" /></label>
+        <div className="campo-logo">
+          <span className="rotulo-campo">Logo da empresa</span>
+          <div className="linha-logo">
+            <span className="previa-logo">{f.logo ? <img src={f.logo} alt="Logo do grupo" /> : <small className="cinza">Sem logo</small>}</span>
+            <label className="botao-contorno pequeno">
+              {f.logo ? 'Trocar' : 'Escolher imagem'}
+              <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async (e) => {
+                const arq = e.target.files?.[0]; e.target.value = '';
+                if (!arq) return;
+                try { setF((x) => ({ ...x, logo: '' })); const logo = await reduzirLogo(arq); setF((x) => ({ ...x, logo })); setErro(''); } catch (falha) { setErro(falha.message); }
+              }} />
+            </label>
+            {f.logo && <button type="button" className="botao-texto" onClick={() => setF({ ...f, logo: '' })}>Remover</button>}
+          </div>
+          <small className="cinza">Aparece no menu, abaixo de Vistoria ECV, e no cabeçalho dos relatórios em PDF.</small>
+        </div>
         <label>CNPJ do grupo<input value={f.cnpj} inputMode="numeric" placeholder="Opcional" onChange={(e) => setF({ ...f, cnpj: mascaraCnpj(e.target.value) })} /></label>
         {item && <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={(e) => setF({ ...f, ativo: e.target.checked })} /> Grupo ativo</label>}
         {!item && <p className="cinza ajuda">O grupo já nasce com o perfil Administrador, o plano de contas e os tipos de arquivo. Depois cadastre as unidades e os usuários dele.</p>}

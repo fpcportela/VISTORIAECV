@@ -35,7 +35,7 @@ const PERIODOS = {
   todas: () => ['', ''],
 };
 
-export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', empresa, lojasLote = [] }) {
+export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', empresa, logo, lojasLote = [] }) {
   const [[de, ate], setIntervalo] = useState(buscaInicial ? PERIODOS.todas() : PERIODOS.mes());
   const [situacao, setSituacao] = useState('');
   const [cliente, setCliente] = useState(buscaInicial);
@@ -67,7 +67,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
         situacao && SITUACOES[situacao],
       ].filter(Boolean);
       const { gerarPdfVendas } = await import('./relatorioVendas.js');
-      await gerarPdfVendas({ lista, filtros, empresa });
+      await gerarPdfVendas({ lista, filtros, empresa, logo });
     } catch (falha) {
       setErro(`Não foi possível gerar o PDF: ${falha.message}`);
     } finally {

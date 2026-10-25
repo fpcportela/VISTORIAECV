@@ -6,17 +6,28 @@ const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Canc
 
 // Gera o PDF da lista de vendas filtrada (A4 deitado) e baixa o arquivo.
 // As bibliotecas só são carregadas quando o botão é usado.
-export async function gerarPdfVendas({ lista, filtros, empresa }) {
+export async function gerarPdfVendas({ lista, filtros, empresa, logo }) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const cor = getComputedStyle(document.documentElement).getPropertyValue('--forte').trim() || '#0774B8';
   const rgb = cor.match(/[0-9a-f]{2}/gi)?.map((h) => parseInt(h, 16)) || [7, 116, 184];
 
+  // logo do grupo no canto esquerdo (até 14 mm de altura e 45 mm de largura); o texto vem ao lado
+  let x = 14;
+  if (logo) {
+    const img = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = logo; });
+    if (img?.width) {
+      const escala = Math.min(14 / img.height, 45 / img.width);
+      const w = img.width * escala, h = img.height * escala;
+      doc.addImage(logo, /^data:image\/(\w+)/.exec(logo)[1].toUpperCase(), 14, 8 + (14 - h) / 2, w, h);
+      x = 14 + w + 5;
+    }
+  }
   doc.setFontSize(16);
-  doc.text('Relatório de vendas', 14, 16);
+  doc.text('Relatório de vendas', x, 14);
   doc.setFontSize(10);
   doc.setTextColor(90);
-  doc.text(empresa || '', 14, 22);
+  doc.text(empresa || '', x, 20);
   doc.text(filtros.join('  ·  ') || 'Sem filtros', 14, 27, { maxWidth: 200 });
   doc.text(`Gerado em ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`, 283, 16, { align: 'right' });
 

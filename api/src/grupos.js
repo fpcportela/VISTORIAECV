@@ -26,7 +26,7 @@ export function rotasGrupos(app, { exigeLogin, rota }) {
     const dados = await comoUsuario(req.usuarioId, async (db) => {
       const master = (await db.query('select eh_admin_rede() as m')).rows[0].m;
       const grupos = (await db.query(
-        `select e.id, e.razao_social, e.nome_fantasia, e.cnpj, e.ativo,
+        `select e.id, e.razao_social, e.nome_fantasia, e.cnpj, e.ativo, e.logo,
                 coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'codigo', l.codigo, 'nome', l.nome, 'cnpj', l.cnpj,
                           'telefone', l.telefone, 'cidade', l.cidade, 'uf', l.uf, 'ativo', l.ativo) order by l.codigo)
                             from lojas l where l.empresa_id = e.id and ($1 or tem_loja(l.id))), '[]') as unidades
@@ -43,19 +43,24 @@ export function rotasGrupos(app, { exigeLogin, rota }) {
     const b = req.body || {};
     const razao = texto(b.razao_social, 120)?.toUpperCase();
     if (!razao) throw new Recusa(400, 'Informe o nome do grupo.');
-    const campos = [razao, texto(b.nome_fantasia, 120)?.toUpperCase() || null, cnpjOpcional(b.cnpj), b.ativo !== false];
+    // logo: data URL de imagem de até ~300 KB (o navegador já reduz antes de mandar)
+    const logo = b.logo ? String(b.logo) : null;
+    if (logo && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo) || logo.length > 400000)) {
+      throw new Recusa(400, 'Logo inválido. Use uma imagem PNG ou JPG.');
+    }
+    const campos = [razao, texto(b.nome_fantasia, 120)?.toUpperCase() || null, cnpjOpcional(b.cnpj), b.ativo !== false, logo];
     const novo = await comoUsuario(req.usuarioId, async (db) => {
       await soMaster(db);
       let gid = id;
       try {
         if (gid) {
           const ok = (await db.query(
-            'update empresas set razao_social = $2, nome_fantasia = $3, cnpj = $4, ativo = $5 where id = $1', [gid, ...campos])).rowCount;
+            'update empresas set razao_social = $2, nome_fantasia = $3, cnpj = $4, ativo = $5, logo = $6 where id = $1', [gid, ...campos])).rowCount;
           if (!ok) throw new Recusa(404, 'Grupo não encontrado.');
         } else {
           gid = (await db.query(
-            `insert into empresas (franquia_id, razao_social, nome_fantasia, cnpj, ativo)
-             values ((select id from franquias order by criado_em limit 1), $1, $2, $3, $4) returning id`, campos)).rows[0].id;
+            `insert into empresas (franquia_id, razao_social, nome_fantasia, cnpj, ativo, logo)
+             values ((select id from franquias order by criado_em limit 1), $1, $2, $3, $4, $5) returning id`, campos)).rows[0].id;
         }
       } catch (e) { duplicado(e, 'Já existe um grupo com esse CNPJ.'); }
       await db.query('select app_preparar_grupo($1)', [gid]);

@@ -70,7 +70,10 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
       ? (await db.query('select id, coalesce(nome_fantasia, razao_social) as nome from empresas where ativo order by 2')).rows
       : [...new Map(lojas.map((l) => [l.empresa_id, { id: l.empresa_id, nome: l.empresa }])).values()];
     const grupo = usuario.admin_rede ? (await db.query('select grupo_ativo() as g')).rows[0].g : null;
-    return { usuario, lojas, cor, atalhos, menu, acessos, grupos, grupo, master: usuario.admin_rede };
+    // logo do grupo em uso (o master só vê quando escolhe um grupo no topo)
+    const grupoLogo = grupo || (!usuario.admin_rede && grupos.length === 1 ? grupos[0].id : null);
+    const logo = grupoLogo ? (await db.query('select logo from empresas where id = $1', [grupoLogo])).rows[0]?.logo || null : null;
+    return { usuario, lojas, cor, atalhos, menu, acessos, grupos, grupo, logo, master: usuario.admin_rede };
   });
   res.json(dados);
 }));
