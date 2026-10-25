@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, sessao } from './api.js';
 import { criarTem } from './modulos.js';
+import { Icone } from './icones.jsx';
 
 // Controle de ponto dos colaboradores: registro com foto (entrada, saída para o
 // almoço, volta do almoço, saída) e espelho do mês com edição e justificativa.
@@ -201,6 +202,7 @@ function Espelho({ loja }) {
   const [dados, setDados] = useState(null);
   const [detalhe, setDetalhe] = useState(null); // { data, tipo }
   const [justificando, setJustificando] = useState(null); // data
+  const [foto, setFoto] = useState(null); // { id, titulo }
   const [erro, setErro] = useState('');
 
   useEffect(() => {
@@ -246,10 +248,17 @@ function Espelho({ loja }) {
                     <span key={k} data-rotulo={MARCACOES[k]}>
                       {marcas[k] ? (
                         <button className={`tp-hora${marcas[k].origem === 'ajuste' ? ' editada' : ''}`} onClick={() => setDetalhe({ data: d, tipo: k })}
-                          title={marcas[k].origem === 'ajuste' ? `Editada: ${marcas[k].motivo}` : 'Ver foto'}>
+                          title={marcas[k].origem === 'ajuste' ? `Editada: ${marcas[k].motivo}` : 'Ver detalhes'}>
                           {horaBR(marcas[k].hora)}{marcas[k].origem === 'ajuste' && <sup>*</sup>}
                         </button>
-                      ) : dados.pode.ajustar ? (
+                      ) : null}
+                      {marcas[k]?.tem_foto && (
+                        <button className="tp-foto" onClick={() => setFoto({ id: marcas[k].id, titulo: `${MARCACOES[k]} · ${new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')} · ${horaBR(marcas[k].hora)}` })}
+                          title="Ver foto do registro" aria-label={`Ver foto: ${MARCACOES[k]} de ${new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}`}>
+                          <Icone nome="camera" tamanho={15} />
+                        </button>
+                      )}
+                      {marcas[k] ? null : dados.pode.ajustar ? (
                         <button className="tp-vazio" onClick={() => setDetalhe({ data: d, tipo: k })} title="Incluir marcação">+</button>
                       ) : <span className="cinza">—</span>}
                     </span>
@@ -268,6 +277,18 @@ function Espelho({ loja }) {
       )}
       {detalhe && dados && (
         <DetalheMarcacao dados={dados} {...detalhe} aoFechar={() => setDetalhe(null)} aoSalvar={() => { setDetalhe(null); carregar(); }} />
+      )}
+      {foto && dados && (
+        <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && setFoto(null)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-label="Foto do registro">
+            <div className="modal-topo">
+              <h2>{foto.titulo}</h2>
+              <button className="fechar" onClick={() => setFoto(null)} aria-label="Fechar">×</button>
+            </div>
+            <p className="cinza">{dados.colaborador.nome}</p>
+            <FotoPonto id={foto.id} />
+          </section>
+        </div>
       )}
       {justificando && dados && (
         <Justificar colaborador={dados.colaborador.id} data={justificando} atual={justificativa(justificando)?.texto || ''}

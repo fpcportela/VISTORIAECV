@@ -756,3 +756,5 @@ button.tf-linha:hover { border-color: var(--forte); }
 .buscar-cliente-zap { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .buscar-cliente-zap input { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font: inherit; width: 100%; }
 .acesso-sistema .dados-veiculo label { text-align: left; align-items: stretch; }
+.tp-foto { background: none; border: none; padding: 2px 4px; margin-left: 2px; color: var(--forte); cursor: pointer; border-radius: 6px; vertical-align: middle; display: inline-flex; }
+.tp-foto:hover { background: #eef1f6; }
