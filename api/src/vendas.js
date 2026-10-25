@@ -162,7 +162,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const empresa = await empresaDaLoja(db, loja);
     await exigir(db, loja, 'vendas.criar', 'Seu perfil não pode criar ou alterar vendas.');
     const tipo = 'venda_avulsa'; // orçamento não é usado: toda venda é avulsa
-    const data = dataValida(b.data_venda) || new Date().toISOString().slice(0, 10);
+    const data = dataValida(b.data_venda) || new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
     const desconto = dinheiro(b.desconto || 0);
     if (desconto === null) throw new Recusa(400, 'Desconto inválido.');
     if (desconto > 0 && desconto !== Number(existente?.desconto || 0)) {

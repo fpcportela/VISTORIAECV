@@ -9,6 +9,8 @@ import UsuariosPermissoes from './UsuariosPermissoes.jsx';
 import { ExecutarVistoria, ListaVistorias, NovaVistoria } from './Vistorias.jsx';
 import { EditorVenda, ListaVendas, SITUACOES } from './Vendas.jsx';
 import Servicos from './Servicos.jsx';
+import Colaboradores from './Colaboradores.jsx';
+import Ponto from './Ponto.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
@@ -57,7 +59,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   function abrir(id) {
     setMenuAberto(false);
-    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos'].includes(id)) {
+    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto'].includes(id)) {
       setTela(id); setVistoriaId(null); setBuscaVendas('');
       if (id === 'vendas') setAbaVenda('lista');
     }
@@ -276,8 +278,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         {tem('ponto.registrar') && (
           <section className="cartao painel">
             <h2>Ponto de hoje</h2>
-            <small className="cinza">Nenhum registro de entrada ainda.</small>
-            <button className="botao-primario pequeno" onClick={emBreve}>Registrar ponto</button>
+            <small className="cinza">Entrada, almoço e saída, com foto.</small>
+            <button className="botao-primario pequeno" onClick={() => abrir('ponto')}>Registrar ponto</button>
           </section>
         )}
       </div>
@@ -354,6 +356,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             </div>
           )}
           {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
+            : tela === 'colaboradores' ? <Colaboradores perfil={perfil} loja={loja} />
+            : tela === 'ponto' ? <Ponto perfil={perfil} loja={loja} />
             : tela === 'servicos' ? (() => {
                 const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;

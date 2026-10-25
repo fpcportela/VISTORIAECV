@@ -2,6 +2,8 @@ import pg from 'pg';
 
 // Valores numéricos do Postgres chegam como texto; converte para número
 pg.types.setTypeParser(1700, (v) => (v === null ? null : Number(v)));
+// Datas (sem hora) chegam como texto AAAA-MM-DD, sem conversão de fuso
+pg.types.setTypeParser(1082, (v) => v);
 
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || 'postgres://app_api:app_dev@localhost:5432/vistoria_ecv',

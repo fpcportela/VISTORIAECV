@@ -4,10 +4,11 @@ import { comoUsuario } from './db.js';
 import { rotasAcessos } from './acessos.js';
 import { rotasVistorias } from './vistorias.js';
 import { rotasVendas } from './vendas.js';
+import { rotasPessoas } from './pessoas.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '3mb' })); // a foto do ponto vem em base64
 
 const SEGREDO = process.env.JWT_SECRET || 'troque-este-segredo-em-producao';
 const PORTA = Number(process.env.PORT || 3001);
@@ -202,5 +203,6 @@ app.get('/api/placa/:placa', exigeLogin, rota(async (req, res) => {
 rotasAcessos(app, { exigeLogin, rota });
 rotasVistorias(app, { exigeLogin, rota });
 rotasVendas(app, { exigeLogin, rota });
+rotasPessoas(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));

@@ -13,6 +13,7 @@ const caminhos = {
   maquininha: <><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M9 6h6v4H9z" /><path d="M9 14h.01M12 14h.01M15 14h.01M9 17h.01M12 17h.01M15 17h.01" /></>,
   lojas: <path d="M4 9 5.5 4h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" />,
   usuarios: <><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z" /><circle cx="12" cy="10" r="2.5" /><path d="M8 16c.6-1.8 2.2-3 4-3s3.4 1.2 4 3" /></>,
+  colaboradores: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="11" r="2.5" /><path d="M5.5 16.5c.5-1.6 1.8-2.5 3.5-2.5s3 .9 3.5 2.5M15 10h3M15 13h3" /></>,
   ponto: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   relatorios: <><path d="M4 4v16h16" /><path d="m8 15 4-4 3 3 5-6" /></>,
   whatsapp: <path d="M20 12a8 8 0 0 1-11.8 7L4 20l1.1-4A8 8 0 1 1 20 12z" />,

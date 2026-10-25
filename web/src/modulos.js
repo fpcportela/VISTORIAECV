@@ -12,19 +12,23 @@ export const MODULOS = [
   { id: 'servicos', nome: 'Serviços e produtos', curto: 'Serviços', permissao: 'servicos.ver' },
   { id: 'lojas', nome: 'Lojas', curto: 'Lojas', permissao: 'lojas.ver' },
   { id: 'usuarios', nome: 'Usuários e permissões', curto: 'Usuários', permissao: 'usuarios.ver' },
-  { id: 'ponto', nome: 'Controle de ponto', curto: 'Ponto', permissao: 'ponto.registrar' },
+  { id: 'colaboradores', nome: 'Colaboradores', curto: 'Colaboradores', permissao: 'colaboradores.ver' },
+  { id: 'ponto', nome: 'Controle de ponto', curto: 'Ponto', permissao: ['ponto.registrar', 'ponto.ver_equipe'] },
   { id: 'relatorios', nome: 'Relatórios', curto: 'Relatórios', permissao: 'relatorios.ver' },
   { id: 'whatsapp', nome: 'WhatsApp', curto: 'WhatsApp', permissao: 'whatsapp.ver' },
   { id: 'config', nome: 'Configurações', curto: 'Configurações', permissao: 'config.ver' },
 ];
 
-// Devolve tem(permissao): na loja escolhida, ou em qualquer loja quando "Todas as lojas"
+// Devolve tem(permissao): na loja escolhida, ou em qualquer loja quando "Todas as lojas".
+// Com uma lista, basta ter uma das permissões.
 export function criarTem(perfil, loja) {
-  return (permissao) => {
+  const tem = (permissao) => {
+    if (Array.isArray(permissao)) return permissao.some(tem);
     if (perfil.master) return true;
     if (loja) return (perfil.acessos[loja] || []).includes(permissao);
     return Object.values(perfil.acessos).some((lista) => lista.includes(permissao));
   };
+  return tem;
 }
 
 // Módulos na ordem escolhida pelo usuário; os que não estão na lista vão no fim
