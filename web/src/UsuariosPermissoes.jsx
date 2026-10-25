@@ -73,6 +73,7 @@ export default function UsuariosPermissoes({ perfil }) {
                 {u.master && <span className="etiqueta">Master</span>}
                 {u.cargo && <span className="etiqueta">{u.cargo}</span>}
                 {!u.ativo && <span className="etiqueta inativa">Inativo</span>}
+                {u.colaborador_id && <span className="etiqueta">Colaborador</span>}
               </span>
               <small className="cinza">{[u.email, u.cpf && mascaraCpf(u.cpf), u.telefone && mascaraTelefone(u.telefone)].filter(Boolean).join(' · ')}</small>
               <small>
@@ -348,6 +349,32 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
     Object.fromEntries((item?.vinculos || []).map((v) => [v.loja_id, v.perfil_id])));
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  // colaborador amarrado ao usuário: o que muda num cadastro muda no outro
+  const [colab, setColab] = useState(item?.colaborador_id ? { id: item.colaborador_id, nome: item.colaborador } : null);
+  const [achados, setAchados] = useState([]);
+  const [ignorados, setIgnorados] = useState(false);
+
+  // Pesquisa na base de colaboradores pelo nome ou CPF digitado (só no usuário novo ou ainda sem colaborador)
+  const busca = cpf.replace(/\D/g, '').length >= 6 ? cpf.replace(/\D/g, '') : nome.trim();
+  useEffect(() => {
+    if (somenteLeitura || colab || ignorados || busca.length < 3) { setAchados([]); return undefined; }
+    const t = setTimeout(() => {
+      api(`/usuarios/colaboradores?busca=${encodeURIComponent(busca)}`).then(setAchados).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [busca, colab, ignorados]);
+
+  function usarColaborador(c) {
+    setColab({ id: c.id, nome: c.nome }); setAchados([]);
+    setNome(c.nome);
+    if (c.cpf) setCpf(mascaraCpf(c.cpf));
+    if (c.celular) setTelefone(mascaraTelefone(c.celular));
+    const cargo = cargos.find((x) => x.id === c.cargo_id);
+    if (cargo) setCargoId(cargo.id);
+    // já marca a filial do colaborador (com o perfil sugerido pelo cargo, se houver)
+    const l = lojas.find((x) => x.id === c.loja_id);
+    if (l && !(l.id in vinculos)) setVinculos((v) => ({ ...v, [l.id]: cargo?.perfil_id && cargo.empresa_id === l.empresa_id ? cargo.perfil_id : sugerir(l) }));
+  }
 
   const perfisDa = (l) => perfis.filter((p) => p.empresa_id === l.empresa_id);
   // Ao marcar uma filial, repete o perfil já escolhido nas outras do grupo (sem nenhum, a pessoa escolhe)
@@ -376,7 +403,7 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
     setSalvando(true);
     try {
       const corpo = {
-        nome, cpf, telefone, email, senha: senha || undefined, ativo, cargo_id: cargoId || null,
+        nome, cpf, telefone, email, senha: senha || undefined, ativo, cargo_id: cargoId || null, colaborador_id: colab?.id || null,
         vinculos: Object.entries(vinculos).filter(([, p]) => p).map(([loja_id, perfil_id]) => ({ loja_id, perfil_id })),
       };
       await (item ? api(`/usuarios/${item.id}`, { metodo: 'PUT', corpo }) : api('/usuarios', { metodo: 'POST', corpo }));
@@ -390,7 +417,27 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
     <Modal titulo={somenteLeitura ? 'Usuário' : item ? 'Editar usuário' : 'Novo usuário'} aoFechar={aoFechar}>
       <form className="formulario" onSubmit={salvar}>
         <fieldset className="sem-borda" disabled={somenteLeitura}>
+          {colab && (
+            <p className="aviso-colab">
+              Ligado ao colaborador <strong>{colab.nome}</strong>. Nome, CPF, celular e cargo ficam iguais nos dois cadastros.
+              {!somenteLeitura && <button type="button" className="botao-texto" onClick={() => { setColab(null); setIgnorados(true); }}>Desligar</button>}
+            </p>
+          )}
           <label>Nome<input value={nome} onChange={(e) => setNome(e.target.value)} required autoComplete="off" /></label>
+          {achados.length > 0 && (
+            <div className="achados-colab" role="status">
+              <strong>Já existe na base de colaboradores:</strong>
+              {achados.map((c) => (
+                <div key={c.id} className="achado-colab">
+                  <span>{c.nome}<small className="cinza"> · {[c.cpf && mascaraCpf(c.cpf), c.celular && mascaraTelefone(c.celular), c.cargo, c.loja].filter(Boolean).join(' · ')}</small></span>
+                  {c.usuario_id && c.usuario_id !== item?.id
+                    ? <small className="cinza">já tem o usuário {c.usuario}</small>
+                    : <button type="button" className="botao-contorno pequeno" onClick={() => usarColaborador(c)}>Usar e ligar</button>}
+                </div>
+              ))}
+              <button type="button" className="botao-texto" onClick={() => setIgnorados(true)}>Não é nenhum destes</button>
+            </div>
+          )}
           <div className="dados-veiculo">
             <label>CPF<input value={cpf} inputMode="numeric" placeholder="123.456.789-10" onChange={(e) => setCpf(mascaraCpf(e.target.value))} autoComplete="off" /></label>
             <label>Celular<input value={telefone} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => setTelefone(mascaraTelefone(e.target.value))} autoComplete="off" /></label>

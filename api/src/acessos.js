@@ -76,7 +76,15 @@ export function rotasAcessos(app, { exigeLogin, rota }) {
   app.get('/api/usuarios', exigeLogin, rota(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) =>
       (await db.query(
-        'select a.*, c.cargo_id, c.cargo from app_usuarios() a left join app_cargos_usuarios() c on c.usuario_id = a.id')).rows));
+        `select a.*, c.cargo_id, c.cargo, k.colaborador_id, k.colaborador
+           from app_usuarios() a left join app_cargos_usuarios() c on c.usuario_id = a.id
+           left join app_colaborador_do_usuario() k on k.usuario_id = a.id`)).rows));
+  }));
+
+  // Pesquisa na base de colaboradores para o cadastro de usuário já vir preenchido
+  app.get('/api/usuarios/colaboradores', exigeLogin, rota(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) =>
+      (await db.query('select * from app_colaboradores_para_usuario($1)', [String(req.query.busca || '').slice(0, 60)])).rows));
   }));
 
   const salvarUsuario = (id) => rota(async (req, res) => {
@@ -93,6 +101,10 @@ export function rotasAcessos(app, { exigeLogin, rota }) {
       const uid = (await db.query('select app_salvar_usuario($1, $2, $3, $4, $5, $6, $7, $8) as id',
         [id ?? null, nome, email, senha || null, ativo !== false, JSON.stringify(limpos), cpf, telefone])).rows[0].id;
       await db.query('select app_definir_cargo($1, $2)', [uid, cargo]);
+      // colaborador amarrado a este usuário (os dois ficam iguais daqui em diante)
+      if (req.body && 'colaborador_id' in req.body) {
+        await db.query('select app_ligar_colaborador_usuario($1, $2)', [uid, UUID.test(req.body.colaborador_id || '') ? req.body.colaborador_id : null]);
+      }
       return uid;
     });
     res.json({ id: novoId });
