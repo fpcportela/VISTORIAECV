@@ -1,7 +1,8 @@
 import { useEffect, useId, useState } from 'react';
 import { api, moeda } from './api.js';
 import { Icone } from './icones.jsx';
-import { Placa, PlacaInput, placaValida } from './Placa.jsx';
+import { Placa, PlacaInput, PlacasDiversas, placaValida } from './Placa.jsx';
+import { lerMoeda, paraMoeda } from './entrada.js';
 import { SeletorVeiculo } from './Veiculo.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
@@ -10,10 +11,15 @@ export const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada
 const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', cancelada: 'Cancelou' };
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const dataBR = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
-const numero = (v) => Number(String(v ?? '').replace(',', '.')) || 0;
+const numero = lerMoeda;
 const Etiqueta = ({ situacao }) => <span className={`etiqueta venda-${situacao}`}>{SITUACOES[situacao]}</span>;
-const itemVazio = () => ({ servico_id: '', placa: '', tipo_veiculo: null, veiculo: '', marca: '', modelo: '', quantidade: '1', valor_unit: '', mesma: true });
-const veiculoVazio = () => ({ placa: '', tipo_veiculo: null, marca: '', modelo: '' });
+export const FORMAS_PAGAMENTO = { pix: 'PIX', dinheiro: 'Dinheiro', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito',
+  boleto: 'Boleto', transferencia: 'Transferência', faturado: 'Faturado' };
+const itemVazio = () => ({ servico_id: '', quantidade: '1', valor_unit: '' });
+let chaves = 0;
+// A venda é organizada por veículo: cada veículo tem os seus itens
+const veiculoVazio = () => ({ chave: ++chaves, placa: '', tipo_veiculo: null, marca: '', modelo: '', itens: [itemVazio()] });
+const pagamentoVazio = (valor = '') => ({ chave: ++chaves, data_pagamento: hoje(), forma: 'pix', valor, detalhe: '' });
 
 // ---------------------------------------------------------------------------
 // Lista de vendas e orçamentos
@@ -97,12 +103,12 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
               <button key={v.id} className="cartao linha-venda" role="row" onClick={() => aoAbrir(v.id)}>
                 <span className="lv-num"><strong>Nº {v.numero}</strong></span>
                 <span className="lv-cliente">
-                  <span className="lv-placa-cliente">
-                    {v.placas ? <Placa placa={v.placas.split(', ')[0]} tamanho="mini" /> : <small className="cinza">Sem placa</small>}
-                    {v.placas?.includes(',') && <small className="cinza">+{v.placas.split(', ').length - 1}</small>}
+                  {!v.placas ? <small className="cinza lv-sem-placa">Sem placa</small>
+                    : v.placas.includes(',') ? <PlacasDiversas tamanho="mini" /> : <Placa placa={v.placas} tamanho="mini" />}
+                  <span className="lv-nome">
                     <strong>{v.cliente}</strong>
+                    <small className="cinza">{v.cpf_cnpj && `${formatarDoc(v.cpf_cnpj)}`}{v.cpf_cnpj && !loja && ' · '}{!loja && v.loja}</small>
                   </span>
-                  <small className="cinza">{v.cpf_cnpj && `${formatarDoc(v.cpf_cnpj)}`}{v.cpf_cnpj && !loja && ' · '}{!loja && v.loja}</small>
                 </span>
                 <span className="lv-data">{dataBR(v.data_venda)}</span>
                 <span className="lv-valor">R$ {moeda(v.valor_total)}</span>
@@ -130,8 +136,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   const [clientes, setClientes] = useState([]);
   const [novo, setNovo] = useState({ tipo: 'pf', nome: '', cpf_cnpj: '', whatsapp: '', email: '' });
   const [receita, setReceita] = useState(''); // situação da busca do CNPJ
-  const [veiculo, setVeiculo] = useState(veiculoVazio()); // veículo da venda (bloco acima dos itens)
-  const [itens, setItens] = useState([itemVazio()]);
+  const [veiculos, setVeiculos] = useState(() => [veiculoVazio()]);
+  const [pagamentos, setPagamentos] = useState(() => [pagamentoVazio()]);
   const [desconto, setDesconto] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [servicos, setServicos] = useState([]);
@@ -152,11 +158,18 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       const v = await api(`/vendas/${id}`);
       setVenda(v); setLoja(v.loja_id); setData(String(v.data_venda).slice(0, 10));
       setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' ? 'avulso' : 'atual');
-      const principal = v.itens.find((i) => i.placa) || v.itens[0] || {};
-      setVeiculo({ placa: principal.placa || '', tipo_veiculo: principal.tipo_veiculo || null, marca: principal.marca || '', modelo: principal.modelo || '' });
-      setItens(v.itens.map((i) => ({ servico_id: i.servico_id, placa: i.placa || '', tipo_veiculo: i.tipo_veiculo, veiculo: [i.marca, i.modelo].filter(Boolean).join(' '), marca: i.marca || '', modelo: i.modelo || '', quantidade: String(i.quantidade), valor_unit: String(i.valor_unit),
-        mesma: (i.placa || '') === (principal.placa || '') })));
-      setDesconto(v.desconto ? String(v.desconto) : ''); setObservacoes(v.observacoes || '');
+      // agrupa os itens por placa, na ordem em que foram lançados
+      const grupos = [];
+      for (const i of v.itens) {
+        let g = grupos.find((x) => x.placa === (i.placa || ''));
+        if (!g) grupos.push(g = { ...veiculoVazio(), placa: i.placa || '', tipo_veiculo: i.tipo_veiculo || null, marca: i.marca || '', modelo: i.modelo || '', itens: [] });
+        g.itens.push({ servico_id: i.servico_id, quantidade: String(Number(i.quantidade)), valor_unit: paraMoeda(i.valor_unit) });
+      }
+      setVeiculos(grupos.length ? grupos : [veiculoVazio()]);
+      setPagamentos(v.pagamentos?.length
+        ? v.pagamentos.map((pg) => ({ ...pagamentoVazio(), data_pagamento: String(pg.data_pagamento).slice(0, 10), forma: pg.forma, valor: paraMoeda(pg.valor), detalhe: pg.detalhe || '' }))
+        : [pagamentoVazio()]);
+      setDesconto(v.desconto ? paraMoeda(v.desconto) : ''); setObservacoes(v.observacoes || '');
     } catch (falha) {
       setErro(falha.message);
     } finally {
@@ -199,41 +212,41 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   const precoDe = (servicoId, tipoVeiculo) => {
     const s = servicos.find((x) => x.id === servicoId);
     if (!s) return '';
-    return String(s.precos?.[tipoVeiculo || 'carro'] ?? s.valor_padrao);
+    return paraMoeda(s.precos?.[tipoVeiculo || 'carro'] ?? s.valor_padrao);
   };
-  // Itens com "Mesma placa" usam o veículo do bloco Veículo; se o tipo do veículo muda, o preço acompanha
-  const repetirPlacas = (lista, v) => lista.map((i) => {
-    if (!i.mesma) return i;
-    const tipoMudou = i.tipo_veiculo !== v.tipo_veiculo;
-    return { ...i, placa: v.placa, tipo_veiculo: v.tipo_veiculo, veiculo: [v.marca, v.modelo].filter(Boolean).join(' '), marca: v.marca, modelo: v.modelo,
-      valor_unit: tipoMudou && i.servico_id ? precoDe(i.servico_id, v.tipo_veiculo) : i.valor_unit };
-  });
-  const trocarItens = (lista) => setItens(repetirPlacas(lista, veiculo));
-  const mudarVeiculo = (campos) => { const v = { ...veiculo, ...campos }; setVeiculo(v); setItens(repetirPlacas(itens, v)); };
-  const mudarItem = (n, campos) => trocarItens(itens.map((i, k) => (k === n ? { ...i, ...campos } : i)));
-  const escolherServico = (n, servicoId) => mudarItem(n, { servico_id: servicoId, valor_unit: precoDe(servicoId, itens[n].tipo_veiculo) });
-
-  // Placa consultada na API: preenche o item e ajusta o preço ao tipo do veículo
-  function usarVeiculo(v) {
-    // consulta do bloco Veículo, ou da busca geral enquanto o bloco ainda está sem placa
-    if (consulta.indice === 'veiculo' || (consulta.indice === null && (!veiculo.placa || veiculo.placa === v.placa))) {
-      mudarVeiculo({ placa: v.placa, tipo_veiculo: v.tipo, marca: v.marca || '', modelo: v.modelo || '' });
-      return setConsulta(null);
+  // Veículos e os seus itens. Se o tipo do veículo muda, o preço dos itens acompanha.
+  const mudarVeiculo = (n, campos) => setVeiculos((lista) => lista.map((v, k) => {
+    if (k !== n) return v;
+    const novo = { ...v, ...campos };
+    if ('tipo_veiculo' in campos && campos.tipo_veiculo !== v.tipo_veiculo) {
+      novo.itens = v.itens.map((i) => (i.servico_id ? { ...i, valor_unit: precoDe(i.servico_id, campos.tipo_veiculo) } : i));
     }
-    const n = consulta.indice ?? (itens.findIndex((i) => !i.placa) >= 0 ? itens.findIndex((i) => !i.placa) : itens.length);
-    const lista = n < itens.length ? [...itens] : [...itens, { ...itemVazio(), mesma: false }];
-    const i = lista[n];
-    lista[n] = { ...i, mesma: false, placa: v.placa, tipo_veiculo: v.tipo, veiculo: [v.marca, v.modelo].filter(Boolean).join(' '), marca: v.marca || '', modelo: v.modelo || '', valor_unit: i.servico_id ? precoDe(i.servico_id, v.tipo) : i.valor_unit };
-    trocarItens(lista);
+    return novo;
+  }));
+  const mudarItens = (n, f) => setVeiculos((lista) => lista.map((v, k) => (k === n ? { ...v, itens: f(v.itens, v) } : v)));
+  const mudarItem = (n, m, campos) => mudarItens(n, (itens) => itens.map((i, k) => (k === m ? { ...i, ...campos } : i)));
+  const escolherServico = (n, m, servicoId) => mudarItens(n, (itens, v) => itens.map((i, k) => (k === m ? { ...i, servico_id: servicoId, valor_unit: precoDe(servicoId, v.tipo_veiculo) } : i)));
+
+  // Placa consultada na API: preenche o veículo (o da lupa, ou o primeiro sem placa, ou um novo)
+  function usarVeiculo(dados) {
+    const campos = { placa: dados.placa, tipo_veiculo: dados.tipo, marca: dados.marca || '', modelo: dados.modelo || '' };
+    let n = consulta.indice ?? veiculos.findIndex((v) => !v.placa || v.placa === dados.placa);
+    if (n < 0) { n = veiculos.length; setVeiculos((l) => [...l, veiculoVazio()]); }
+    mudarVeiculo(n, campos);
     setConsulta(null);
   }
 
-  // A aba mostra a placa da venda (a primeira completa), o número e a situação
-  const placaPrincipal = placaValida(veiculo.placa) ? veiculo.placa : itens.find((i) => placaValida(i.placa))?.placa || '';
+  // A aba mostra a placa da venda (ou DIVERSOS com mais de um veículo), o número e a situação
+  const placasVenda = veiculos.map((v) => v.placa).filter(placaValida);
+  const placaPrincipal = placasVenda.length > 1 ? 'DIVERSOS' : placasVenda[0] || '';
   useEffect(() => { aoTitulo?.({ placa: placaPrincipal, numero: venda?.numero, situacao: venda?.situacao }); }, [placaPrincipal, venda]);
 
-  const bruto = itens.reduce((t, i) => t + numero(i.quantidade) * numero(i.valor_unit), 0);
+  const todosItens = veiculos.flatMap((v) => v.itens);
+  const bruto = todosItens.reduce((t, i) => t + numero(i.quantidade) * numero(i.valor_unit), 0);
   const total = bruto - numero(desconto);
+  const pago = pagamentos.reduce((t, pg) => t + numero(pg.valor), 0);
+  const falta = Math.round((total - pago) * 100) / 100;
+  const mudarPagamento = (n, campos) => setPagamentos((l) => l.map((pg, k) => (k === n ? { ...pg, ...campos } : pg)));
 
   async function salvar(finalizar = false) {
     setErro('');
@@ -241,13 +254,19 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     if (modoCliente === 'novo' && !novo.nome.trim()) return setErro('Informe o nome do cliente.');
     if (modoCliente === 'novo' && novo.tipo === 'pf' && !cpfValido(novo.cpf_cnpj)) return setErro('CPF inválido. Confira os números.');
     if (modoCliente === 'novo' && novo.tipo === 'pj' && !cnpjValido(novo.cpf_cnpj)) return setErro('CNPJ inválido. Confira os números.');
-    const placaRuim = itens.findIndex((i) => i.placa && !placaValida(i.placa));
-    if (placaRuim >= 0) return setErro(`Item ${placaRuim + 1}: placa incompleta.`);
+    const placaRuim = veiculos.findIndex((v) => v.placa && !placaValida(v.placa));
+    if (placaRuim >= 0) return setErro(`Veículo ${placaRuim + 1}: placa incompleta.`);
+    if (finalizar && Math.abs(falta) > 0.005) {
+      return setErro(`Para finalizar, os pagamentos precisam fechar o total: ${falta > 0 ? `faltam R$ ${moeda(falta)}` : `sobram R$ ${moeda(-falta)}`}.`);
+    }
     setOcupado(true);
     try {
       const corpo = {
         loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
-        itens: itens.filter((i) => i.servico_id).map(({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) })),
+        itens: veiculos.flatMap(({ placa, tipo_veiculo, marca, modelo, itens }) => itens.filter((i) => i.servico_id)
+          .map(({ servico_id, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) }))),
+        pagamentos: pagamentos.filter((pg) => numero(pg.valor) > 0)
+          .map(({ data_pagamento, forma, valor, detalhe }) => ({ data_pagamento, forma, valor: numero(valor), detalhe })),
         ...(modoCliente === 'avulso' && { cliente_avulso: true }),
         ...((modoCliente === 'buscar' || modoCliente === 'atual') && cliente && { cliente_id: cliente.id }),
         ...(modoCliente === 'novo' && { cliente_novo: novo }),
@@ -363,70 +382,96 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       </fieldset>
 
       <fieldset className="cartao secao-venda" disabled={!editavel}>
-        <legend>Veículo</legend>
-        <div className="bloco-veiculo">
-          <div className="placa-item">
-            <PlacaInput valor={veiculo.placa} tamanho="item" aoMudar={(p) => mudarVeiculo({ placa: p, marca: '', modelo: '' })} aria-label="Placa do veículo" />
-            <button type="button" className="botao-redondo clara" title="Consultar esta placa" aria-label="Consultar esta placa"
-              disabled={!podeLoja('placa.consultar')} onClick={() => setConsulta({ indice: 'veiculo', placa: veiculo.placa })}><Icone nome="busca" tamanho={18} /></button>
-          </div>
-          <SeletorVeiculo tipo={veiculo.tipo_veiculo} marca={veiculo.marca} modelo={veiculo.modelo} disabled={!editavel} aoMudar={mudarVeiculo} />
-        </div>
-      </fieldset>
-
-      <fieldset className="cartao secao-venda" disabled={!editavel}>
-        <legend>Itens</legend>
-        <div className="itens-venda">
-          <div className="item-venda cabecalho-itens" aria-hidden="true">
-            <span>Serviço / produto</span><span>Placa</span><span>Qtd.</span><span>Valor unitário</span><span>Total</span><span />
-          </div>
-          {itens.map((i, n) => (
-            <div key={n} className="item-venda">
-              <label><span className="so-celular rotulo-campo">Serviço / produto</span>
-                <select value={i.servico_id} onChange={(e) => escolherServico(n, e.target.value)} aria-label={`Serviço do item ${n + 1}`}>
-                  <option value="">Escolha…</option>
-                  {servicos.map((s) => <option key={s.id} value={s.id}>{s.nome}{s.tipo === 'produto' ? ' (produto)' : ''}</option>)}
-                </select>
-              </label>
+        <legend>Veículos e itens</legend>
+        {veiculos.map((v, n) => (
+          <div key={v.chave} className="grupo-veiculo">
+            <div className="bloco-veiculo">
               <div className="placa-item">
-                <PlacaInput key={i.mesma ? `mesma-${i.placa}` : 'propria'} valor={i.placa} tamanho="item" disabled={i.mesma}
-                  aoMudar={(p) => mudarItem(n, { placa: p, veiculo: '', marca: '', modelo: '' })} aria-label={`Placa do item ${n + 1}`} />
+                <PlacaInput valor={v.placa} tamanho="item" aoMudar={(p) => mudarVeiculo(n, { placa: p, marca: '', modelo: '' })} aria-label={`Placa do veículo ${n + 1}`} />
                 <button type="button" className="botao-redondo clara" title="Consultar esta placa" aria-label="Consultar esta placa"
-                  disabled={i.mesma || !podeLoja('placa.consultar')} onClick={() => setConsulta({ indice: n, placa: i.placa })}><Icone nome="busca" tamanho={18} /></button>
-                <label className="mesma-placa">
-                  <input type="checkbox" checked={i.mesma} onChange={(e) => mudarItem(n, { mesma: e.target.checked, ...(!e.target.checked && { placa: '', veiculo: '', tipo_veiculo: null, marca: '', modelo: '' }) })} /> Mesma placa
-                </label>
+                  disabled={!podeLoja('placa.consultar')} onClick={() => setConsulta({ indice: n, placa: v.placa })}><Icone nome="busca" tamanho={18} /></button>
               </div>
-              <label><span className="so-celular rotulo-campo">Quantidade</span>
-                <input value={i.quantidade} inputMode="decimal" onChange={(e) => mudarItem(n, { quantidade: e.target.value })} aria-label={`Quantidade do item ${n + 1}`} />
-              </label>
-              <label><span className="so-celular rotulo-campo">Valor unitário (R$)</span>
-                <input value={i.valor_unit} inputMode="decimal" onChange={(e) => mudarItem(n, { valor_unit: e.target.value })} aria-label={`Valor unitário do item ${n + 1}`} />
-              </label>
-              <strong className="total-item">R$ {moeda(numero(i.quantidade) * numero(i.valor_unit))}</strong>
-              {!i.mesma && <div className="veiculo-item">
-                <SeletorVeiculo tipo={i.tipo_veiculo} marca={i.marca} modelo={i.modelo} disabled={i.mesma || !editavel}
-                  aoMudar={(campos) => mudarItem(n, {
-                    ...campos,
-                    ...('tipo_veiculo' in campos && i.servico_id && { valor_unit: precoDe(i.servico_id, campos.tipo_veiculo) }),
-                  })} />
-              </div>}
-              <button type="button" className="fechar" aria-label={`Remover item ${n + 1}`} disabled={itens.length === 1}
-                onClick={() => trocarItens(itens.filter((_, k) => k !== n))}>×</button>
+              <SeletorVeiculo tipo={v.tipo_veiculo} marca={v.marca} modelo={v.modelo} disabled={!editavel} aoMudar={(campos) => mudarVeiculo(n, campos)} />
+              <button type="button" className="fechar" aria-label={`Remover veículo ${n + 1}`} title="Remover este veículo e os itens dele"
+                disabled={veiculos.length === 1} onClick={() => setVeiculos((l) => l.filter((_, k) => k !== n))}>×</button>
             </div>
-          ))}
-          <button type="button" className="botao-texto" onClick={() => setItens([...itens, itemVazio()])}><Icone nome="mais" tamanho={18} /> Adicionar item</button>
-        </div>
+            <div className="itens-venda">
+              <div className="item-venda cabecalho-itens" aria-hidden="true">
+                <span>Serviço / produto</span><span>Qtd.</span><span>Valor unitário</span><span>Total</span><span />
+              </div>
+              {v.itens.map((i, m) => (
+                <div key={m} className="item-venda">
+                  <label><span className="so-celular rotulo-campo">Serviço / produto</span>
+                    <select value={i.servico_id} onChange={(e) => escolherServico(n, m, e.target.value)} aria-label={`Serviço do item ${m + 1} do veículo ${n + 1}`}>
+                      <option value="">Escolha…</option>
+                      {servicos.map((s) => <option key={s.id} value={s.id}>{s.nome}{s.tipo === 'produto' ? ' (PRODUTO)' : ''}</option>)}
+                    </select>
+                  </label>
+                  <label><span className="so-celular rotulo-campo">Quantidade</span>
+                    <input value={i.quantidade} inputMode="numeric" onChange={(e) => mudarItem(n, m, { quantidade: e.target.value.replace(/\D/g, '') })} aria-label={`Quantidade do item ${m + 1} do veículo ${n + 1}`} />
+                  </label>
+                  <label><span className="so-celular rotulo-campo">Valor unitário (R$)</span>
+                    <input value={i.valor_unit} inputMode="numeric" data-moeda placeholder="0,00" onChange={(e) => mudarItem(n, m, { valor_unit: e.target.value })} aria-label={`Valor unitário do item ${m + 1} do veículo ${n + 1}`} />
+                  </label>
+                  <strong className="total-item">R$ {moeda(numero(i.quantidade) * numero(i.valor_unit))}</strong>
+                  <button type="button" className="fechar" aria-label={`Remover item ${m + 1} do veículo ${n + 1}`} disabled={v.itens.length === 1}
+                    onClick={() => mudarItens(n, (itens) => itens.filter((_, k) => k !== m))}>×</button>
+                </div>
+              ))}
+              <button type="button" className="botao-texto" onClick={() => mudarItens(n, (itens) => [...itens, itemVazio()])}><Icone nome="mais" tamanho={18} /> Adicionar item</button>
+            </div>
+          </div>
+        ))}
+        <button type="button" className="botao-contorno mais-veiculo" onClick={() => setVeiculos((l) => [...l, veiculoVazio()])}><Icone nome="mais" tamanho={18} /> Veículo</button>
       </fieldset>
 
       <fieldset className="cartao secao-venda" disabled={!editavel}>
-        <legend>Valor</legend>
+        <legend>Valor e pagamento</legend>
         <div className="resumo-valor">
-          <label>Desconto (R$)<input value={desconto} inputMode="decimal" placeholder="0,00" disabled={!pode.desconto}
+          <label>Desconto (R$)<input value={desconto} inputMode="numeric" data-moeda placeholder="0,00" disabled={!pode.desconto}
             onChange={(e) => setDesconto(e.target.value)} /></label>
           <span>Itens<strong>R$ {moeda(bruto)}</strong></span>
           <span>Desconto<strong className="negativo">− R$ {moeda(numero(desconto))}</strong></span>
           <span className="total-venda">Total<strong>R$ {moeda(total)}</strong></span>
+        </div>
+        <div className="pagamentos-venda">
+          <div className="pagamento-venda cabecalho-itens" aria-hidden="true">
+            <span>Data do pagamento</span><span>Forma de pagamento</span><span>Valor (R$)</span><span>Detalhe</span><span />
+          </div>
+          {pagamentos.map((pg, n) => (
+            <div key={pg.chave} className="pagamento-venda">
+              <label><span className="so-celular rotulo-campo">Data do pagamento</span>
+                <input type="date" value={pg.data_pagamento} onChange={(e) => mudarPagamento(n, { data_pagamento: e.target.value })} aria-label={`Data do pagamento ${n + 1}`} />
+              </label>
+              <label><span className="so-celular rotulo-campo">Forma de pagamento</span>
+                <select value={pg.forma} onChange={(e) => mudarPagamento(n, { forma: e.target.value })} aria-label={`Forma do pagamento ${n + 1}`}>
+                  {Object.entries(FORMAS_PAGAMENTO).map(([k, nome]) => <option key={k} value={k}>{nome.toUpperCase()}</option>)}
+                </select>
+              </label>
+              <label><span className="so-celular rotulo-campo">Valor (R$)</span>
+                <input value={pg.valor} inputMode="numeric" data-moeda placeholder={falta > 0 ? moeda(falta) : '0,00'}
+                  onFocus={(e) => {
+                    // sugere o que falta pagar, já selecionado: digitar outro valor substitui
+                    if (!pg.valor && falta > 0) mudarPagamento(n, { valor: moeda(falta) });
+                    const campo = e.target; setTimeout(() => campo.select(), 0);
+                  }}
+                  onChange={(e) => mudarPagamento(n, { valor: e.target.value })} aria-label={`Valor do pagamento ${n + 1}`} />
+              </label>
+              <label><span className="so-celular rotulo-campo">Detalhe</span>
+                <input value={pg.detalhe} placeholder="Ex.: MAQUININHA, BANDEIRA, BANCO" onChange={(e) => mudarPagamento(n, { detalhe: e.target.value })} aria-label={`Detalhe do pagamento ${n + 1}`} />
+              </label>
+              <button type="button" className="fechar" aria-label={`Remover pagamento ${n + 1}`} disabled={pagamentos.length === 1}
+                onClick={() => setPagamentos((l) => l.filter((_, k) => k !== n))}>×</button>
+            </div>
+          ))}
+          <div className="rodape-pagamentos">
+            <button type="button" className="botao-texto" onClick={() => setPagamentos((l) => [...l, pagamentoVazio(falta > 0 ? moeda(falta) : '')])}>
+              <Icone nome="mais" tamanho={18} /> Outra forma de pagamento
+            </button>
+            <span className={Math.abs(falta) < 0.005 ? 'pago-ok' : 'pago-falta'}>
+              Pago R$ {moeda(pago)} · {Math.abs(falta) < 0.005 ? 'fechou o total' : falta > 0 ? `falta R$ ${moeda(falta)}` : `passou R$ ${moeda(-falta)}`}
+            </span>
+          </div>
         </div>
         <label className="campo">Observações<textarea rows={2} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} /></label>
       </fieldset>

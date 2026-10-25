@@ -13,7 +13,7 @@ import Colaboradores from './Colaboradores.jsx';
 import Ponto from './Ponto.jsx';
 import Financeiro from './Financeiro.jsx';
 import Configuracoes from './Configuracoes.jsx';
-import { Placa } from './Placa.jsx';
+import { Placa, PlacasDiversas } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
@@ -359,7 +359,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
                 <span key={a.chave} className={`aba-venda${a.situacao ? ` st-${a.situacao}` : ''}${abaVenda === a.chave ? ' ativa' : ''}`}
                   title={`${nomeAba(a)} · ${a.situacao ? SITUACOES[a.situacao] : 'ainda não salva'}`}>
                   <button role="tab" aria-selected={abaVenda === a.chave} onClick={() => setAbaVenda(a.chave)} aria-label={`${nomeAba(a)}${a.placa ? `, placa ${a.placa}` : ''}`}>
-                    {a.placa ? <Placa placa={a.placa} tamanho="mini" /> : nomeAba(a)}
+                    {a.placa === 'DIVERSOS' ? <PlacasDiversas tamanho="mini" /> : a.placa ? <Placa placa={a.placa} tamanho="mini" /> : nomeAba(a)}
                   </button>
                   <button className="fechar-aba" aria-label={`Fechar ${nomeAba(a)}`} title="Fechar" onClick={() => fecharAba(a)}>×</button>
                 </span>

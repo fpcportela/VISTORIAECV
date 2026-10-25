@@ -574,3 +574,45 @@ button.tf-linha:hover { border-color: var(--forte); }
 .painel-backup .sucesso { margin: 0; padding: 10px 12px; border-radius: 8px; background: #e8f7ee; color: #166534; font-weight: 600; }
 .painel-backup .aviso-texto { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff7e6; color: #8a5a00; }
 .painel-backup .acoes-modal { justify-content: flex-start; }
+
+/* Placas empilhadas (venda com vários veículos) */
+.placas-diversas { position: relative; display: inline-block; padding: 0 6px 6px 0; flex-shrink: 0; }
+.placas-diversas > .placa-fundo { position: absolute; inset: 0 6px 6px 0; }
+.placas-diversas > .placa-fundo:nth-child(1) { transform: translate(6px, 6px); opacity: .55; }
+.placas-diversas > .placa-fundo:nth-child(2) { transform: translate(3px, 3px); opacity: .8; }
+.placas-diversas > .placa-fundo .placa-br { width: 100%; }
+.placas-diversas > .placa-br { position: relative; }
+.placa-br-corpo .texto-diversos { font-size: calc(var(--l) * .115); letter-spacing: .02em; }
+
+/* Lista de vendas: placa à esquerda, cliente e loja à direita */
+.linha-venda .lv-cliente { flex-direction: row; align-items: center; gap: 10px; }
+.lv-nome { display: flex; flex-direction: column; min-width: 0; }
+.lv-nome strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-sem-placa { width: 86px; text-align: center; flex-shrink: 0; }
+
+/* Venda: cada veículo com os seus itens */
+.grupo-veiculo { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #e3e7ee; border-radius: 10px; background: #fbfcfe; }
+.grupo-veiculo + .grupo-veiculo { margin-top: 12px; }
+.grupo-veiculo .bloco-veiculo { grid-template-columns: auto 1fr 36px; padding-bottom: 10px; border-bottom: 1px dashed #e3e7ee; }
+.grupo-veiculo .item-venda { grid-template-columns: minmax(160px, 1fr) 80px 140px 110px 36px; }
+.mais-veiculo { align-self: flex-start; margin-top: 12px; }
+.secao-venda > .mais-veiculo { display: inline-flex; }
+
+/* Pagamentos da venda */
+.pagamentos-venda { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 6px; }
+.pagamento-venda { display: grid; grid-template-columns: 160px 200px 140px minmax(160px, 1fr) 36px; gap: 10px; align-items: center; }
+.pagamento-venda label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pagamento-venda input, .pagamento-venda select { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 15px; min-height: 42px; background: #fff; color: var(--texto); min-width: 0; }
+.rodape-pagamentos { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.pago-ok { color: #166534; font-weight: 700; }
+.pago-falta { color: #b45309; font-weight: 700; }
+
+@media (max-width: 1100px) {
+  .grupo-veiculo .bloco-veiculo { grid-template-columns: 1fr 36px; }
+  .grupo-veiculo .bloco-veiculo .seletor-veiculo { grid-column: 1 / -1; grid-row: 2; }
+  .grupo-veiculo .item-venda { grid-template-columns: 1fr 1fr; }
+  .pagamento-venda { grid-template-columns: 1fr 1fr; padding: 12px; border: 1px solid #e3e7ee; border-radius: 8px; }
+  .pagamento-venda > .fechar { justify-self: end; }
+  .pagamento-venda .so-celular { display: inline !important; }
+}
+@media (max-width: 760px) { .grupo-veiculo { padding: 10px; } }

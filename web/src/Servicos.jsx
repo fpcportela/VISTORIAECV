@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, moeda } from './api.js';
+import { paraMoeda } from './entrada.js';
 import { TIPOS } from './Vistorias.jsx';
 
 // Cadastro de serviços e produtos do grupo, com preço por tipo de veículo
@@ -49,8 +50,8 @@ export default function Servicos({ loja, podeEditar }) {
 function EditorServico({ item, loja, somenteLeitura, aoFechar, aoSalvar }) {
   const [f, setF] = useState({
     nome: item?.nome || '', tipo: item?.tipo || 'servico', descricao: item?.descricao || '',
-    valor_padrao: item ? String(item.valor_padrao) : '', gera_vistoria: item?.gera_vistoria ?? true, ativo: item?.ativo ?? true,
-    precos: Object.fromEntries(Object.keys(TIPOS).map((t) => [t, item?.precos?.[t] !== undefined ? String(item.precos[t]) : ''])),
+    valor_padrao: item ? paraMoeda(item.valor_padrao) : '', gera_vistoria: item?.gera_vistoria ?? true, ativo: item?.ativo ?? true,
+    precos: Object.fromEntries(Object.keys(TIPOS).map((t) => [t, item?.precos?.[t] !== undefined ? paraMoeda(item.precos[t]) : ''])),
   });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -86,13 +87,13 @@ function EditorServico({ item, loja, somenteLeitura, aoFechar, aoSalvar }) {
           </div>
           <label>Nome<input value={f.nome} onChange={muda('nome')} required placeholder="Ex.: CAUTELAR" /></label>
           <label>Descrição<input value={f.descricao} onChange={muda('descricao')} placeholder="Opcional" /></label>
-          <label>Valor padrão (R$)<input value={f.valor_padrao} onChange={muda('valor_padrao')} inputMode="decimal" placeholder="0,00" /></label>
+          <label>Valor padrão (R$)<input value={f.valor_padrao} onChange={muda('valor_padrao')} inputMode="numeric" data-moeda placeholder="0,00" /></label>
           <fieldset className="grupo-permissoes">
             <legend>Preço por tipo de veículo (opcional)</legend>
             <div className="dados-veiculo">
               {Object.entries(TIPOS).map(([t, n]) => (
                 <label key={t}>{n}
-                  <input value={f.precos[t]} inputMode="decimal" placeholder="Padrão"
+                  <input value={f.precos[t]} inputMode="numeric" data-moeda placeholder="Padrão"
                     onChange={(e) => setF({ ...f, precos: { ...f.precos, [t]: e.target.value } })} />
                 </label>
               ))}

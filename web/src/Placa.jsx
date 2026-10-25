@@ -72,3 +72,14 @@ export function PlacaInput({ valor, aoMudar, tamanho, disabled, ...props }) {
     </div>
   );
 }
+
+// Venda com mais de um veículo: três placas empilhadas com "DIVERSOS"
+export function PlacasDiversas({ tamanho }) {
+  return (
+    <span className={`placas-diversas ${tamanho || ''}`} role="img" aria-label="Diversas placas">
+      <span className="placa-fundo" aria-hidden="true"><Moldura tamanho={tamanho}><strong>&nbsp;</strong></Moldura></span>
+      <span className="placa-fundo" aria-hidden="true"><Moldura tamanho={tamanho}><strong>&nbsp;</strong></Moldura></span>
+      <Moldura tamanho={tamanho}><strong className="texto-diversos">DIVERSOS</strong></Moldura>
+    </span>
+  );
+}

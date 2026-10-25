@@ -4,8 +4,12 @@ import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './
 import { cnpjValido, consultarCnpj } from './documentos.js';
 
 const TIPOS_VEICULO = ['carro', 'moto', 'caminhao', 'outro'];
+const FORMAS = ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'boleto', 'transferencia', 'faturado'];
+const reais = (n) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dinheiro = (v) => {
-  const n = Number(String(v ?? '').replace(',', '.'));
+  // aceita 150, "150.5" ou "1.234,56"
+  const t = String(v ?? '').trim();
+  const n = typeof v === 'number' ? v : Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
 };
 const dataValida = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null);
@@ -146,11 +150,13 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         `select h.acao, h.detalhe, h.criado_em, u.nome as usuario, a.nome as autorizado_por
            from venda_historico h left join usuarios u on u.id = h.usuario_id left join usuarios a on a.id = h.autorizado_por
           where h.venda_id = $1 order by h.criado_em, h.id`, [v.id])).rows;
+      const pagamentos = (await db.query(
+        `select id, data_pagamento, forma, valor, detalhe from venda_pagamentos where venda_id = $1 order by criado_em, id`, [v.id])).rows;
       const pode = (await db.query(
         `select pode($1, 'vendas.criar') as editar, pode($1, 'vendas.finalizar') as finalizar,
                 pode($1, 'vendas.cancelar') as cancelar, pode($1, 'vendas.desconto') as desconto,
                 pode($1, 'vendas.autorizar') as autorizar`, [v.loja_id])).rows[0];
-      return { ...v, ...extra, itens, historico, pode };
+      return { ...v, ...extra, itens, historico, pagamentos, pode };
     });
     res.json(dados);
   }));
@@ -199,6 +205,21 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const bruto = prontos.reduce((t, [, , , q, u]) => t + q * u, 0);
     if (desconto > bruto) throw new Recusa(400, 'O desconto não pode ser maior que o total dos itens.');
 
+    // Pagamentos: uma ou mais formas, cada uma com data, valor e detalhe
+    const pagamentos = [];
+    for (const [n, pg] of (Array.isArray(b.pagamentos) ? b.pagamentos : []).entries()) {
+      const linha = `Pagamento ${n + 1}:`;
+      const valor = dinheiro(pg?.valor);
+      if (!valor) throw new Recusa(400, `${linha} informe o valor.`);
+      if (!FORMAS.includes(pg.forma)) throw new Recusa(400, `${linha} escolha a forma de pagamento.`);
+      const quando = dataValida(pg.data_pagamento) || new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+      pagamentos.push([quando, pg.forma, valor, texto(pg.detalhe, 200)]);
+    }
+    const pago = pagamentos.reduce((t, [, , v]) => t + v, 0);
+    if (pago - (bruto - desconto) > 0.005) {
+      throw new Recusa(400, `Os pagamentos (${reais(pago)}) passam do total da venda (${reais(bruto - desconto)}).`);
+    }
+
     // Na alteração, sem cliente informado, mantém o atual
     const cliente = existente && !b.cliente_id && !b.cliente_novo?.nome && !b.cliente_avulso
       ? existente.cliente_id
@@ -213,6 +234,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         `update vendas set tipo = $2, cliente_id = $3, data_venda = $4, desconto = $5, observacoes = $6 where id = $1`,
         [id, tipo, cliente, data, desconto, texto(b.observacoes, 2000)]);
       await db.query('delete from venda_itens where venda_id = $1', [id]);
+      await db.query('delete from venda_pagamentos where venda_id = $1', [id]);
     } else {
       id = (await db.query(
         `insert into vendas (loja_id, empresa_id, numero, tipo, situacao, cliente_id, data_venda, categoria_id,
@@ -225,7 +247,10 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         'insert into venda_itens (venda_id, servico_id, veiculo_id, descricao, quantidade, valor_unit) values ($1, $2, $3, $4, $5, $6)',
         [id, ...p]);
     }
-    const total = (bruto - desconto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    for (const p of pagamentos) {
+      await db.query('insert into venda_pagamentos (venda_id, data_pagamento, forma, valor, detalhe) values ($1, $2, $3, $4, $5)', [id, ...p]);
+    }
+    const total = reais(bruto - desconto);
     await db.query('insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, $3, $4)',
       [id, req.usuarioId, existente ? 'alterada' : 'criada', `${prontos.length} item(ns), total ${total}`]);
     return id;
@@ -250,6 +275,11 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       const v = await buscarVenda(db, req.params.id);
       await exigir(db, v.loja_id, 'vendas.finalizar', 'Seu perfil não pode finalizar vendas.');
       if (v.situacao !== 'aberta') throw new Recusa(400, 'Esta venda não está aberta.');
+      const pago = Number((await db.query('select coalesce(sum(valor), 0) as t from venda_pagamentos where venda_id = $1', [v.id])).rows[0].t);
+      const total = Number(v.valor_total);
+      if (Math.abs(pago - total) > 0.005) {
+        throw new Recusa(400, `Para finalizar, os pagamentos precisam fechar o total da venda: total ${reais(total)}, pagamentos ${reais(pago)}.`);
+      }
       await db.query("update vendas set situacao = 'finalizada', finalizada_em = now(), finalizada_por = $2 where id = $1", [v.id, req.usuarioId]);
       await db.query("insert into venda_historico (venda_id, usuario_id, acao) values ($1, $2, 'finalizada')", [v.id, req.usuarioId]);
     });

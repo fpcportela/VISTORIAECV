@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, moeda } from './api.js';
+import { paraMoeda } from './entrada.js';
 import { Icone } from './icones.jsx';
 import { criarTem } from './modulos.js';
 
@@ -183,7 +184,7 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
       const d = await api(`/financeiro/lancamentos/${id}`);
       setL(d);
       setF({ loja_id: d.loja_id, descricao: d.descricao, categoria_id: d.categoria_id || '', centro_custo_id: d.centro_custo_id || '',
-        valor: String(d.valor).replace('.', ','), vencimento: d.vencimento, competencia: d.competencia, parcelas: '1',
+        valor: paraMoeda(d.valor), vencimento: d.vencimento, competencia: d.competencia, parcelas: '1',
         documento: d.documento || '', observacoes: d.observacoes || '' });
     } catch (falha) {
       setErro(falha.message);
@@ -270,7 +271,7 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
                       </select>
                     </label>
                   )}
-                  <label>{id ? 'Valor (R$)' : 'Valor total (R$)'}<input value={f.valor} onChange={muda('valor')} inputMode="decimal" required placeholder="0,00" /></label>
+                  <label>{id ? 'Valor (R$)' : 'Valor total (R$)'}<input value={f.valor} onChange={muda('valor')} inputMode="numeric" data-moeda required placeholder="0,00" /></label>
                   <label>{!id && Number(f.parcelas) > 1 ? '1º vencimento' : 'Vencimento'}<input type="date" value={f.vencimento} onChange={muda('vencimento')} required /></label>
                   <label>Competência<input type="date" value={f.competencia} onChange={muda('competencia')} /></label>
                   {!id && (
@@ -322,7 +323,7 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
 
 function Baixa({ l, receita, aoFechar, aoSalvar }) {
   const [contas, setContas] = useState([]);
-  const [f, setF] = useState({ data: hoje(), valor: String(Math.round((l.valor - l.valor_pago) * 100) / 100).replace('.', ','),
+  const [f, setF] = useState({ data: hoje(), valor: paraMoeda(Math.round((l.valor - l.valor_pago) * 100) / 100),
     forma_pagamento: 'pix', conta_id: '', juros: '', multa: '', desconto: '' });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -354,7 +355,7 @@ function Baixa({ l, receita, aoFechar, aoSalvar }) {
         <form className="formulario" onSubmit={salvar}>
           <div className="dados-veiculo">
             <label>Data<input type="date" value={f.data} onChange={muda('data')} required /></label>
-            <label>Valor (R$)<input value={f.valor} onChange={muda('valor')} inputMode="decimal" required /></label>
+            <label>Valor (R$)<input value={f.valor} onChange={muda('valor')} inputMode="numeric" data-moeda required /></label>
             <label>Forma de pagamento
               <select value={f.forma_pagamento} onChange={muda('forma_pagamento')}>
                 {Object.entries(FORMAS).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
@@ -365,9 +366,9 @@ function Baixa({ l, receita, aoFechar, aoSalvar }) {
                 {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </label>
-            <label>Juros (R$)<input value={f.juros} onChange={muda('juros')} inputMode="decimal" placeholder="0,00" /></label>
-            <label>Multa (R$)<input value={f.multa} onChange={muda('multa')} inputMode="decimal" placeholder="0,00" /></label>
-            <label>Desconto (R$)<input value={f.desconto} onChange={muda('desconto')} inputMode="decimal" placeholder="0,00" /></label>
+            <label>Juros (R$)<input value={f.juros} onChange={muda('juros')} inputMode="numeric" data-moeda placeholder="0,00" /></label>
+            <label>Multa (R$)<input value={f.multa} onChange={muda('multa')} inputMode="numeric" data-moeda placeholder="0,00" /></label>
+            <label>Desconto (R$)<input value={f.desconto} onChange={muda('desconto')} inputMode="numeric" data-moeda placeholder="0,00" /></label>
           </div>
           <small className="cinza">Valor menor que o saldo deixa a conta {receita ? 'recebida' : 'paga'} em parte; o resto continua em aberto.</small>
           {erro && <p className="erro" role="alert">{erro}</p>}
