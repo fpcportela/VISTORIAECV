@@ -189,7 +189,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         <strong>Cor do sistema</strong>
         <button className="fechar" onClick={() => setPaletaAberta(false)} aria-label="Fechar">×</button>
       </div>
-      <p>Escolha uma cor pronta ou uma cor personalizada. Menu, botões e destaques mudam juntos.</p>
+      <p>Escolha uma cor pronta ou uma cor personalizada. Menu, botões e destaques mudam juntos.
+        {perfil.cor_do_grupo ? ` A cor fica salva para todo o grupo ${empresa}.` : ' Sem grupo escolhido, a cor vale só para você.'}</p>
       <div className="paleta-cores">
         {PALETA.map(([nome, hex]) => (
           <button key={hex} title={nome} aria-label={nome} onClick={() => trocarCor(hex)}
@@ -323,7 +324,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
         {pesquisa('so-computador')}
-        <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
+        {perfil.pode_cor && <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>}
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
         <div className="empresa">
           {seletorGrupo || <strong>{empresa}</strong>}
@@ -339,7 +340,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <strong className="titulo">Vistoria ECV</strong>
           {perfil.logo && <img className="logo-celular" src={perfil.logo} alt={`Logo ${empresa}`} />}
           <button onClick={() => setOculto(!oculto)} aria-label={oculto ? 'Mostrar valores' : 'Ocultar valores'}><Icone nome={oculto ? 'olhoFechado' : 'olho'} tamanho={22} /></button>
-          <button onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
+          {perfil.pode_cor && <button onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>}
           <button onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
         </div>
         {seletorGrupo && <label className="loja">Grupo {seletorGrupo}</label>}

@@ -60,7 +60,7 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
   const dados = await comoUsuario(req.usuarioId, async (db) => {
     const usuario = (await db.query('select id, nome, email, admin_rede from usuarios where id = $1', [req.usuarioId])).rows[0];
     const lojas = (await db.query('select * from app_minhas_lojas()')).rows;
-    const cor = (await db.query('select app_cor_tema() as cor')).rows[0].cor;
+    const { cor, pode_cor: podeCor, grupo_cor: grupoCor } = (await db.query('select app_cor_tema() as cor, app_pode_cor_tema() as pode_cor, app_grupo_da_cor() as grupo_cor')).rows[0];
     const atalhos = (await db.query('select app_meus_atalhos() as a')).rows[0].a;
     const menu = (await db.query('select app_meu_menu() as m')).rows[0].m;
     // { loja_id: ["vistorias.ver", ...] }: o app mostra só os módulos liberados
@@ -76,7 +76,7 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
     // logo do grupo em uso (o master só vê quando escolhe um grupo no topo)
     const grupoLogo = grupo || (!usuario.admin_rede && grupos.length === 1 ? grupos[0].id : null);
     const logo = grupoLogo ? (await db.query('select logo from empresas where id = $1', [grupoLogo])).rows[0]?.logo || null : null;
-    return { usuario, lojas, cor, atalhos, menu, acessos, grupos, grupo, logo, master: usuario.admin_rede };
+    return { usuario, lojas, cor, pode_cor: podeCor, cor_do_grupo: Boolean(grupoCor), atalhos, menu, acessos, grupos, grupo, logo, master: usuario.admin_rede };
   });
   res.json(dados);
 }));
