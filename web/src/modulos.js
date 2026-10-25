@@ -10,7 +10,7 @@ export const MODULOS = [
   { id: 'royalties', nome: 'Royalties', curto: 'Royalties', permissao: 'royalties.ver' },
   { id: 'maquininha', nome: 'Maquininhas e bancos', curto: 'Maquininhas', permissao: 'maquininhas.ver', sub: true },
   { id: 'servicos', nome: 'Serviços e produtos', curto: 'Serviços', permissao: 'servicos.ver' },
-  { id: 'lojas', nome: 'Lojas', curto: 'Lojas', permissao: 'lojas.ver' },
+  { id: 'lojas', nome: 'Grupos e unidades', curto: 'Grupos', permissao: 'lojas.ver' },
   { id: 'usuarios', nome: 'Usuários e permissões', curto: 'Usuários', permissao: 'usuarios.ver' },
   { id: 'colaboradores', nome: 'Colaboradores', curto: 'Colaboradores', permissao: 'colaboradores.ver' },
   { id: 'ponto', nome: 'Controle de ponto', curto: 'Ponto', permissao: ['ponto.registrar', 'ponto.ver_equipe'] },

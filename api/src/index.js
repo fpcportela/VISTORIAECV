@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { comoUsuario } from './db.js';
+import { comoUsuario, contexto } from './db.js';
+import { rotasGrupos } from './grupos.js';
 import { rotasAcessos } from './acessos.js';
 import { rotasVistorias } from './vistorias.js';
 import { rotasVendas } from './vendas.js';
@@ -31,10 +32,12 @@ function exigeLogin(req, res, next) {
   const token = (req.headers.authorization || '').replace(/^Bearer /, '');
   try {
     req.usuarioId = jwt.verify(token, SEGREDO).sub;
-    next();
   } catch {
-    res.status(401).json({ erro: 'Faça login novamente.' });
+    return res.status(401).json({ erro: 'Faça login novamente.' });
   }
+  // O grupo só filtra o que o master vê; para os demais o banco ignora (eles já só têm o próprio grupo)
+  const grupo = String(req.headers['x-grupo'] || '');
+  contexto.run({ grupo: /^[0-9a-f-]{36}$/i.test(grupo) ? grupo : '' }, next);
 }
 
 app.get('/api/saude', (req, res) => res.json({ ok: true }));
@@ -61,7 +64,12 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
     for (const { loja_id, permissao } of (await db.query('select * from app_meus_acessos()')).rows) {
       (acessos[loja_id] ||= []).push(permissao);
     }
-    return { usuario, lojas, cor, atalhos, menu, acessos, master: usuario.admin_rede };
+    // Grupos que a pessoa enxerga: o master vê todos (e escolhe um no topo), os demais só o seu
+    const grupos = usuario.admin_rede
+      ? (await db.query('select id, coalesce(nome_fantasia, razao_social) as nome from empresas where ativo order by 2')).rows
+      : [...new Map(lojas.map((l) => [l.empresa_id, { id: l.empresa_id, nome: l.empresa }])).values()];
+    const grupo = usuario.admin_rede ? (await db.query('select grupo_ativo() as g')).rows[0].g : null;
+    return { usuario, lojas, cor, atalhos, menu, acessos, grupos, grupo, master: usuario.admin_rede };
   });
   res.json(dados);
 }));
@@ -210,5 +218,6 @@ rotasPessoas(app, { exigeLogin, rota });
 rotasFipe(app, { exigeLogin, rota });
 rotasFinanceiro(app, { exigeLogin, rota });
 rotasBackup(app, { exigeLogin, rota });
+rotasGrupos(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));

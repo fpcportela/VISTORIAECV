@@ -286,6 +286,63 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     res.json({ ok: true });
   }));
 
+  // Quem pode ser o responsável de uma venda do grupo da loja
+  app.get('/api/vendas-responsaveis', exigeLogin, comRecusa(async (req, res) => {
+    const lista = await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await empresaDaLoja(db, req.query.loja);
+      return (await db.query('select * from app_responsaveis($1)', [empresa])).rows;
+    });
+    res.json(lista);
+  }));
+
+  // Edição em lote: responsável, data do serviço e centro de custo (loja) de várias vendas.
+  // Só muda vendas abertas; finalizadas e canceladas ficam como estão (precisam ser liberadas antes).
+  app.post('/api/vendas/lote', exigeLogin, comRecusa(async (req, res) => {
+    const b = req.body || {};
+    const ids = (Array.isArray(b.ids) ? b.ids : []).filter((i) => UUID.test(String(i))).slice(0, 500);
+    if (!ids.length) throw new Recusa(400, 'Selecione as vendas.');
+    const data = b.data_venda ? dataValida(b.data_venda) : null;
+    if (b.data_venda && !data) throw new Recusa(400, 'Data do serviço inválida.');
+    const vendedor = b.vendedor_id && UUID.test(b.vendedor_id) ? b.vendedor_id : null;
+    const loja = b.loja_id && UUID.test(b.loja_id) ? b.loja_id : null;
+    if (!data && !vendedor && !loja) throw new Recusa(400, 'Escolha o que alterar.');
+
+    const resultado = await comoUsuario(req.usuarioId, async (db) => {
+      let lojaNova = null;
+      if (loja) {
+        lojaNova = (await db.query('select id, empresa_id, nome from lojas where id = $1 and tem_loja(id)', [loja])).rows[0];
+        if (!lojaNova) throw new Recusa(400, 'Centro de custo não encontrado.');
+        if (!(await db.query("select pode($1, 'vendas.criar') as ok", [loja])).rows[0].ok) {
+          throw new Recusa(403, `Seu perfil não pode lançar vendas em ${lojaNova.nome}.`);
+        }
+      }
+      const nomeVendedor = vendedor ? (await db.query('select nome from usuarios where id = $1', [vendedor])).rows[0]?.nome : null;
+      let alteradas = 0;
+      const puladas = [];
+      for (const id of ids) {
+        const v = (await db.query('select id, numero, loja_id, empresa_id, situacao from vendas where id = $1', [id])).rows[0];
+        if (!v) continue;
+        if (!(await db.query("select pode($1, 'vendas.criar') as ok", [v.loja_id])).rows[0].ok) {
+          puladas.push({ numero: v.numero, motivo: 'sem permissão na loja' }); continue;
+        }
+        if (v.situacao !== 'aberta') { puladas.push({ numero: v.numero, motivo: v.situacao }); continue; }
+        if (lojaNova && lojaNova.empresa_id !== v.empresa_id) { puladas.push({ numero: v.numero, motivo: 'é de outro grupo' }); continue; }
+        if (vendedor && !(await db.query('select 1 from app_responsaveis($1) where id = $2', [v.empresa_id, vendedor])).rowCount) {
+          puladas.push({ numero: v.numero, motivo: 'responsável não trabalha nesse grupo' }); continue;
+        }
+        await db.query(
+          `update vendas set vendedor_id = coalesce($2, vendedor_id), data_venda = coalesce($3::date, data_venda),
+                  loja_id = coalesce($4, loja_id) where id = $1`, [v.id, vendedor, data, lojaNova?.id || null]);
+        const detalhe = `Edição em lote: ${[nomeVendedor && `responsável ${nomeVendedor}`,
+          data && `data do serviço ${data.split('-').reverse().join('/')}`, lojaNova && `centro de custo ${lojaNova.nome}`].filter(Boolean).join(', ')}`;
+        await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, 'alterada', $3)", [v.id, req.usuarioId, detalhe]);
+        alteradas += 1;
+      }
+      return { alteradas, puladas };
+    });
+    res.json(resultado);
+  }));
+
   // Reabrir venda finalizada: master/autorizador direto; os demais com e-mail e senha de quem autoriza
   app.post('/api/vendas/:id/reabrir', exigeLogin, comRecusa(async (req, res) => {
     const { email, senha, motivo } = req.body || {};

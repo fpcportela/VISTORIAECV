@@ -32,7 +32,7 @@ const PERIODOS = {
   todas: () => ['', ''],
 };
 
-export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', empresa }) {
+export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', empresa, lojasLote = [] }) {
   const [[de, ate], setIntervalo] = useState(buscaInicial ? PERIODOS.todas() : PERIODOS.mes());
   const [situacao, setSituacao] = useState('');
   const [cliente, setCliente] = useState(buscaInicial);
@@ -40,13 +40,17 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
   const [lista, setLista] = useState(null);
   const [erro, setErro] = useState('');
   const [gerando, setGerando] = useState(false);
+  const [lote, setLote] = useState(null); // null = fora do modo lote; Set com os ids marcados
+  const [editandoLote, setEditandoLote] = useState(false);
+  const [recarga, setRecarga] = useState(0);
+  const [avisoLote, setAvisoLote] = useState('');
 
   useEffect(() => {
     const q = new URLSearchParams({ ...(loja && { loja }), ...(de && { de }), ...(ate && { ate }), ...(situacao && { situacao }),
       ...(cliente.trim() && { cliente: cliente.trim() }), ...(busca.trim() && { busca: busca.trim() }) });
     const t = setTimeout(() => api(`/vendas?${q}`).then((l) => { setLista(l); setErro(''); }).catch((f) => setErro(f.message)), busca || cliente ? 300 : 0);
     return () => clearTimeout(t);
-  }, [loja, de, ate, situacao, cliente, busca]);
+  }, [loja, de, ate, situacao, cliente, busca, recarga]);
 
   const total = (lista || []).filter((v) => v.situacao !== 'cancelada').reduce((t, v) => t + v.valor_total, 0);
   const periodoAtivo = Object.keys(PERIODOS).find((k) => { const [a, b] = PERIODOS[k](); return a === de && b === ate; });
@@ -74,7 +78,10 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
         <h1>Vendas</h1>
         <span className="acoes-cabecalho">
           <button className="botao-contorno" onClick={pdf} disabled={gerando || !lista?.length}>{gerando ? 'Gerando…' : 'Gerar PDF'}</button>
-          {podeCriar && <button className="botao-primario" onClick={aoNova}><Icone nome="mais" tamanho={18} /> Nova venda</button>}
+          {podeCriar && lojasLote.length > 0 && (
+            <button className={lote ? 'botao-primario' : 'botao-contorno'} onClick={() => setLote(lote ? null : new Set())}>{lote ? 'Sair da edição em lote' : 'Editar em lote'}</button>
+          )}
+          {podeCriar && !lote && <button className="botao-primario" onClick={aoNova}><Icone nome="mais" tamanho={18} /> Nova venda</button>}
         </span>
       </div>
       <div className="filtros">
@@ -98,10 +105,20 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
       ) : (
         <>
           <small className="cinza">{lista.length} registro(s) · vendas (sem canceladas): <strong>R$ {moeda(total)}</strong></small>
+          {avisoLote && <p className="aviso-texto" role="status">{avisoLote}</p>}
+          {lote && (
+            <div className="barra-lote">
+              <span><strong>{lote.size}</strong> venda(s) selecionada(s). Só as abertas podem ser alteradas.</span>
+              <button className="botao-texto" onClick={() => setLote(new Set(lista.filter((v) => v.situacao === 'aberta').map((v) => v.id)))}>Marcar todas as abertas</button>
+              <button className="botao-texto" onClick={() => setLote(new Set())} disabled={!lote.size}>Desmarcar</button>
+              <button className="botao-primario" disabled={!lote.size} onClick={() => setEditandoLote(true)}>Alterar selecionadas</button>
+            </div>
+          )}
           <div className="tabela-vendas" role="table">
             {lista.map((v) => (
-              <button key={v.id} className="cartao linha-venda" role="row" onClick={() => aoAbrir(v.id)}>
-                <span className="lv-num"><strong>Nº {v.numero}</strong></span>
+              <button key={v.id} className={`cartao linha-venda${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
+                onClick={() => (lote ? setLote((l) => { const n = new Set(l); if (n.has(v.id)) n.delete(v.id); else n.add(v.id); return n; }) : aoAbrir(v.id))}>
+                <span className="lv-num">{lote && <span className="marca-lote" aria-hidden="true">{lote.has(v.id) ? '✓' : ''}</span>}<strong>Nº {v.numero}</strong></span>
                 <span className="lv-cliente">
                   {!v.placas ? <small className="cinza lv-sem-placa">Sem placa</small>
                     : v.placas.includes(',') ? <PlacasDiversas tamanho="mini" /> : <Placa placa={v.placas} tamanho="mini" />}
@@ -118,7 +135,72 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
           </div>
         </>
       )}
+      {editandoLote && (
+        <EdicaoLote vendas={lista.filter((v) => lote.has(v.id))} lojas={lojasLote} aoFechar={() => setEditandoLote(false)}
+          aoConcluir={(r) => {
+            setEditandoLote(false); setLote(new Set()); setRecarga((n) => n + 1);
+            setAvisoLote(`${r.alteradas} venda(s) alterada(s).${r.puladas.length ? ` Não alteradas: ${r.puladas.map((p) => `nº ${p.numero} (${p.motivo})`).join(', ')}.` : ''}`);
+          }} />
+      )}
     </>
+  );
+}
+
+// Altera responsável, data do serviço e centro de custo de várias vendas de uma vez
+function EdicaoLote({ vendas, lojas, aoFechar, aoConcluir }) {
+  const [vendedor, setVendedor] = useState('');
+  const [data, setData] = useState('');
+  const [loja, setLoja] = useState('');
+  const [responsaveis, setResponsaveis] = useState([]);
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const fechadas = vendas.filter((v) => v.situacao !== 'aberta').length;
+
+  useEffect(() => {
+    const base = vendas[0]?.loja_id;
+    if (base) api(`/vendas-responsaveis?loja=${base}`).then(setResponsaveis).catch((f) => setErro(f.message));
+  }, []);
+
+  async function aplicar(e) {
+    e.preventDefault();
+    if (!vendedor && !data && !loja) return setErro('Escolha pelo menos uma coisa para alterar.');
+    setSalvando(true); setErro('');
+    try {
+      aoConcluir(await api('/vendas/lote', { metodo: 'POST', corpo: { ids: vendas.map((v) => v.id), vendedor_id: vendedor || null, data_venda: data || null, loja_id: loja || null } }));
+    } catch (falha) { setErro(falha.message); setSalvando(false); }
+  }
+
+  return (
+    <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-label="Editar vendas em lote">
+        <div className="modal-topo">
+          <h2>Alterar {vendas.length} venda(s)</h2>
+          <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+        <form className="formulario" onSubmit={aplicar}>
+          <p className="cinza ajuda">Deixe em "Não alterar" o que deve ficar como está. Cada venda alterada registra a mudança no histórico.</p>
+          <label>Responsável
+            <select value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
+              <option value="">Não alterar</option>
+              {responsaveis.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          </label>
+          <label>Data do serviço<input type="date" value={data} onChange={(e) => setData(e.target.value)} /></label>
+          <label>Centro de custo (loja)
+            <select value={loja} onChange={(e) => setLoja(e.target.value)}>
+              <option value="">Não alterar</option>
+              {lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+            </select>
+          </label>
+          {fechadas > 0 && <p className="aviso-texto">{fechadas} das vendas marcadas estão finalizadas ou canceladas e não serão alteradas. Para mudar uma delas, use "Liberar edição" na venda.</p>}
+          {erro && <p className="erro" role="alert">{erro}</p>}
+          <div className="acoes-modal">
+            <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
+            <button className="botao-primario" disabled={salvando}>{salvando ? 'Alterando…' : 'Aplicar'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 

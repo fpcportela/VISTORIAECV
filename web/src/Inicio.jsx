@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, moeda } from './api.js';
+import { api, grupoEscolhido, moeda } from './api.js';
 import { aplicarTema, COR_PADRAO, PALETA } from './tema.js';
 import { Icone } from './icones.jsx';
 import { MODULOS, criarTem, ordenar } from './modulos.js';
@@ -13,6 +13,7 @@ import Colaboradores from './Colaboradores.jsx';
 import Ponto from './Ponto.jsx';
 import Financeiro from './Financeiro.jsx';
 import Configuracoes from './Configuracoes.jsx';
+import Grupos from './Grupos.jsx';
 import { Placa, PlacasDiversas } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
@@ -63,7 +64,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   function abrir(id) {
     setMenuAberto(false);
-    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config'].includes(id)) {
+    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config', 'lojas'].includes(id)) {
       setTela(id); setVistoriaId(null); setBuscaVendas('');
       if (id === 'vendas') setAbaVenda('lista');
       if (id === 'financeiro') setFinanceiroAbre((f) => ({ aba: 'receber', novo: false, chave: f.chave + 1 }));
@@ -139,7 +140,20 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const valor = (v) => (oculto ? '••••' : moeda(v));
   const receber = dados?.receber, pagar = dados?.pagar, hoje = dados?.vistoriasHoje, mes = dados?.vistoriasMes;
   const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long' });
-  const empresa = perfil.lojas[0]?.empresa || perfil.usuario.nome;
+  // O master escolhe o grupo no topo (ou todos); os demais veem só o nome do seu grupo
+  const grupoAtual = perfil.grupos?.find((g) => g.id === perfil.grupo);
+  const empresa = perfil.master ? (grupoAtual?.nome || 'TODOS OS GRUPOS') : perfil.lojas[0]?.empresa || perfil.usuario.nome;
+  function trocarGrupo(id) {
+    if (abasVenda.some((a) => !a.id) && !confirm('Há venda nova ainda não salva. Trocar de grupo e descartar?')) return;
+    grupoEscolhido.salvar(id);
+    window.location.reload();
+  }
+  const seletorGrupo = perfil.master && perfil.grupos?.length > 0 && (
+    <select value={perfil.grupo || ''} onChange={(e) => trocarGrupo(e.target.value)} aria-label="Grupo" className="seletor-grupo">
+      <option value="">TODOS OS GRUPOS</option>
+      {perfil.grupos.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+    </select>
+  );
 
   const contadores = (q) => (
     <div className="vistorias-hoje">
@@ -308,7 +322,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
         <div className="empresa">
-          <strong>{empresa}</strong>
+          {seletorGrupo || <strong>{empresa}</strong>}
           <label>Loja {seletorLoja}</label>
         </div>
         <button className="botao-redondo" onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
@@ -323,6 +337,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <button onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>
           <button onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
         </div>
+        {seletorGrupo && <label className="loja">Grupo {seletorGrupo}</label>}
         <label className="loja">Loja {seletorLoja}</label>
         <div className="linha-pesquisa">
           {pesquisa('')}
@@ -371,13 +386,14 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'colaboradores' ? <Colaboradores perfil={perfil} loja={loja} />
             : tela === 'ponto' ? <Ponto perfil={perfil} loja={loja} />
             : tela === 'config' ? <Configuracoes perfil={perfil} />
+            : tela === 'lojas' ? <Grupos />
             : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} />
             : tela === 'servicos' ? (() => {
                 const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;
               })()
             : tela === 'vendas' ? (abaVenda === 'lista' || !abasVenda.length) && (
-                <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
+                <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} lojasLote={perfil.lojas.filter((l) => lojasCom('vendas.criar').includes(l.id))} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
             : tela === 'vistorias' ? (vistoriaId
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)

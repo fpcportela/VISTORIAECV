@@ -1,6 +1,13 @@
 // Chamadas à API. O token de login fica guardado no navegador.
 
 const CHAVE = 'vistoria-ecv-token';
+const CHAVE_GRUPO = 'vistoria-ecv-grupo';
+
+// Grupo que o master escolheu no topo (vazio = todos os grupos)
+export const grupoEscolhido = {
+  ler: () => { try { return localStorage.getItem(CHAVE_GRUPO) || ''; } catch { return ''; } },
+  salvar: (id) => { try { if (id) localStorage.setItem(CHAVE_GRUPO, id); else localStorage.removeItem(CHAVE_GRUPO); } catch { /* sem armazenamento */ } },
+};
 
 export const sessao = {
   token: () => localStorage.getItem(CHAVE),
@@ -14,6 +21,7 @@ export async function api(caminho, { metodo = 'GET', corpo } = {}) {
     headers: {
       'Content-Type': 'application/json',
       ...(sessao.token() ? { Authorization: `Bearer ${sessao.token()}` } : {}),
+      ...(grupoEscolhido.ler() ? { 'X-Grupo': grupoEscolhido.ler() } : {}),
     },
     body: corpo ? JSON.stringify(corpo) : undefined,
   });
