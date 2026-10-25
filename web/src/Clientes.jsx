@@ -78,7 +78,8 @@ export default function Clientes({ perfil, loja }) {
 }
 
 const vazio = (tipo, grupo) => ({ tipo, nome: '', nome_fantasia: '', cpf_cnpj: '', telefone: '', whatsapp: '', email: '', cep: '', endereco: '',
-  cidade: '', uf: '', observacoes: '', ativo: true, grupo_cliente_id: grupo?.id || '' });
+  cidade: '', uf: '', observacoes: '', ativo: true, grupo_cliente_id: grupo?.id || '', comissao_tipo: '', comissao_valor: '' });
+const valorBR = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicial, inicial, aoAbrir, aoFechar, aoSalvar }) {
   const [c, setC] = useState(id ? null : { ...vazio(tipoInicial, grupoInicial), ...inicial });
@@ -98,8 +99,9 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
     api(`/clientes/${id}`).then((d) => {
       setC({ ...vazio(d.tipo), ...Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v ?? ''])),
         cpf_cnpj: d.cpf_cnpj ? formatarDoc(d.cpf_cnpj) : '', telefone: d.telefone ? mascaraTelefone(d.telefone) : '',
-        whatsapp: d.whatsapp ? mascaraTelefone(d.whatsapp) : '', cep: mascaraCep(d.cep), ativo: d.ativo });
-      setExtra({ empresas: d.empresas, vendas: d.vendas, pode_editar: d.pode_editar, grupo_nome: d.grupo_nome });
+        whatsapp: d.whatsapp ? mascaraTelefone(d.whatsapp) : '', cep: mascaraCep(d.cep), ativo: d.ativo, comissao_valor: valorBR(d.comissao_valor) });
+      setExtra({ empresas: d.empresas, vendas: d.vendas, pode_editar: d.pode_editar, grupo_nome: d.grupo_nome,
+        grupo_comissao: d.grupo_comissao_tipo ? { grupo: d.grupo_cliente_id, tipo: d.grupo_comissao_tipo, valor: d.grupo_comissao_valor } : null });
     }).catch((f) => setErro(f.message));
   }, [id]);
 
@@ -196,6 +198,24 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
                 <label className="campo-uf">UF<input value={c.uf} maxLength={2} onChange={(e) => setC({ ...c, uf: e.target.value.replace(/[^A-Za-z]/g, '') })} /></label>
               </div>
             </>
+          )}
+          <div className="linha-campos dois">
+            <label>Comissão
+              <select value={c.comissao_tipo} onChange={(e) => setC({ ...c, comissao_tipo: e.target.value, comissao_valor: e.target.value ? c.comissao_valor : '' })}>
+                <option value="">{c.tipo === 'pj' && c.grupo_cliente_id ? 'A do grupo (ou sem comissão)' : 'Sem comissão'}</option>
+                <option value="fixo">Valor fixo por venda (R$)</option>
+                <option value="percentual">Porcentagem da venda (%)</option>
+              </select>
+            </label>
+            {c.comissao_tipo && (
+              <label>{c.comissao_tipo === 'fixo' ? 'Valor por venda (R$)' : 'Porcentagem (%)'}
+                <input value={c.comissao_valor} inputMode="decimal" required placeholder={c.comissao_tipo === 'fixo' ? '0,00' : '10'}
+                  onChange={(e) => setC({ ...c, comissao_valor: e.target.value.replace(/[^\d,.]/g, '') })} />
+              </label>
+            )}
+          </div>
+          {!c.comissao_tipo && c.tipo === 'pj' && c.grupo_cliente_id && extra?.grupo_comissao?.grupo === c.grupo_cliente_id && (
+            <small className="cinza">Usa a comissão do grupo: {extra.grupo_comissao.tipo === 'fixo' ? `R$ ${valorBR(extra.grupo_comissao.valor)} por venda` : `${valorBR(extra.grupo_comissao.valor)}% da venda`}.</small>
           )}
           <label>Observações<textarea rows={2} value={c.observacoes} onChange={muda('observacoes')} /></label>
           {id && <label className="linha-check"><input type="checkbox" checked={c.ativo} onChange={(e) => setC({ ...c, ativo: e.target.checked })} /> Cliente ativo</label>}

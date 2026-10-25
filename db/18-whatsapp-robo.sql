@@ -74,20 +74,40 @@ begin
     (select l.id from lojas l where l.empresa_id = v_ch.empresa_id and l.ativo order by l.nome limit 1));
   if v_loja is null then raise exception 'O grupo não tem loja ativa para abrir a venda.' using errcode = '22023'; end if;
 
-  -- cliente: o já ligado ao contato, o do mesmo CPF/CNPJ, ou um novo
-  v_cliente := (select c.id from clientes c where c.id = v_k.cliente_id and c.empresa_id = v_ch.empresa_id);
-  if v_cliente is null and v_doc is not null then
+  -- cliente: sempre pelo CPF/CNPJ (o já cadastrado ou um novo; nunca duplica). Sem documento não cadastra
+  -- ninguém: usa o cliente já ligado ao contato ou o particular/avulso.
+  if length(v_doc) not in (11, 14) then v_doc := null; end if;
+  if v_doc is not null then
     select c.id into v_cliente from clientes c where c.empresa_id = v_ch.empresa_id and c.cpf_cnpj = v_doc;
+    if v_cliente is null then
+      -- cadastro antigo do contato sem documento: completa o mesmo em vez de criar outro
+      select c.id into v_cliente from clientes c
+       where c.id = v_k.cliente_id and c.empresa_id = v_ch.empresa_id and c.cpf_cnpj is null
+         and c.tipo = 'avulso' and c.nome <> 'CLIENTE PARTICULAR / AVULSO';
+      if v_cliente is not null then
+        update clientes set tipo = (case when length(v_doc) = 14 then 'pj' else 'pf' end)::tipo_pessoa,
+               cpf_cnpj = v_doc, nome = coalesce(v_nome, nome) where id = v_cliente;
+      else
+        insert into clientes (empresa_id, tipo, nome, cpf_cnpj, whatsapp, email)
+        values (v_ch.empresa_id, (case when length(v_doc) = 14 then 'pj' else 'pf' end)::tipo_pessoa,
+                coalesce(v_nome, v_k.nome, 'CLIENTE WHATSAPP'), v_doc,
+                nullif(p_dados->>'whatsapp', ''), nullif(lower(p_dados->>'email'), ''))
+        returning id into v_cliente;
+      end if;
+    end if;
+    update whatsapp_contatos set cliente_id = v_cliente where id = v_k.id;
+  else
+    v_cliente := (select c.id from clientes c where c.id = v_k.cliente_id and c.empresa_id = v_ch.empresa_id);
+    if v_cliente is null then
+      select c.id into v_cliente from clientes c
+       where c.empresa_id = v_ch.empresa_id and c.tipo = 'avulso' and c.nome = 'CLIENTE PARTICULAR / AVULSO' limit 1;
+    end if;
+    if v_cliente is null then
+      insert into clientes (empresa_id, tipo, nome) values (v_ch.empresa_id, 'avulso', 'CLIENTE PARTICULAR / AVULSO')
+      returning id into v_cliente;
+    end if;
   end if;
-  if v_cliente is null then
-    insert into clientes (empresa_id, tipo, nome, cpf_cnpj, whatsapp, email)
-    values (v_ch.empresa_id,
-            case when length(v_doc) = 14 then 'pj' when length(v_doc) = 11 then 'pf' else 'avulso' end::tipo_pessoa,
-            coalesce(v_nome, v_k.nome, 'CLIENTE WHATSAPP'), v_doc,
-            nullif(p_dados->>'whatsapp', ''), nullif(lower(p_dados->>'email'), ''))
-    returning id into v_cliente;
-  end if;
-  update whatsapp_contatos set cliente_id = v_cliente, nome = coalesce(nome, v_nome) where id = v_k.id;
+  update whatsapp_contatos set nome = coalesce(nome, v_nome) where id = v_k.id;
 
   -- serviço: o escolhido na conversa ou o padrão do robô
   select * into v_servico from servicos s

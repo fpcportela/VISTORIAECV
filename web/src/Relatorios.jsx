@@ -36,6 +36,7 @@ const COLUNAS = {
     { id: 'desconto', nome: 'Desconto', soma: true },
     { id: 'valor_total', nome: 'Total', soma: true },
     { id: 'a_faturar', nome: 'A receber', soma: true },
+    { id: 'comissao', nome: 'Comissão', soma: true },
   ],
   financeiro: [
     { id: 'vencimento', nome: 'Vencimento', valor: (v) => dataBR(v.vencimento) },
@@ -313,7 +314,7 @@ function GrupoLinhas({ titulo, lista, cols, soma }) {
 // ------------------------------------------------------------ faturar cliente
 function Faturar({ perfil, loja }) {
   const [cliente, setCliente] = useState(null);
-  const [f, setF] = useState({ de: '', ate: '' });
+  const [f, setF] = useState({ de: '', ate: '', situacao: '' });
   const [linhas, setLinhas] = useState(null);
   const [motivos, setMotivos] = useState(null);
   const [marcadas, setMarcadas] = useState(new Set());
@@ -329,6 +330,7 @@ function Faturar({ perfil, loja }) {
     if (loja) q.set('loja', loja);
     if (f.de) q.set('de', f.de);
     if (f.ate) q.set('ate', f.ate);
+    if (f.situacao) q.set('situacao', f.situacao);
     try {
       const l = await api(`/relatorios/vendas?${q}`);
       setLinhas(l); setMarcadas(new Set(l.map((v) => v.id))); setMotivos(null);
@@ -339,7 +341,7 @@ function Faturar({ perfil, loja }) {
         const conta = {};
         for (const v of todas) {
           const m = v.situacao === 'cancelada' ? 'cancelada(s)' : v.situacao === 'futuro' ? 'FUTURO (falta confirmar)'
-            : v.faturada_em ? 'já faturada(s)' : 'já paga(s)';
+            : v.faturada_em ? 'já faturada(s)' : v.comissao !== null ? 'com comissão zero' : 'já paga(s)';
           conta[m] = (conta[m] || 0) + 1;
         }
         setMotivos({ total: todas.length, conta });
@@ -349,30 +351,46 @@ function Faturar({ perfil, loja }) {
   useEffect(() => { setLinhas(null); setMarcadas(new Set()); if (cliente) buscar(); }, [cliente]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const escolhidas = (linhas || []).filter((v) => marcadas.has(v.id));
-  const total = escolhidas.reduce((t, v) => t + Number(v.a_faturar), 0);
+  const total = escolhidas.reduce((t, v) => t + Number(v.valor_fatura), 0);
+  const porComissao = (linhas || []).some((v) => v.comissao !== null);
+  const semComissao = (linhas || []).some((v) => v.comissao === null);
+  const regra = (v) => (v.comissao_tipo === 'fixo' ? `${real(v.comissao_regra)} por venda` : `${moeda(v.comissao_regra)}% da venda`);
+  const regras = [...new Set((linhas || []).filter((v) => v.comissao !== null).map(regra))];
   const todas = linhas?.length > 0 && escolhidas.length === linhas.length;
   const marcar = (id, sim) => setMarcadas((m) => { const n = new Set(m); if (sim) n.add(id); else n.delete(id); return n; });
 
   return (
     <>
-      <p className="cinza ajuda">Escolha o cliente para ver as vendas dele que ainda não foram pagas nem faturadas. Marque as que entram e clique em
-        "Gerar recebimento": o sistema cria a conta a receber no Financeiro, como previsão. Cada venda só pode ser faturada uma vez.</p>
+      <p className="cinza ajuda">Escolha o cliente para ver as vendas dele que ainda não foram faturadas. Cliente com comissão no cadastro: entram todas as
+        vendas (pagas ou não) e o valor faturado é a comissão de cada uma. Sem comissão: entram as vendas que ainda não foram pagas, pelo valor a receber.
+        Marque as que entram e clique em "Gerar recebimento": o sistema cria a conta a receber no Financeiro, como previsão. Cada venda só pode ser faturada uma vez.</p>
       <form className="relatorio-config" onSubmit={buscar}>
         <div className="linha-config">
           <label className="config-cliente">Cliente<CampoCliente cliente={cliente} aoEscolher={setCliente} obrigatorio /></label>
           <label>Vendas de<CampoData value={f.de} onChange={(e) => setF({ ...f, de: e.target.value })} /></label>
           <label>Até<CampoData value={f.ate} onChange={(e) => setF({ ...f, ate: e.target.value })} /></label>
+          <label>Situação
+            <select value={f.situacao} onChange={(e) => setF({ ...f, situacao: e.target.value })}>
+              <option value="">Todas</option><option value="aberta">ABERTA</option><option value="finalizada">FINALIZADA</option>
+            </select>
+          </label>
           <button className="botao-contorno" disabled={!cliente}>Filtrar</button>
         </div>
       </form>
       {aviso && <p className="aviso-ok" role="status">{aviso}</p>}
       {erro && <p className="erro" role="alert">{erro}</p>}
+      {linhas?.length > 0 && (
+        <p className="cinza">
+          {porComissao ? `Comissão do cliente: ${regras.join(' / ')}.` : 'Este cliente não tem comissão no cadastro: o faturamento usa o valor que falta receber de cada venda.'}
+          {porComissao && semComissao && ' Algumas empresas não têm comissão e entram pelo valor a receber.'}
+        </p>
+      )}
       {linhas && (linhas.length === 0 ? (
         <p className="cinza vazio">
           Nenhuma venda a faturar para este cliente{f.de || f.ate ? ' no período' : ''}.
           {motivos && (motivos.total === 0
             ? ` Ele não tem vendas${f.de || f.ate ? ' no período' : ''}${loja ? ' nesta loja (troque a loja no topo para "Todas as lojas")' : ''}.`
-            : ` Das ${motivos.total} venda(s) dele: ${Object.entries(motivos.conta).map(([m, n]) => `${n} ${m}`).join(', ')}. Só entram vendas com valor ainda a receber (sem pagamento, ou pagas como "Faturado").`)}
+            : ` Das ${motivos.total} venda(s) dele: ${Object.entries(motivos.conta).map(([m, n]) => `${n} ${m}`).join(', ')}. Sem comissão no cadastro do cliente, só entram vendas com valor ainda a receber (sem pagamento, ou pagas como "Faturado").`)}
         </p>
       ) : (
         <div className="tabela-relatorio-caixa">
@@ -382,7 +400,7 @@ function Faturar({ perfil, loja }) {
                 <th className="marcar"><input type="checkbox" checked={todas} aria-label="Marcar todas"
                   onChange={(e) => setMarcadas(e.target.checked ? new Set(linhas.map((v) => v.id)) : new Set())} /></th>
                 <th>Nº</th><th>Data</th><th>Cliente</th><th>Placa</th><th>Marca/Modelo</th><th>Serviços</th><th>Loja</th><th>Pagamento</th>
-                <th className="num">Total</th><th className="num">A receber</th>
+                <th className="num">Total</th>{semComissao && <th className="num">A receber</th>}{porComissao && <th className="num">Comissão</th>}
               </tr>
             </thead>
             <tbody>
@@ -392,13 +410,15 @@ function Faturar({ perfil, loja }) {
                   <td>{v.numero}</td><td>{dataBR(v.data_venda)}</td><td>{v.cliente}</td><td>{v.placas || ''}</td><td>{v.veiculos || ''}</td>
                   <td>{v.servicos || ''}</td><td>{v.loja}</td>
                   <td>{(v.formas || '').split(',').filter(Boolean).map((x) => FORMAS[x] || x).join(', ') || 'SEM PAGAMENTO'}</td>
-                  <td className="num">{moeda(v.valor_total)}</td><td className="num">{moeda(v.a_faturar)}</td>
+                  <td className="num">{moeda(v.valor_total)}</td>
+                  {semComissao && <td className="num">{v.comissao === null ? moeda(v.a_faturar) : ''}</td>}
+                  {porComissao && <td className="num">{v.comissao === null ? '' : moeda(v.comissao)}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="rodape-faturar">
-            <span>{escolhidas.length} de {linhas.length} venda(s) marcada(s) · <strong>{real(total)}</strong></span>
+            <span>{escolhidas.length} de {linhas.length} venda(s) marcada(s) · {porComissao ? 'comissão ' : ''}<strong>{real(total)}</strong></span>
             <button className="botao-primario" disabled={!escolhidas.length} onClick={() => setGerando(true)}>Gerar recebimento</button>
           </div>
         </div>
@@ -415,7 +435,8 @@ function Faturar({ perfil, loja }) {
 function GerarRecebimento({ perfil, cliente, vendas, total, aoFechar, aoGerar }) {
   const lojaGrupo = vendas[0]?.loja_id;
   const [categorias, setCategorias] = useState([]);
-  const [f, setF] = useState({ vencimento: somarDias(hojeISO(), 30), categoria_id: '', descricao: `FATURA ${cliente.nome}`, documento: '' });
+  const comissao = vendas.every((v) => v.comissao !== null);
+  const [f, setF] = useState({ vencimento: somarDias(hojeISO(), 30), categoria_id: '', descricao: `${comissao ? 'COMISSÃO' : 'FATURA'} ${cliente.nome}`, documento: '' });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const lojas = [...new Set(vendas.map((v) => v.loja))];
@@ -425,7 +446,7 @@ function GerarRecebimento({ perfil, cliente, vendas, total, aoFechar, aoGerar })
       const receitas = l.filter((c) => c.tipo === 'receber' && !c.grupo && c.ativo);
       setCategorias(receitas);
       // sugere a categoria de vistoria/serviços, se houver
-      const sugerida = receitas.find((c) => /vistori|servi/i.test(c.nome)) || receitas[0];
+      const sugerida = (comissao && receitas.find((c) => /comiss/i.test(c.nome))) || receitas.find((c) => /vistori|servi/i.test(c.nome)) || receitas[0];
       setF((x) => ({ ...x, categoria_id: x.categoria_id || sugerida?.id || '' }));
     }).catch((falha) => setErro(falha.message));
   }, [lojaGrupo]);
@@ -446,7 +467,7 @@ function GerarRecebimento({ perfil, cliente, vendas, total, aoFechar, aoGerar })
           <h2>Gerar recebimento</h2>
           <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
         </div>
-        <p><strong>{cliente.nome}</strong><br /><span className="cinza">{vendas.length} venda(s) · {real(total)}</span></p>
+        <p><strong>{cliente.nome}</strong><br /><span className="cinza">{vendas.length} venda(s) · {comissao ? 'comissão ' : ''}{real(total)}</span></p>
         <form className="formulario" onSubmit={salvar}>
           <label>Previsão de recebimento (vencimento)<CampoData value={f.vencimento} onChange={(e) => setF({ ...f, vencimento: e.target.value })} required /></label>
           <label>Categoria (plano de contas)

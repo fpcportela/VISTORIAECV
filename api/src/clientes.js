@@ -49,7 +49,8 @@ export function rotasClientes(app, { exigeLogin, rota }) {
     const dados = await comoUsuario(req.usuarioId, async (db) => {
       const c = (await db.query(
         `select c.id, c.empresa_id, c.tipo, c.nome, c.nome_fantasia, c.cpf_cnpj, c.telefone, c.whatsapp, c.email, c.cep, c.endereco,
-                c.cidade, c.uf, c.observacoes, c.ativo, c.grupo_cliente_id, g.nome as grupo_nome
+                c.cidade, c.uf, c.observacoes, c.ativo, c.grupo_cliente_id, g.nome as grupo_nome,
+                c.comissao_tipo, c.comissao_valor, g.comissao_tipo as grupo_comissao_tipo, g.comissao_valor as grupo_comissao_valor
            from clientes c left join clientes g on g.id = c.grupo_cliente_id where c.id = $1`, [req.params.id])).rows[0];
       if (!c || !(await podeNaEmpresa(db, c.empresa_id, 'clientes.ver'))) throw new Recusa(404, 'Cliente não encontrado.');
       const empresas = c.tipo === 'grupo' ? (await db.query(
@@ -77,10 +78,17 @@ export function rotasClientes(app, { exigeLogin, rota }) {
     }
     const grupoCliente = tipo === 'pj' && UUID.test(b.grupo_cliente_id || '') ? b.grupo_cliente_id : null;
     const uf = /^[A-Za-z]{2}$/.test(b.uf || '') ? b.uf.toUpperCase() : null;
+    // comissão do cliente: valor fixo por venda ou % do total da venda (vazio = sem comissão)
+    const comissaoTipo = ['fixo', 'percentual'].includes(b.comissao_tipo) ? b.comissao_tipo : null;
+    const bruto = String(b.comissao_valor ?? '').trim();
+    const comissaoValor = comissaoTipo && bruto
+      ? Math.round(Number(bruto.includes(',') ? bruto.replace(/\./g, '').replace(',', '.') : bruto) * 100) / 100 : null;
+    if (comissaoTipo && (comissaoValor === null || !(comissaoValor >= 0))) throw new Recusa(400, 'Informe o valor da comissão.');
+    if (comissaoTipo === 'percentual' && comissaoValor > 100) throw new Recusa(400, 'A comissão em porcentagem vai até 100%.');
     const campos = [tipo, nome, tipo === 'pj' ? texto(b.nome_fantasia, 120)?.toUpperCase() || null : null, doc,
       digitos(b.telefone) || null, digitos(b.whatsapp) || null, texto(b.email, 120)?.toLowerCase() || null,
       digitos(b.cep) || null, texto(b.endereco, 200)?.toUpperCase() || null, texto(b.cidade, 80)?.toUpperCase() || null, uf,
-      texto(b.observacoes, 2000), b.ativo !== false, grupoCliente];
+      texto(b.observacoes, 2000), b.ativo !== false, grupoCliente, comissaoTipo, comissaoValor];
 
     const novoId = await comoUsuario(req.usuarioId, async (db) => {
       let empresa;
@@ -106,14 +114,15 @@ export function rotasClientes(app, { exigeLogin, rota }) {
         if (id) {
           await db.query(
             `update clientes set tipo = $2::tipo_pessoa, nome = $3, nome_fantasia = $4, cpf_cnpj = $5, telefone = $6, whatsapp = $7,
-                    email = $8, cep = $9, endereco = $10, cidade = $11, uf = $12, observacoes = $13, ativo = $14, grupo_cliente_id = $15
+                    email = $8, cep = $9, endereco = $10, cidade = $11, uf = $12, observacoes = $13, ativo = $14, grupo_cliente_id = $15,
+                    comissao_tipo = $16, comissao_valor = $17
               where id = $1`, [id, ...campos]);
           return id;
         }
         return (await db.query(
           `insert into clientes (empresa_id, tipo, nome, nome_fantasia, cpf_cnpj, telefone, whatsapp, email, cep, endereco, cidade, uf,
-                                 observacoes, ativo, grupo_cliente_id)
-           values ($1, $2::tipo_pessoa, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id`, [empresa, ...campos])).rows[0].id;
+                                 observacoes, ativo, grupo_cliente_id, comissao_tipo, comissao_valor)
+           values ($1, $2::tipo_pessoa, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning id`, [empresa, ...campos])).rows[0].id;
       } catch (e) {
         if (e.code === '23505') throw new Recusa(400, `Já existe um cliente com esse ${tipo === 'pj' ? 'CNPJ' : 'CPF'}.`);
         throw e;

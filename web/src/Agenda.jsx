@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { criarTem } from './modulos.js';
-import { mascaraTelefone } from './documentos.js';
+import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
 import { Placa } from './Placa.jsx';
 
@@ -203,8 +203,12 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
     nome: a?.nome || '', telefone: a?.telefone ? mascaraTelefone(String(a.telefone).replace(/^55/, '')) : '', placa: a?.placa || '',
     servico_id: a?.servico_id || '', observacao: a?.observacao || '',
     dia: a ? diaSP(a.inicio) : inicial?.dia || hoje(), hora: a ? horaSP(a.inicio) : inicial?.hora || '',
-    encaixe: false, enviar_whatsapp: !a,
+    encaixe: false, enviar_whatsapp: !a, cpf_cnpj: a?.cliente_doc ? formatarDoc(a.cliente_doc) : '',
   });
+  // cliente do cadastro: achado pelo CPF/CNPJ ou escolhido na busca pelo nome (nunca cadastra duplicado)
+  const [cliente, setCliente] = useState(a?.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : null);
+  const [docAviso, setDocAviso] = useState('');
+  const [sugestoes, setSugestoes] = useState([]);
   const [livres, setLivres] = useState(null);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -217,13 +221,43 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
   // horário atual do agendamento continua valendo ao editar
   const opcoes = [...new Set([...(livres || []), ...(a && diaSP(a.inicio) === f.dia ? [horaSP(a.inicio)] : [])])].sort();
 
+  const usar = (c) => {
+    setCliente(c); setSugestoes([]); setDocAviso('');
+    mudar({ nome: c.nome, cpf_cnpj: c.cpf_cnpj ? formatarDoc(c.cpf_cnpj) : '',
+      telefone: f.telefone || (c.whatsapp || c.telefone ? mascaraTelefone(String(c.whatsapp || c.telefone).replace(/^55(?=\d{10,11}$)/, '')) : '') });
+  };
+
+  // CPF/CNPJ completo: procura no cadastro do grupo
+  async function mudarDoc(valor) {
+    const d = valor.replace(/\D/g, '');
+    const doc = d.length > 11 ? mascaraCnpj(valor) : mascaraCpf(valor);
+    mudar({ cpf_cnpj: doc }); setCliente(null); setDocAviso('');
+    if (d.length !== 11 && d.length !== 14) return;
+    if (!(d.length === 11 ? cpfValido(d) : cnpjValido(d))) { setDocAviso(`${d.length === 11 ? 'CPF' : 'CNPJ'} inválido. Confira os números.`); return; }
+    try {
+      const achado = (await api(`/clientes?loja=${loja}&busca=${d}`)).find((c) => c.cpf_cnpj === d);
+      if (achado) usar(achado); else setDocAviso('Cliente novo: será cadastrado com este documento ao agendar.');
+    } catch { /* sem busca: o servidor confere de novo ao salvar */ }
+  }
+
+  // nome: mostra os clientes já cadastrados parecidos, para não cadastrar de novo
+  useEffect(() => {
+    if (cliente || f.nome.trim().length < 3) { setSugestoes([]); return undefined; }
+    const t = setTimeout(() => api(`/clientes?loja=${loja}&venda=1&busca=${encodeURIComponent(f.nome.trim())}`)
+      .then((l) => setSugestoes(l.filter((c) => c.tipo !== 'avulso').slice(0, 6))).catch(() => {}), 300);
+    return () => clearTimeout(t);
+  }, [f.nome, cliente]);
+
   async function salvar(e) {
     e.preventDefault(); setErro('');
     if (!f.hora) { setErro('Escolha o horário.'); return; }
+    const d = f.cpf_cnpj.replace(/\D/g, '');
+    if (d && !(d.length === 11 ? cpfValido(d) : d.length === 14 && cnpjValido(d))) { setErro('CPF ou CNPJ inválido. Confira os números.'); return; }
     setSalvando(true);
     const corpo = {
       loja_id: loja, nome: f.nome, telefone: f.telefone, placa: f.placa, servico_id: f.servico_id || null, observacao: f.observacao,
       inicio: instanteSP(f.dia, f.hora), encaixe: f.encaixe, enviar_whatsapp: f.enviar_whatsapp,
+      ...(cliente ? { cliente_id: cliente.id } : { cpf_cnpj: d }),
     };
     try {
       const r = a ? await api(`/agenda/${a.id}`, { metodo: 'PUT', corpo }) : await api('/agenda', { metodo: 'POST', corpo });
@@ -234,7 +268,29 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
   return (
     <Janela titulo={a ? 'Editar agendamento' : 'Agendar vistoria'} aoFechar={aoFechar}>
       <form className="formulario" onSubmit={salvar}>
-        <label>Nome do cliente<input value={f.nome} required onChange={(e) => mudar({ nome: e.target.value.toUpperCase() })} /></label>
+        <label>CPF ou CNPJ
+          <input value={f.cpf_cnpj} inputMode="numeric" placeholder="Para achar o cadastro (ou cadastrar o cliente)" onChange={(e) => mudarDoc(e.target.value)} />
+        </label>
+        {cliente
+          ? <small className="aviso-receita">Cliente cadastrado: <strong>{cliente.nome}</strong>{' '}
+              <button type="button" className="botao-link" onClick={() => { setCliente(null); mudar({ cpf_cnpj: '' }); }}>trocar</button></small>
+          : docAviso && <small className="aviso-receita">{docAviso}</small>}
+        <label>Nome do cliente
+          <span className="campo-cliente">
+            <input value={f.nome} required readOnly={Boolean(cliente)} onChange={(e) => mudar({ nome: e.target.value.toUpperCase() })}
+              onBlur={() => setTimeout(() => setSugestoes([]), 200)} />
+            {sugestoes.length > 0 && (
+              <ul className="sugestoes-cliente" role="listbox">
+                <li className="cinza sem-cliente">Já cadastrados com esse nome:</li>
+                {sugestoes.map((c) => (
+                  <li key={c.id}><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => usar(c)}>
+                    <strong>{c.nome}</strong><small className="cinza">{formatarDoc(c.cpf_cnpj)}</small>
+                  </button></li>
+                ))}
+              </ul>
+            )}
+          </span>
+        </label>
         <div className="linha-campos dois">
           <label>Celular (WhatsApp)<input value={f.telefone} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => mudar({ telefone: mascaraTelefone(e.target.value) })} /></label>
           <label>Placa<input value={f.placa} maxLength={8} onChange={(e) => mudar({ placa: e.target.value.toUpperCase() })} /></label>

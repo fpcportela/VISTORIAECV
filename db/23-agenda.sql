@@ -192,7 +192,9 @@ begin
            nome = coalesce(nullif(upper(trim(new.robo_dados->>'nome')), ''), a.nome),
            placa = coalesce(nullif(new.robo_dados->>'placa', ''), a.placa),
            servico_id = coalesce((select s.id from servicos s where s.id::text = new.robo_dados->>'servico_id'), a.servico_id),
-           cliente_id = coalesce((select v.cliente_id from vendas v where v.id = new.venda_id), a.cliente_id),
+           -- só liga a um cliente cadastrado (com CPF/CNPJ), nunca ao particular/avulso
+           cliente_id = coalesce((select v.cliente_id from vendas v join clientes c on c.id = v.cliente_id
+                                   where v.id = new.venda_id and c.cpf_cnpj is not null), a.cliente_id),
            atualizado_em = now()
      where a.chamado_id = new.id and a.venda_id is null and a.situacao <> 'cancelado';
   end if;

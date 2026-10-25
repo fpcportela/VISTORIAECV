@@ -51,6 +51,19 @@ da loja do robô (o cliente responde com o número, ou MAIS para ver outros). O 
 na hora da escolha, a venda FUTURO abre com a data do agendamento e a mensagem final diz o dia, a hora
 e o endereço. Com IA, o robô oferece os mesmos horários livres na conversa.
 
+Cadastro de cliente sempre pelo CPF/CNPJ, sem duplicar: no **+ Agendar**, o CPF/CNPJ acha o cliente
+já cadastrado (ou cadastra um novo ao agendar) e, ao digitar o nome, aparecem os clientes parecidos.
+Sem documento, o agendamento fica só com o nome. O robô faz igual: com CPF/CNPJ usa o cadastro
+existente; sem documento, a venda vai para o particular/avulso e ninguém é cadastrado.
+
+## Comissão do cliente e Faturar cliente
+
+No cadastro do cliente, **Comissão** pode ser um valor fixo por venda ou uma porcentagem do total da
+venda (a empresa de um grupo sem comissão própria usa a do grupo). Em **Relatórios > Faturar cliente**,
+o cliente com comissão mostra todas as vendas dele ainda não faturadas (pagas ou não, filtrando por
+período e situação) com a comissão de cada uma; o recebimento gerado no Financeiro é a soma das
+comissões. Cliente sem comissão continua faturando o que falta receber das vendas.
+
 ## WhatsApp (API oficial da Meta)
 
 Sem configuração, o módulo WhatsApp fica em **modo teste**. Nesse modo as mensagens ficam só no
