@@ -11,6 +11,7 @@ import { rotasFipe } from './fipe.js';
 import { rotasFinanceiro } from './financeiro.js';
 import { rotasBackup } from './backup.js';
 import { rotasWhatsApp } from './whatsapp.js';
+import { rotasRelatorios } from './relatorios.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
@@ -225,6 +226,7 @@ rotasFipe(app, { exigeLogin, rota });
 rotasFinanceiro(app, { exigeLogin, rota });
 rotasBackup(app, { exigeLogin, rota });
 rotasWhatsApp(app, { exigeLogin, rota });
+rotasRelatorios(app, { exigeLogin, rota });
 rotasGrupos(app, { exigeLogin, rota });
 rotasClientes(app, { exigeLogin, rota });
 

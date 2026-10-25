@@ -758,3 +758,36 @@ button.tf-linha:hover { border-color: var(--forte); }
 .acesso-sistema .dados-veiculo label { text-align: left; align-items: stretch; }
 .tp-foto { background: none; border: none; padding: 2px 4px; margin-left: 2px; color: var(--forte); cursor: pointer; border-radius: 6px; vertical-align: middle; display: inline-flex; }
 .tp-foto:hover { background: #eef1f6; }
+
+/* ---------- Relatórios ---------- */
+.relatorio-config { background: #fff; border-radius: 10px; padding: 14px; margin: 14px 0; display: flex; flex-direction: column; gap: 12px; }
+.linha-config { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.linha-config > label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--cinza); min-width: 0; }
+.linha-config select, .linha-config input { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 14px; min-height: 40px; background: #fff; color: var(--texto); }
+.linha-config .campo-data { width: 140px; }
+.config-cliente { flex: 1 1 260px; }
+.campo-cliente { position: relative; display: block; }
+.campo-cliente input { width: 100%; }
+.sugestoes-cliente { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 2px); list-style: none; margin: 0; padding: 4px; background: #fff; border: 1px solid var(--borda); border-radius: 8px; box-shadow: 0 8px 20px rgba(15, 23, 42, .15); max-height: 300px; overflow-y: auto; }
+.sugestoes-cliente button { width: 100%; text-align: left; border: none; background: none; padding: 8px 10px; border-radius: 6px; display: flex; flex-direction: column; font: inherit; color: var(--texto); cursor: pointer; }
+.sugestoes-cliente button:hover { background: #eef1f6; }
+.cliente-escolhido { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--borda); border-radius: 6px; padding: 4px 4px 4px 10px; min-height: 40px; background: #f5f8fc; color: var(--texto); font-weight: 400; }
+.cliente-escolhido .fechar { width: 30px; height: 30px; font-size: 18px; }
+.colunas-relatorio { border: 1px solid #e3e7ee; border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; }
+.colunas-relatorio legend { font-size: 13px; font-weight: 700; color: var(--cinza); padding: 0 4px; }
+.colunas-relatorio .linha-check { font-size: 14px; min-height: 32px; }
+.acoes-relatorio { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.acoes-relatorio select { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 14px; min-height: 40px; background: #fff; }
+.tabela-relatorio-caixa { background: #fff; border-radius: 10px; padding: 10px; overflow-x: auto; }
+.tabela-relatorio { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela-relatorio th { text-align: left; background: var(--primaria); color: var(--sobre-primaria); padding: 7px 8px; font-weight: 700; white-space: nowrap; }
+.tabela-relatorio td { padding: 6px 8px; border-bottom: 1px solid #eef1f6; vertical-align: top; }
+.tabela-relatorio .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tabela-relatorio .marcar { width: 34px; text-align: center; }
+.tabela-relatorio tbody tr.marcada { background: #f0f7ff; }
+.tabela-relatorio tbody tr { cursor: default; }
+.tabela-relatorio .linha-grupo td { background: #e8eef7; font-weight: 800; }
+.tabela-relatorio .linha-subtotal td { font-weight: 700; background: #fafbfd; }
+.tabela-relatorio tfoot td { font-weight: 800; background: #f1f5f9; border-top: 2px solid #d6dbe3; }
+.rodape-faturar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 4px 4px; flex-wrap: wrap; }
+@media (max-width: 820px) { .linha-config > label { flex: 1 1 45%; } .linha-config .campo-data { width: auto; } }
