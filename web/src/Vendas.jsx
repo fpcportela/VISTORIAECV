@@ -2,13 +2,15 @@ import { useEffect, useId, useState } from 'react';
 import { api, moeda } from './api.js';
 import { Icone } from './icones.jsx';
 import { Placa, PlacaInput, PlacasDiversas, placaValida } from './Placa.jsx';
-import { lerMoeda, paraMoeda } from './entrada.js';
+import { lerMoeda, paraMoeda, semAcento } from './entrada.js';
 import { SeletorVeiculo } from './Veiculo.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 
 export const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Cancelada' };
-const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', cancelada: 'Cancelou' };
+const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', cancelada: 'Cancelou', desconto: 'Deu desconto' };
+const BANDEIRAS = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD', 'AMERICAN EXPRESS', 'CABAL', 'OUTRA'];
+const ehCartao = (forma) => forma === 'cartao_credito' || forma === 'cartao_debito';
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const dataBR = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
 const numero = lerMoeda;
@@ -19,7 +21,7 @@ const itemVazio = () => ({ servico_id: '', quantidade: '1', valor_unit: '' });
 let chaves = 0;
 // A venda é organizada por veículo: cada veículo tem os seus itens
 const veiculoVazio = () => ({ chave: ++chaves, placa: '', tipo_veiculo: null, marca: '', modelo: '', itens: [itemVazio()] });
-const pagamentoVazio = (valor = '') => ({ chave: ++chaves, data_pagamento: hoje(), forma: 'pix', valor, detalhe: '' });
+const pagamentoVazio = (valor = '') => ({ chave: ++chaves, data_pagamento: hoje(), forma: 'pix', valor, detalhe: '', cv: '', bandeira: '' });
 
 // ---------------------------------------------------------------------------
 // Lista de vendas e orçamentos
@@ -225,6 +227,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   const [servicos, setServicos] = useState([]);
   const [consulta, setConsulta] = useState(null); // { indice, placa }
   const [liberando, setLiberando] = useState(false);
+  const [autorizando, setAutorizando] = useState(null); // { finalizar } enquanto pede a senha do desconto
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -249,7 +252,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       }
       setVeiculos(grupos.length ? grupos : [veiculoVazio()]);
       setPagamentos(v.pagamentos?.length
-        ? v.pagamentos.map((pg) => ({ ...pagamentoVazio(), data_pagamento: String(pg.data_pagamento).slice(0, 10), forma: pg.forma, valor: paraMoeda(pg.valor), detalhe: pg.detalhe || '' }))
+        ? v.pagamentos.map((pg) => ({ ...pagamentoVazio(), data_pagamento: String(pg.data_pagamento).slice(0, 10), forma: pg.forma, valor: paraMoeda(pg.valor), detalhe: pg.detalhe || '', cv: pg.cv || '', bandeira: pg.bandeira || '' }))
         : [pagamentoVazio()]);
       setDesconto(v.desconto ? paraMoeda(v.desconto) : ''); setObservacoes(v.observacoes || '');
     } catch (falha) {
@@ -330,7 +333,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   const falta = Math.round((total - pago) * 100) / 100;
   const mudarPagamento = (n, campos) => setPagamentos((l) => l.map((pg, k) => (k === n ? { ...pg, ...campos } : pg)));
 
-  async function salvar(finalizar = false) {
+  async function salvar(finalizar = false, autorizacao = null) {
     setErro('');
     if (modoCliente === 'buscar' && !cliente) return setErro('Escolha o cliente na lista.');
     if (modoCliente === 'novo' && !novo.nome.trim()) return setErro('Informe o nome do cliente.');
@@ -341,14 +344,21 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
     if (finalizar && Math.abs(falta) > 0.005) {
       return setErro(`Para finalizar, os pagamentos precisam fechar o total: ${falta > 0 ? `faltam R$ ${moeda(falta)}` : `sobram R$ ${moeda(-falta)}`}.`);
     }
+    const cartaoSemCv = pagamentos.findIndex((pg) => numero(pg.valor) > 0 && ehCartao(pg.forma) && (!pg.cv.trim() || !pg.bandeira));
+    if (cartaoSemCv >= 0) return setErro(`Pagamento ${cartaoSemCv + 1}: informe o CV e a bandeira do cartão.`);
+    // desconto novo ou alterado: pede a senha de quem autoriza antes de salvar
+    if (!autorizacao && numero(desconto) > 0 && numero(desconto) !== Number(venda?.desconto || 0)) {
+      return setAutorizando({ finalizar });
+    }
     setOcupado(true);
     try {
       const corpo = {
         loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
+        ...(autorizacao && { autorizacao_desconto: autorizacao }),
         itens: veiculos.flatMap(({ placa, tipo_veiculo, marca, modelo, itens }) => itens.filter((i) => i.servico_id)
           .map(({ servico_id, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) }))),
         pagamentos: pagamentos.filter((pg) => numero(pg.valor) > 0)
-          .map(({ data_pagamento, forma, valor, detalhe }) => ({ data_pagamento, forma, valor: numero(valor), detalhe })),
+          .map(({ data_pagamento, forma, valor, detalhe, cv, bandeira }) => ({ data_pagamento, forma, valor: numero(valor), detalhe, cv, bandeira })),
         ...(modoCliente === 'avulso' && { cliente_avulso: true }),
         ...((modoCliente === 'buscar' || modoCliente === 'atual') && cliente && { cliente_id: cliente.id }),
         ...(modoCliente === 'novo' && { cliente_novo: novo }),
@@ -361,8 +371,10 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       await carregar();
       setAviso(finalizar ? 'Venda finalizada.' : 'Venda salva.'); setTimeout(() => setAviso(''), 2200);
     } catch (falha) {
+      if (falha.status === 428) { setAutorizando({ finalizar }); return; }
       setErro(falha.message);
-      if (venda) carregar();
+      if (venda && !autorizacao) carregar();
+      if (autorizacao) throw falha; // a janela de autorização mostra o erro
     } finally {
       setOcupado(false);
     }
@@ -429,6 +441,13 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
             </label>
           ))}
         </div>
+        {(modoCliente === 'atual' || modoCliente === 'buscar') && cliente && (
+          <div className="dados-cliente">
+            <span><small className="cinza">Nome completo</small><strong>{cliente.nome}</strong></span>
+            <span><small className="cinza">{String(cliente.cpf_cnpj || '').replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'}</small><strong>{cliente.cpf_cnpj ? formatarDoc(cliente.cpf_cnpj) : 'NÃO INFORMADO'}</strong></span>
+            {cliente.whatsapp && <span><small className="cinza">WhatsApp</small><strong>{mascaraTelefone(cliente.whatsapp)}</strong></span>}
+          </div>
+        )}
         {modoCliente === 'buscar' && (
           <div className="formulario">
             <input type="search" value={busca} onChange={(e) => { setBusca(e.target.value); setCliente(null); }} placeholder="Nome, CPF/CNPJ ou telefone" aria-label="Buscar cliente" />
@@ -510,27 +529,24 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       <fieldset className="cartao secao-venda" disabled={!editavel}>
         <legend>Valor e pagamento</legend>
         <div className="resumo-valor">
-          <label>Desconto (R$)<input value={desconto} inputMode="numeric" data-moeda placeholder="0,00" disabled={!pode.desconto}
+          <label>Desconto (R$)<input value={desconto} inputMode="numeric" data-moeda placeholder="0,00" title="Precisa da senha de um sênior ou administrador"
             onChange={(e) => setDesconto(e.target.value)} /></label>
           <span>Itens<strong>R$ {moeda(bruto)}</strong></span>
           <span>Desconto<strong className="negativo">− R$ {moeda(numero(desconto))}</strong></span>
           <span className="total-venda">Total<strong>R$ {moeda(total)}</strong></span>
         </div>
         <div className="pagamentos-venda">
-          <div className="pagamento-venda cabecalho-itens" aria-hidden="true">
-            <span>Data do pagamento</span><span>Forma de pagamento</span><span>Valor (R$)</span><span>Detalhe</span><span />
-          </div>
           {pagamentos.map((pg, n) => (
-            <div key={pg.chave} className="pagamento-venda">
-              <label><span className="so-celular rotulo-campo">Data do pagamento</span>
+            <div key={pg.chave} className={`pagamento-venda${ehCartao(pg.forma) ? ' com-cartao' : ''}`}>
+              <label><span className="rotulo-campo">Data do pagamento</span>
                 <input type="date" value={pg.data_pagamento} onChange={(e) => mudarPagamento(n, { data_pagamento: e.target.value })} aria-label={`Data do pagamento ${n + 1}`} />
               </label>
-              <label><span className="so-celular rotulo-campo">Forma de pagamento</span>
+              <label><span className="rotulo-campo">Forma de pagamento</span>
                 <select value={pg.forma} onChange={(e) => mudarPagamento(n, { forma: e.target.value })} aria-label={`Forma do pagamento ${n + 1}`}>
-                  {Object.entries(FORMAS_PAGAMENTO).map(([k, nome]) => <option key={k} value={k}>{nome.toUpperCase()}</option>)}
+                  {Object.entries(FORMAS_PAGAMENTO).map(([k, nome]) => <option key={k} value={k}>{semAcento(nome)}</option>)}
                 </select>
               </label>
-              <label><span className="so-celular rotulo-campo">Valor (R$)</span>
+              <label><span className="rotulo-campo">Valor (R$)</span>
                 <input value={pg.valor} inputMode="numeric" data-moeda placeholder={falta > 0 ? moeda(falta) : '0,00'}
                   onFocus={(e) => {
                     // sugere o que falta pagar, já selecionado: digitar outro valor substitui
@@ -539,8 +555,21 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
                   }}
                   onChange={(e) => mudarPagamento(n, { valor: e.target.value })} aria-label={`Valor do pagamento ${n + 1}`} />
               </label>
-              <label><span className="so-celular rotulo-campo">Detalhe</span>
-                <input value={pg.detalhe} placeholder="Ex.: MAQUININHA, BANDEIRA, BANCO" onChange={(e) => mudarPagamento(n, { detalhe: e.target.value })} aria-label={`Detalhe do pagamento ${n + 1}`} />
+              {ehCartao(pg.forma) && (
+                <>
+                  <label><span className="rotulo-campo">CV</span>
+                    <input value={pg.cv} placeholder="Nº DO COMPROVANTE" onChange={(e) => mudarPagamento(n, { cv: e.target.value })} aria-label={`CV do pagamento ${n + 1}`} />
+                  </label>
+                  <label><span className="rotulo-campo">Bandeira</span>
+                    <select value={pg.bandeira} onChange={(e) => mudarPagamento(n, { bandeira: e.target.value })} aria-label={`Bandeira do pagamento ${n + 1}`}>
+                      <option value="">ESCOLHA…</option>
+                      {BANDEIRAS.map((b) => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
+              <label><span className="rotulo-campo">Detalhe</span>
+                <input value={pg.detalhe}  placeholder={ehCartao(pg.forma) ? 'EX.: MAQUININHA' : 'EX.: BANCO DO PIX'} onChange={(e) => mudarPagamento(n, { detalhe: e.target.value })} aria-label={`Detalhe do pagamento ${n + 1}`} />
               </label>
               <button type="button" className="fechar" aria-label={`Remover pagamento ${n + 1}`} disabled={pagamentos.length === 1}
                 onClick={() => setPagamentos((l) => l.filter((_, k) => k !== n))}>×</button>
@@ -584,12 +613,51 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       {consulta && (
         <ConsultaPlaca loja={loja} placaInicial={consulta.placa} aoUsar={editavel ? usarVeiculo : undefined} aoFechar={() => setConsulta(null)} />
       )}
+      {autorizando && (
+        <AutorizarDesconto desconto={numero(desconto)} emailSugerido={pode.desconto ? perfil.usuario.email : ''}
+          aoFechar={() => setAutorizando(null)}
+          aoAutorizar={async (a) => { await salvar(autorizando.finalizar, a); setAutorizando(null); }} />
+      )}
       {liberando && (
         <LiberarEdicao venda={venda} dispensaSenha={perfil.master || pode.autorizar}
           aoFechar={() => setLiberando(false)} aoLiberar={() => { setLiberando(false); carregar(); }} />
       )}
       {aviso && <div className="aviso" role="status">{aviso}</div>}
     </>
+  );
+}
+
+// Desconto: e-mail e senha de quem pode autorizar (master ou perfil com "Dar desconto")
+function AutorizarDesconto({ desconto, emailSugerido, aoFechar, aoAutorizar }) {
+  const [email, setEmail] = useState(emailSugerido);
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function enviar(e) {
+    e.preventDefault();
+    setEnviando(true); setErro('');
+    try { await aoAutorizar({ email, senha }); } catch (falha) { setErro(falha.message); setEnviando(false); }
+  }
+  return (
+    <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-label="Autorizar desconto">
+        <div className="modal-topo">
+          <h2>Autorizar desconto de R$ {moeda(desconto)}</h2>
+          <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+        <form className="formulario" onSubmit={enviar}>
+          <p className="cinza ajuda">O desconto só vale com a senha de um sênior ou administrador. Fica registrado no histórico da venda.</p>
+          <label>E-mail de quem autoriza<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" autoFocus={!emailSugerido} /></label>
+          <label>Senha de quem autoriza<input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} required autoComplete="new-password" autoFocus={Boolean(emailSugerido)} /></label>
+          {erro && <p className="erro" role="alert">{erro}</p>}
+          <div className="acoes-modal">
+            <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
+            <button className="botao-primario" disabled={enviando}>{enviando ? 'Conferindo…' : 'Autorizar'}</button>
+          </div>
+        </form>
+      </section>
+    </div>
   );
 }
 

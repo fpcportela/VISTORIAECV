@@ -151,7 +151,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
            from venda_historico h left join usuarios u on u.id = h.usuario_id left join usuarios a on a.id = h.autorizado_por
           where h.venda_id = $1 order by h.criado_em, h.id`, [v.id])).rows;
       const pagamentos = (await db.query(
-        `select id, data_pagamento, forma, valor, detalhe from venda_pagamentos where venda_id = $1 order by criado_em, id`, [v.id])).rows;
+        `select id, data_pagamento, forma, valor, detalhe, cv, bandeira from venda_pagamentos where venda_id = $1 order by criado_em, id`, [v.id])).rows;
       const pode = (await db.query(
         `select pode($1, 'vendas.criar') as editar, pode($1, 'vendas.finalizar') as finalizar,
                 pode($1, 'vendas.cancelar') as cancelar, pode($1, 'vendas.desconto') as desconto,
@@ -171,8 +171,12 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const data = dataValida(b.data_venda) || new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
     const desconto = dinheiro(b.desconto || 0);
     if (desconto === null) throw new Recusa(400, 'Desconto inválido.');
+    // Desconto novo ou alterado só passa com e-mail e senha de quem pode autorizar
+    let autorizadorDesconto = null;
     if (desconto > 0 && desconto !== Number(existente?.desconto || 0)) {
-      await exigir(db, loja, 'vendas.desconto', 'Seu perfil não pode dar desconto.');
+      const a = b.autorizacao_desconto || {};
+      if (!a.email || !a.senha) throw new Recusa(428, 'O desconto precisa da senha de quem autoriza (sênior ou administrador).');
+      autorizadorDesconto = (await db.query('select app_autorizar_desconto($1, $2, $3) as id', [loja, a.email, a.senha])).rows[0].id;
     }
 
     const itens = Array.isArray(b.itens) ? b.itens : [];
@@ -213,7 +217,9 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       if (!valor) throw new Recusa(400, `${linha} informe o valor.`);
       if (!FORMAS.includes(pg.forma)) throw new Recusa(400, `${linha} escolha a forma de pagamento.`);
       const quando = dataValida(pg.data_pagamento) || new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
-      pagamentos.push([quando, pg.forma, valor, texto(pg.detalhe, 200)]);
+      const cartao = pg.forma === 'cartao_credito' || pg.forma === 'cartao_debito';
+      pagamentos.push([quando, pg.forma, valor, texto(pg.detalhe, 200),
+        cartao ? texto(pg.cv, 40)?.toUpperCase() || null : null, cartao ? texto(pg.bandeira, 30)?.toUpperCase() || null : null]);
     }
     const pago = pagamentos.reduce((t, [, , v]) => t + v, 0);
     if (pago - (bruto - desconto) > 0.005) {
@@ -248,11 +254,15 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         [id, ...p]);
     }
     for (const p of pagamentos) {
-      await db.query('insert into venda_pagamentos (venda_id, data_pagamento, forma, valor, detalhe) values ($1, $2, $3, $4, $5)', [id, ...p]);
+      await db.query('insert into venda_pagamentos (venda_id, data_pagamento, forma, valor, detalhe, cv, bandeira) values ($1, $2, $3, $4, $5, $6, $7)', [id, ...p]);
     }
     const total = reais(bruto - desconto);
     await db.query('insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, $3, $4)',
       [id, req.usuarioId, existente ? 'alterada' : 'criada', `${prontos.length} item(ns), total ${total}`]);
+    if (autorizadorDesconto) {
+      await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe, autorizado_por) values ($1, $2, 'desconto', $3, $4)",
+        [id, req.usuarioId, `Desconto de ${reais(desconto)}`, autorizadorDesconto]);
+    }
     return id;
   }
 
