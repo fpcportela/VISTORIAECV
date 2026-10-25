@@ -340,6 +340,7 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 
 /* ---------- Vendas ---------- */
 .venda-aberta { background: #fef3c7; color: #92400e; }
+.venda-futuro { background: #e0e7ff; color: #3730a3; }
 .venda-finalizada { background: #dcfce7; color: var(--positivo); }
 .venda-cancelada { background: #fde8e8; color: var(--negativo); }
 .tabela-vendas { display: flex; flex-direction: column; gap: 8px; }
@@ -437,6 +438,7 @@ div.linha-loja { display: flex; align-items: center; gap: 8px; }
 .abas-vendas .nova-aba { padding: 6px 12px; font-size: 20px; line-height: 1; color: var(--forte); background: transparent; border: none; }
 /* Cor da aba = situação da venda (amarelo aberta, verde finalizada, vermelho cancelada) */
 .abas-vendas .aba-venda.st-aberta { background: #fef3c7; color: #92400e; border-color: #f5d27a; }
+.abas-vendas .aba-venda.st-futuro { background: #e0e7ff; color: #3730a3; border-color: #a5b4fc; }
 .abas-vendas .aba-venda.st-finalizada { background: #dcfce7; color: var(--positivo); border-color: #94d9ad; }
 .abas-vendas .aba-venda.st-cancelada { background: #fde8e8; color: var(--negativo); border-color: #f2a5a5; }
 .abas-vendas .aba-venda[class*=st-] { opacity: .8; }
@@ -801,3 +803,26 @@ button.tf-linha:hover { border-color: var(--forte); }
 /* Ícone do tipo de veículo antes do número da venda */
 .lv-tipo { display: inline-flex; color: #111; margin-right: 6px; vertical-align: middle; }
 .linha-venda .lv-num { flex-direction: row; align-items: center; white-space: nowrap; }
+
+/* Robô do WhatsApp */
+.robo-config { display: flex; flex-direction: column; gap: 14px; max-width: 900px; }
+.robo-config fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.robo-config label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
+.robo-config label.linha-check { flex-direction: row; align-items: flex-start; gap: 10px; font-weight: 500; }
+.robo-config label.linha-check input { margin-top: 3px; }
+.robo-config h3 { margin: 8px 0 0; font-size: 16px; }
+.robo-config .grade-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.robo-config .sucesso { margin: 0; padding: 10px 12px; border-radius: 8px; background: #e8f7ee; color: #166534; font-weight: 600; }
+.robo-ligar { background: var(--fundo-suave, #f8fafc); border: 1px solid var(--borda, #e2e8f0); border-radius: 10px; padding: 12px; }
+.robo-etapas { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.robo-etapas li { display: grid; grid-template-columns: 170px 1fr auto auto; gap: 8px; align-items: center; }
+.robo-etapas li label.linha-check { white-space: nowrap; align-items: center; }
+.robo-etapas li label.linha-check input { margin-top: 0; }
+.robo-etapa-acoes { display: flex; gap: 2px; align-items: center; }
+.selo-robo { display: inline-block; align-self: flex-start; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #e0e7ff; color: #3730a3; }
+.selo-robo.venda { background: #dcfce7; color: #166534; }
+.aviso-robo { margin: 0; padding: 8px 12px; background: #eef2ff; color: #312e81; font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (max-width: 700px) {
+  .robo-config .grade-2 { grid-template-columns: 1fr; }
+  .robo-etapas li { grid-template-columns: 1fr; }
+}

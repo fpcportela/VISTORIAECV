@@ -26,7 +26,7 @@ const quando = (iso) => {
 };
 const STATUS = { simulada: 'modo teste', enviada: 'enviada', entregue: 'entregue', lida: 'lida', falhou: 'não enviada' };
 
-export default function WhatsApp({ perfil, loja }) {
+export default function WhatsApp({ perfil, loja, aoVenda }) {
   const [aba, setAba] = useState('chamados');
   const [situacao, setSituacao] = useState(null);
   const [erro, setErro] = useState('');
@@ -58,14 +58,15 @@ export default function WhatsApp({ perfil, loja }) {
       <div className="abas" role="tablist">
         <button role="tab" aria-selected={aba === 'chamados'} className={aba === 'chamados' ? 'ativa' : ''} onClick={() => setAba('chamados')}>Chamados</button>
         <button role="tab" aria-selected={aba === 'conversas'} className={aba === 'conversas' ? 'ativa' : ''} onClick={() => setAba('conversas')}>Conversas</button>
+        <button role="tab" aria-selected={aba === 'robo'} className={aba === 'robo' ? 'ativa' : ''} onClick={() => setAba('robo')}>Robô de atendimento</button>
       </div>
-      {aba === 'chamados'
-        ? <Quadro recarga={recarga} aoAbrir={setAberto} />
-        : <Conversas recarga={recarga} perfil={perfil} loja={loja} aoMudar={recarregar} />}
+      {aba === 'chamados' ? <Quadro recarga={recarga} aoAbrir={setAberto} />
+        : aba === 'conversas' ? <Conversas recarga={recarga} perfil={perfil} loja={loja} aoMudar={recarregar} aoVenda={aoVenda} />
+        : <Robo />}
       {aberto && (
         <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && setAberto(null)}>
           <section className="modal largo modal-conversa" role="dialog" aria-modal="true" aria-label="Conversa">
-            <Conversa contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => { setAberto(null); recarregar(); }} aoMudar={recarregar} />
+            <Conversa contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => { setAberto(null); recarregar(); }} aoMudar={recarregar} aoVenda={aoVenda} />
           </section>
         </div>
       )}
@@ -160,6 +161,8 @@ function Quadro({ recarga, aoAbrir }) {
                         {c.nao_lidas > 0 && <span className="selo-nao-lidas" aria-label={`${c.nao_lidas} não lida(s)`}>{c.nao_lidas}</span>}
                       </span>
                       {c.titulo && <span className="kanban-titulo">{c.titulo}</span>}
+                      {c.robo_estado === 'coletando' && !c.venda_id && <span className="selo-robo">🤖 Robô atendendo</span>}
+                      {c.venda_numero && <span className="selo-robo venda">Venda nº {c.venda_numero} aberta pelo robô</span>}
                       <small className="cinza">{telefoneBR(c.telefone)}{c.cliente ? ' · cliente' : ''}</small>
                       {c.ultima && <span className="kanban-ultima">{c.ultima}</span>}
                       <small className="cinza kanban-rodape">
@@ -228,7 +231,7 @@ function RenomearColuna({ coluna, aoFechar, aoSalvar }) {
 }
 
 // ------------------------------------------------------------ conversas
-function Conversas({ recarga, perfil, loja, aoMudar }) {
+function Conversas({ recarga, perfil, loja, aoMudar, aoVenda }) {
   const [lista, setLista] = useState(null);
   const [busca, setBusca] = useState('');
   const [aberto, setAberto] = useState(null);
@@ -262,14 +265,14 @@ function Conversas({ recarga, perfil, loja, aoMudar }) {
         )}
       </aside>
       <section className="conversas-painel">
-        {aberto ? <Conversa key={aberto} contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => setAberto(null)} aoMudar={aoMudar} />
+        {aberto ? <Conversa key={aberto} contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => setAberto(null)} aoMudar={aoMudar} aoVenda={aoVenda} />
           : <p className="cinza conversas-vazio">Escolha uma conversa.</p>}
       </section>
     </div>
   );
 }
 
-function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar }) {
+function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
   const [k, setK] = useState(null);
   const [colunas, setColunas] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
@@ -303,6 +306,11 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar }) {
   async function mudarChamado(campos) {
     setErro('');
     try { await api(`/whatsapp/chamados/${k.chamado.id}`, { metodo: 'PUT', corpo: campos }); carregar(); aoMudar?.(); } catch (f) { setErro(f.message); }
+  }
+
+  async function robo(acao) {
+    setErro('');
+    try { await api(`/whatsapp/chamados/${k.chamado.id}/robo`, { metodo: 'POST', corpo: { acao } }); carregar(); aoMudar?.(); } catch (f) { setErro(f.message); }
   }
 
   async function ligarCliente(clienteId) {
@@ -355,13 +363,28 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar }) {
           </label>
         </div>
       )}
+      {k.chamado?.venda_id ? (
+        <p className="aviso-robo">
+          🤖 O robô abriu a <strong>venda nº {k.chamado.venda_numero}</strong>{k.chamado.venda_situacao === 'futuro' ? ' (FUTURO, falta confirmar)' : ''}.
+          {aoVenda && <button type="button" className="botao-texto" onClick={() => { aoFechar(); aoVenda(k.chamado.venda_id); }}>Abrir a venda</button>}
+        </p>
+      ) : k.robo && k.chamado?.aberto && (
+        <p className="aviso-robo">
+          {k.chamado.robo_estado === 'coletando' ? <>🤖 O robô está atendendo esta conversa. Se você responder, ele para.</>
+            : k.chamado.robo_estado === 'humano' ? <>👤 Atendimento com a equipe (robô parado).</>
+            : <>🤖 O robô responde a próxima mensagem deste contato.</>}
+          {k.pode_enviar && (k.chamado.robo_estado === 'humano'
+            ? <button type="button" className="botao-texto" onClick={() => robo('devolver')}>Devolver ao robô</button>
+            : <button type="button" className="botao-texto" onClick={() => robo('assumir')}>Assumir atendimento</button>)}
+        </p>
+      )}
       <div className="conversa-mensagens" aria-live="polite">
         {k.mensagens.length === 0 && <p className="cinza">Nenhuma mensagem ainda.</p>}
         {k.mensagens.map((m) => (
           <div key={m.id} className={`balao ${m.direcao}${m.status === 'falhou' ? ' falhou' : ''}`}>
             <p>{m.texto}</p>
             <small>
-              {m.direcao === 'saida' && m.enviado_por ? `${m.enviado_por} · ` : ''}{quando(m.criado_em)}
+              {m.direcao === 'saida' && m.robo ? '🤖 Robô · ' : m.direcao === 'saida' && m.enviado_por ? `${m.enviado_por} · ` : ''}{quando(m.criado_em)}
               {m.direcao === 'saida' && ` · ${STATUS[m.status] || m.status}`}
             </small>
             {m.status === 'falhou' && m.erro && <small className="erro">{m.erro}</small>}
@@ -476,6 +499,121 @@ function Configurar({ situacao, aoFechar, aoSalvar }) {
         </div>
       </form>
     </Janela>
+  );
+}
+
+// ------------------------------------------------------------ robô de atendimento
+// Fluxo de perguntas que o robô faz a quem manda mensagem; no fim abre uma venda FUTURO.
+// Com IA (só se o master liberar para o grupo), o robô conversa livre e junta os mesmos dados.
+function Robo() {
+  const [d, setD] = useState(null);
+  const [f, setF] = useState(null);
+  const [erro, setErro] = useState('');
+  const [ok, setOk] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  const carregar = () => api('/whatsapp/robo').then((r) => { setD(r); setF(r.robo); }).catch((x) => setErro(x.message));
+  useEffect(() => { carregar(); }, []);
+  if (!f) return erro ? <p className="erro" role="alert">{erro}</p> : <p className="cinza">Carregando…</p>;
+
+  const pode = d.pode_enviar;
+  const mudar = (campos) => { setF({ ...f, ...campos }); setOk(''); };
+  const mudarEtapa = (n, campos) => mudar({ etapas: f.etapas.map((e, i) => (i === n ? { ...e, ...campos } : e)) });
+  const moverEtapa = (n, para) => {
+    const l = [...f.etapas]; const [e] = l.splice(n, 1); l.splice(para, 0, e); mudar({ etapas: l });
+  };
+
+  async function salvar(e) {
+    e.preventDefault(); setErro(''); setOk(''); setSalvando(true);
+    try { await api('/whatsapp/robo', { metodo: 'PUT', corpo: f }); setOk('Robô salvo.'); carregar(); } catch (x) { setErro(x.message); }
+    finally { setSalvando(false); }
+  }
+  async function liberarIA(liberada) {
+    setErro('');
+    try { await api('/whatsapp/robo/ia', { metodo: 'PUT', corpo: { liberada } }); carregar(); } catch (x) { setErro(x.message); }
+  }
+
+  return (
+    <form className="cartao painel formulario robo-config" onSubmit={salvar}>
+      <fieldset className="sem-borda" disabled={!pode}>
+        <label className="linha-check robo-ligar">
+          <input type="checkbox" checked={f.ativo} onChange={(e) => mudar({ ativo: e.target.checked })} />
+          <span><strong>Robô ligado</strong><br /><small className="cinza">Responde quem manda mensagem e abre uma venda FUTURO com os dados do cliente e do veículo. Se um atendente responder, o robô para naquela conversa.</small></span>
+        </label>
+
+        <div className="grade-2">
+          <label>Loja em que a venda abre
+            <select value={f.loja_id || ''} onChange={(e) => mudar({ loja_id: e.target.value || null })}>
+              <option value="">A primeira loja do grupo</option>
+              {d.lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+            </select>
+          </label>
+          <label>Serviço, se o fluxo não perguntar
+            <select value={f.servico_id || ''} onChange={(e) => mudar({ servico_id: e.target.value || null })}>
+              <option value="">O primeiro serviço ativo</option>
+              {d.servicos.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <label>Mensagem de boas-vindas
+          <textarea rows={2} data-livre value={f.saudacao || ''} onChange={(e) => mudar({ saudacao: e.target.value })} />
+        </label>
+
+        <h3>Perguntas, na ordem</h3>
+        <ol className="robo-etapas">
+          {f.etapas.map((e, n) => (
+            <li key={n}>
+              <select value={e.campo} aria-label={`Dado da pergunta ${n + 1}`} onChange={(x) => mudarEtapa(n, { campo: x.target.value })}>
+                {Object.entries(d.campos).map(([v, nome]) => <option key={v} value={v}>{nome}</option>)}
+              </select>
+              <input data-livre value={e.pergunta} aria-label={`Pergunta ${n + 1}`} placeholder="O que o robô pergunta" onChange={(x) => mudarEtapa(n, { pergunta: x.target.value })} />
+              <label className="linha-check"><input type="checkbox" checked={e.obrigatorio} onChange={(x) => mudarEtapa(n, { obrigatorio: x.target.checked })} /> Obrigatório</label>
+              <span className="robo-etapa-acoes">
+                <button type="button" className="botao-texto" disabled={n === 0} aria-label="Subir" onClick={() => moverEtapa(n, n - 1)}>↑</button>
+                <button type="button" className="botao-texto" disabled={n === f.etapas.length - 1} aria-label="Descer" onClick={() => moverEtapa(n, n + 1)}>↓</button>
+                <button type="button" className="fechar" aria-label={`Remover pergunta ${n + 1}`} onClick={() => mudar({ etapas: f.etapas.filter((_, i) => i !== n) })}>×</button>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <button type="button" className="botao-texto" onClick={() => mudar({ etapas: [...f.etapas, { campo: 'livre', pergunta: '', obrigatorio: false }] })}>+ Pergunta</button>
+        <p className="cinza ajuda">Tipo de veículo e Serviço mostram as opções numeradas. O cliente pode escrever ATENDENTE a qualquer momento para falar com uma pessoa.</p>
+
+        <label>Mensagem final
+          <textarea rows={2} data-livre value={f.mensagem_final || ''} onChange={(e) => mudar({ mensagem_final: e.target.value })} />
+        </label>
+        <p className="cinza ajuda">Use {'{nome}'} para o primeiro nome, {'{numero}'} para o número da venda e {'{placa}'} para a placa.</p>
+
+        <h3>Atendimento com IA</h3>
+        {d.master && (
+          <label className="linha-check">
+            <input type="checkbox" checked={d.ia_liberada} onChange={(e) => liberarIA(e.target.checked)} />
+            <span>IA liberada para este grupo <small className="cinza">(só o master vê; depende do contrato de prestação)</small></span>
+          </label>
+        )}
+        {!d.ia_liberada ? (
+          <p className="cinza ajuda">A IA não está liberada para este grupo. O robô segue as perguntas acima.</p>
+        ) : (
+          <>
+            {!d.ia_configurada && <p className="aviso-zap">Falta a chave da IA no servidor (ANTHROPIC_API_KEY no api/.env). Enquanto isso o robô segue as perguntas acima.</p>}
+            <label className="linha-check">
+              <input type="checkbox" checked={f.ia_ativa} onChange={(e) => mudar({ ia_ativa: e.target.checked })} />
+              <span>Usar IA na conversa <small className="cinza">(o robô conversa livre e junta os mesmos dados das perguntas acima)</small></span>
+            </label>
+            {f.ia_ativa && (
+              <label>Instruções para a IA
+                <textarea rows={4} data-livre value={f.ia_instrucoes || ''} placeholder="Ex.: horário de atendimento, endereço da loja, como falar com o cliente…"
+                  onChange={(e) => mudar({ ia_instrucoes: e.target.value })} />
+              </label>
+            )}
+          </>
+        )}
+      </fieldset>
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      {ok && <p className="sucesso" role="status">{ok}</p>}
+      {pode && <div className="acoes-modal"><button className="botao-primario" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar robô'}</button></div>}
+    </form>
   );
 }
 

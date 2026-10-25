@@ -4,6 +4,8 @@ import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './
 import { cnpjValido, consultarCnpj } from './documentos.js';
 
 const TIPOS_VEICULO = ['carro', 'moto', 'caminhao', 'outro'];
+// Situações em que a venda ainda pode ser alterada (futuro = aberta pelo robô, aguardando a loja confirmar)
+const EDITAVEL = ['aberta', 'futuro'];
 const FORMAS = ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'boleto', 'transferencia', 'faturado'];
 const reais = (n) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dinheiro = (v) => {
@@ -90,7 +92,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
   // ---------------------------------------------------------------- vendas
   app.get('/api/vendas', exigeLogin, comRecusa(async (req, res) => {
     const loja = UUID.test(req.query.loja || '') ? req.query.loja : null;
-    const situacao = ['aberta', 'finalizada', 'cancelada'].includes(req.query.situacao) ? req.query.situacao : null;
+    const situacao = ['aberta', 'futuro', 'finalizada', 'cancelada'].includes(req.query.situacao) ? req.query.situacao : null;
     const tipo = ['orcamento', 'venda_avulsa'].includes(req.query.tipo) ? req.query.tipo : null;
     const periodo = ['hoje', 'mes'].includes(req.query.periodo) ? req.query.periodo : null;
     const busca = texto(req.query.busca, 60);
@@ -279,7 +281,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
   app.put('/api/vendas/:id', exigeLogin, comRecusa(async (req, res) => {
     await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
-      if (v.situacao !== 'aberta') throw new Recusa(400, 'Esta venda não está aberta. Peça a liberação para alterar.');
+      if (!EDITAVEL.includes(v.situacao)) throw new Recusa(400, 'Esta venda não está aberta. Peça a liberação para alterar.');
       await gravarVenda(db, req, v);
     });
     res.json({ ok: true });
@@ -289,7 +291,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
       await exigir(db, v.loja_id, 'vendas.finalizar', 'Seu perfil não pode finalizar vendas.');
-      if (v.situacao !== 'aberta') throw new Recusa(400, 'Esta venda não está aberta.');
+      if (!EDITAVEL.includes(v.situacao)) throw new Recusa(400, 'Esta venda não está aberta.');
       const pago = Number((await db.query('select coalesce(sum(valor), 0) as t from venda_pagamentos where venda_id = $1', [v.id])).rows[0].t);
       const total = Number(v.valor_total);
       if (Math.abs(pago - total) > 0.005) {
@@ -340,7 +342,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         if (!(await db.query("select pode($1, 'vendas.criar') as ok", [v.loja_id])).rows[0].ok) {
           puladas.push({ numero: v.numero, motivo: 'sem permissão na loja' }); continue;
         }
-        if (v.situacao !== 'aberta') { puladas.push({ numero: v.numero, motivo: v.situacao }); continue; }
+        if (!EDITAVEL.includes(v.situacao)) { puladas.push({ numero: v.numero, motivo: v.situacao }); continue; }
         if (lojaNova && lojaNova.empresa_id !== v.empresa_id) { puladas.push({ numero: v.numero, motivo: 'é de outro grupo' }); continue; }
         if (vendedor && !(await db.query('select 1 from app_responsaveis($1) where id = $2', [v.empresa_id, vendedor])).rowCount) {
           puladas.push({ numero: v.numero, motivo: 'responsável não trabalha nesse grupo' }); continue;
@@ -364,7 +366,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     if (!UUID.test(loja || '')) throw new Recusa(400, 'Escolha a nova unidade.');
     await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
-      if (v.situacao !== 'aberta') throw new Recusa(400, 'Esta venda não está aberta. Peça a liberação antes.');
+      if (!EDITAVEL.includes(v.situacao)) throw new Recusa(400, 'Esta venda não está aberta. Peça a liberação antes.');
       const nova = (await db.query('select id, empresa_id, nome from lojas where id = $1 and tem_loja(id)', [loja])).rows[0];
       if (!nova || nova.empresa_id !== v.empresa_id) throw new Recusa(400, 'A nova unidade precisa ser do mesmo grupo.');
       const autorizador = (await db.query("select app_autorizar_permissao($1, $2, $3, 'vendas.autorizar') as id", [v.loja_id, email, senha])).rows[0].id;
@@ -386,13 +388,25 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     res.json({ ok: true });
   }));
 
+  // Venda FUTURO (aberta pelo robô do WhatsApp) confirmada pela loja: passa a ser uma venda aberta comum
+  app.post('/api/vendas/:id/confirmar', exigeLogin, comRecusa(async (req, res) => {
+    await comoUsuario(req.usuarioId, async (db) => {
+      const v = await buscarVenda(db, req.params.id);
+      await exigir(db, v.loja_id, 'vendas.criar', 'Seu perfil não pode alterar vendas.');
+      if (v.situacao !== 'futuro') throw new Recusa(400, 'Esta venda não está como FUTURO.');
+      await db.query("update vendas set situacao = 'aberta' where id = $1", [v.id]);
+      await db.query("insert into venda_historico (venda_id, usuario_id, acao) values ($1, $2, 'confirmada')", [v.id, req.usuarioId]);
+    });
+    res.json({ ok: true });
+  }));
+
   app.post('/api/vendas/:id/cancelar', exigeLogin, comRecusa(async (req, res) => {
     const motivo = texto(req.body?.motivo, 500);
     if (!motivo) throw new Recusa(400, 'Informe o motivo do cancelamento.');
     await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
       await exigir(db, v.loja_id, 'vendas.cancelar', 'Seu perfil não pode cancelar vendas.');
-      if (v.situacao !== 'aberta') throw new Recusa(400, 'Só uma venda aberta pode ser cancelada. Se estiver finalizada, peça a liberação antes.');
+      if (!EDITAVEL.includes(v.situacao)) throw new Recusa(400, 'Só uma venda aberta pode ser cancelada. Se estiver finalizada, peça a liberação antes.');
       await db.query("update vendas set situacao = 'cancelada' where id = $1", [v.id]);
       await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, 'cancelada', $3)", [v.id, req.usuarioId, motivo]);
     });

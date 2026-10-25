@@ -64,6 +64,25 @@ WHATSAPP_MODELO_CODIGO=codigo_acesso
 Pela regra do WhatsApp, uma resposta livre só pode ser enviada até 24 horas depois da última
 mensagem do cliente.
 
+### Robô de atendimento
+
+Em WhatsApp > Robô de atendimento cada grupo monta as perguntas (nome, CPF/CNPJ, placa, tipo de
+veículo, serviço, data ou pergunta livre), a mensagem de boas-vindas e a final. Com o robô ligado,
+quem manda mensagem responde as perguntas e, no fim, o sistema abre uma venda **FUTURO** na tela de
+vendas, com o cliente e o veículo. Na venda, o botão **Confirmar venda** passa ela para Aberta.
+Se um atendente responder na conversa, o robô para naquele atendimento. O cliente também pode
+escrever ATENDENTE a qualquer momento.
+
+A conversa com **IA** só aparece no grupo em que o master marcar "IA liberada" (depende do contrato).
+Ela usa a API da Anthropic (Claude). Coloque no `api/.env`:
+
+```
+ANTHROPIC_API_KEY=chave-da-anthropic
+ANTHROPIC_MODELO=claude-opus-5-5
+```
+
+O `ANTHROPIC_MODELO` é opcional. Com `claude-haiku-5-5` cada mensagem sai mais barata.
+
 ## Rodar no dia a dia
 
 ```bash

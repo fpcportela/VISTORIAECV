@@ -19,7 +19,7 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
   // Vendas, uma linha por venda. Cliente: a própria pessoa/empresa ou todas as empresas do grupo de clientes.
   app.get('/api/relatorios/vendas', exigeLogin, comRecusa(async (req, res) => {
     const q = req.query;
-    const situacao = ['aberta', 'finalizada', 'cancelada'].includes(q.situacao) ? q.situacao : null;
+    const situacao = ['aberta', 'futuro', 'finalizada', 'cancelada'].includes(q.situacao) ? q.situacao : null;
     const faturar = q.faturar === '1';  // só as que ainda têm valor a faturar e não foram faturadas
     const params = [uuid(q.loja), uuid(q.cliente), dataValida(q.de), dataValida(q.ate), situacao, faturar, uuid(q.vendedor)];
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
@@ -45,7 +45,7 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
           and ($3::date is null or v.data_venda >= $3)
           and ($4::date is null or v.data_venda <= $4)
           and ($5::situacao_venda is null or v.situacao = $5)
-          and (not $6 or (v.situacao <> 'cancelada' and lv.venda_id is null and ${A_FATURAR} > 0))
+          and (not $6 or (v.situacao not in ('cancelada', 'futuro') and lv.venda_id is null and ${A_FATURAR} > 0))
           and ($7::uuid is null or v.vendedor_id = $7)
         order by v.data_venda, v.numero
         limit 5000`, params)).rows));
@@ -124,7 +124,7 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
            from vendas v join clientes c on c.id = v.cliente_id left join lancamento_vendas lv on lv.venda_id = v.id
           where v.id = any($1)`, [ids])).rows;
       if (vendas.length !== ids.length) throw new Recusa(400, 'Alguma venda não foi encontrada.');
-      const ruins = vendas.filter((v) => v.faturada || v.situacao === 'cancelada' || !(Number(v.a_faturar) > 0));
+      const ruins = vendas.filter((v) => v.faturada || v.situacao === 'cancelada' || v.situacao === 'futuro' || !(Number(v.a_faturar) > 0));
       if (ruins.length) throw new Recusa(400, `Estas vendas já foram faturadas, pagas ou canceladas: ${ruins.map((v) => `nº ${v.numero}`).join(', ')}. Atualize a lista.`);
       if (new Set(vendas.map((v) => v.empresa_id)).size > 1) throw new Recusa(400, 'As vendas precisam ser do mesmo grupo.');
       const empresa = vendas[0].empresa_id;

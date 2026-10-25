@@ -8,8 +8,8 @@ import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
 
-export const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Cancelada' };
-const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', cancelada: 'Cancelou', desconto: 'Deu desconto' };
+export const SITUACOES = { aberta: 'Aberta', futuro: 'Futuro', finalizada: 'Finalizada', cancelada: 'Cancelada' };
+const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda FUTURO', cancelada: 'Cancelou', desconto: 'Deu desconto' };
 const BANDEIRAS = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD', 'AMERICAN EXPRESS', 'CABAL', 'OUTRA'];
 const ehCartao = (forma) => forma === 'cartao_credito' || forma === 'cartao_debito';
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -136,7 +136,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
           {lote && (
             <div className="barra-lote">
               <span><strong>{lote.size}</strong> venda(s) selecionada(s). Só as abertas podem ser alteradas.</span>
-              <button className="botao-texto" onClick={() => setLote(new Set(lista.filter((v) => v.situacao === 'aberta').map((v) => v.id)))}>Marcar todas as abertas</button>
+              <button className="botao-texto" onClick={() => setLote(new Set(lista.filter((v) => ['aberta', 'futuro'].includes(v.situacao)).map((v) => v.id)))}>Marcar todas as abertas</button>
               <button className="botao-texto" onClick={() => setLote(new Set())} disabled={!lote.size}>Desmarcar</button>
               <button className="botao-primario" disabled={!lote.size} onClick={() => setEditandoLote(true)}>Alterar selecionadas</button>
             </div>
@@ -183,7 +183,7 @@ function EdicaoLote({ vendas, lojas, aoFechar, aoConcluir }) {
   const [responsaveis, setResponsaveis] = useState([]);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
-  const fechadas = vendas.filter((v) => v.situacao !== 'aberta').length;
+  const fechadas = vendas.filter((v) => !['aberta', 'futuro'].includes(v.situacao)).length;
 
   useEffect(() => {
     const base = vendas[0]?.loja_id;
@@ -267,13 +267,13 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const acessos = perfil.master ? null : perfil.acessos[venda?.loja_id || loja] || [];
   const podeLoja = (p) => !acessos || acessos.includes(p);
   const pode = venda?.pode || { editar: podeLoja('vendas.criar'), finalizar: podeLoja('vendas.finalizar'), cancelar: podeLoja('vendas.cancelar'), desconto: podeLoja('vendas.desconto'), autorizar: podeLoja('vendas.autorizar') };
-  const editavel = (!venda || venda.situacao === 'aberta') && pode.editar;
+  const editavel = (!venda || ['aberta', 'futuro'].includes(venda.situacao)) && pode.editar;
 
   async function carregar() {
     try {
       const v = await api(`/vendas/${id}`);
       setVenda(v); setLoja(v.loja_id); setData(String(v.data_venda).slice(0, 10));
-      setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' ? 'avulso' : 'atual');
+      setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' && v.cliente.nome === 'CLIENTE PARTICULAR / AVULSO' ? 'avulso' : 'atual');
       // agrupa os itens por placa, na ordem em que foram lançados
       const grupos = [];
       for (const i of v.itens) {
@@ -411,6 +411,16 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     }
   }
 
+  // FUTURO (aberta pelo robô do WhatsApp) passa a ser uma venda aberta comum
+  async function confirmar() {
+    try {
+      await api(`/vendas/${venda.id}/confirmar`, { metodo: 'POST' });
+      await carregar();
+    } catch (falha) {
+      setErro(falha.message);
+    }
+  }
+
   async function cancelar() {
     const motivo = prompt('Motivo do cancelamento:');
     if (!motivo) return;
@@ -449,7 +459,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
             {venda || lojaFixa || lojasPermitidas.length < 2 ? (
               <span className="unidade-venda">
                 <input value={nomeLoja || ''} readOnly className="somente-leitura" aria-label="Unidade" />
-                {venda?.situacao === 'aberta' && lojasPermitidas.length > 1 && (
+                {['aberta', 'futuro'].includes(venda?.situacao) && lojasPermitidas.length > 1 && (
                   <button type="button" className="botao-texto" onClick={() => setTrocandoUnidade(true)}>Trocar</button>
                 )}
               </span>
@@ -631,9 +641,10 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
 
       {erro && <p className="erro" role="alert">{erro}</p>}
       <div className="acoes-vistoria">
-        {venda?.situacao === 'aberta' && pode.cancelar && <button className="botao-contorno perigo" onClick={cancelar}>Cancelar venda</button>}
+        {['aberta', 'futuro'].includes(venda?.situacao) && pode.cancelar && <button className="botao-contorno perigo" onClick={cancelar}>Cancelar venda</button>}
         {venda?.situacao === 'finalizada' && <button className="botao-contorno" onClick={() => setLiberando(true)}>Liberar edição</button>}
         {editavel && <button className="botao-contorno" onClick={() => salvar(false)} disabled={ocupado}>Salvar</button>}
+        {venda?.situacao === 'futuro' && pode.editar && <button className="botao-contorno" onClick={confirmar} disabled={ocupado}>Confirmar venda</button>}
         {editavel && pode.finalizar && <button className="botao-primario" onClick={() => salvar(true)} disabled={ocupado}>Salvar e finalizar</button>}
       </div>
 

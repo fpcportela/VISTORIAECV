@@ -394,7 +394,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'config' ? <Configuracoes perfil={perfil} />
             : tela === 'lojas' ? <Grupos />
             : tela === 'clientes' ? <Clientes perfil={perfil} loja={loja} />
-            : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} />
+            : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} aoVenda={abrirVenda} />
             : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo} />
             : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} />
             : tela === 'servicos' ? (() => {

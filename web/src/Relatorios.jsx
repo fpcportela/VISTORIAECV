@@ -14,7 +14,7 @@ const somarDias = (iso, n) => { const d = new Date(`${iso}T12:00:00`); d.setDate
 const dataBR = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
 const real = (v) => `R$ ${moeda(v)}`;
 const FORMAS = { pix: 'PIX', dinheiro: 'DINHEIRO', cartao_credito: 'CREDITO', cartao_debito: 'DEBITO', boleto: 'BOLETO', transferencia: 'TRANSFERENCIA', faturado: 'FATURADO' };
-const SIT_VENDA = { aberta: 'ABERTA', finalizada: 'FINALIZADA', cancelada: 'CANCELADA' };
+const SIT_VENDA = { aberta: 'ABERTA', futuro: 'FUTURO', finalizada: 'FINALIZADA', cancelada: 'CANCELADA' };
 const SIT_FIN = { em_aberto: 'EM ABERTO', pago_parcial: 'PAGO PARCIAL', pago: 'PAGO', cancelado: 'CANCELADO' };
 
 // Colunas de cada fonte: rótulo, como mostrar, se soma e a largura no PDF

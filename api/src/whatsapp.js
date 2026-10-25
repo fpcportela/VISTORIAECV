@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { comoUsuario } from './db.js';
 import { Recusa, UUID, criarComRecusa, texto } from './comum.js';
+import { CAMPOS, ROBO_PADRAO, atenderComRobo, iaDisponivel } from './robo.js';
 
 // Módulo WhatsApp: conversas, chamados em kanban e o código de "Esqueci a senha".
 // O envio usa a API oficial da Meta (WhatsApp Cloud API). As chaves ficam só no
@@ -145,6 +146,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       return res.sendStatus(401);
     }
     const STATUS = { delivered: 'entregue', read: 'lida', failed: 'falhou' };
+    const recebidos = new Set();
     await comoUsuario(null, async (db) => {
       for (const entrada of req.body?.entry || []) {
         for (const mudanca of entrada.changes || []) {
@@ -156,8 +158,9 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
               : m.type === 'button' ? m.button?.text
               : m.type === 'interactive' ? (m.interactive?.button_reply?.title || m.interactive?.list_reply?.title)
               : `[${m.type === 'image' ? 'Imagem' : m.type === 'audio' ? 'Áudio' : m.type === 'document' ? 'Documento' : m.type === 'video' ? 'Vídeo' : m.type === 'location' ? 'Localização' : 'Mensagem'} recebida: abra no celular]`;
-            await db.query('select app_whatsapp_receber($1, $2, $3, $4, $5, to_timestamp($6))',
-              [phoneId, digitos(m.from), nomes[m.from] || null, String(corpo || '').slice(0, 4000), m.id, Number(m.timestamp) || Date.now() / 1000]);
+            const c = (await db.query('select app_whatsapp_receber($1, $2, $3, $4, $5, to_timestamp($6)) as id',
+              [phoneId, digitos(m.from), nomes[m.from] || null, String(corpo || '').slice(0, 4000), m.id, Number(m.timestamp) || Date.now() / 1000])).rows[0].id;
+            if (c) recebidos.add(c);
           }
           for (const s of v.statuses || []) {
             if (STATUS[s.status]) await db.query('select app_whatsapp_status($1, $2, $3)', [s.id, STATUS[s.status], s.errors?.[0]?.title || null]);
@@ -166,6 +169,8 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       }
     });
     res.sendStatus(200);
+    // o robô responde depois (a Meta quer o 200 rápido)
+    for (const c of recebidos) atenderComRobo(c, { enviarTexto, nacional });
   }));
 
   // ------------------------------------------------------------ situação e número do grupo
@@ -212,6 +217,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       return (await db.query('select app_whatsapp_receber($1, $2, $3, $4, null, now()) as id',
         [phoneId, tel, texto(req.body?.nome, 80)?.toUpperCase() || null, corpo])).rows[0].id;
     });
+    await atenderComRobo(contato, { enviarTexto, nacional });
     res.json({ contato_id: contato });
   }));
 
@@ -223,6 +229,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const colunas = (await db.query('select id, nome, ordem, finaliza from whatsapp_colunas where empresa_id = $1 order by ordem, nome', [empresa])).rows;
       const chamados = (await db.query(
         `select h.id, h.coluna_id, h.titulo, h.ordem, h.aberto, h.criado_em, h.atualizado_em, h.responsavel_id, u.nome as responsavel,
+                h.robo_estado, h.venda_id, (select v.numero from vendas v where v.id = h.venda_id) as venda_numero,
                 k.id as contato_id, coalesce(k.nome, k.telefone) as contato, k.telefone, k.nao_lidas, k.cliente_id, cl.nome as cliente,
                 (select m.texto from whatsapp_conversa m where m.contato_id = k.id order by m.criado_em desc limit 1) as ultima
            from whatsapp_chamados h
@@ -346,6 +353,74 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     res.json({ ok: true });
   }));
 
+  // ------------------------------------------------------------ robô de atendimento
+  app.get('/api/whatsapp/robo', exigeLogin, comRecusa(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
+      const salvo = (await db.query('select * from whatsapp_robo where empresa_id = $1', [empresa])).rows[0];
+      const g = (await db.query('select ia_liberada, eh_admin_rede() as master from empresas where id = $1', [empresa])).rows[0];
+      const lojas = (await db.query('select id, nome from lojas where empresa_id = $1 and ativo order by nome', [empresa])).rows;
+      const servicos = (await db.query('select id, nome from servicos where empresa_id = $1 and ativo order by nome', [empresa])).rows;
+      return {
+        robo: { ...ROBO_PADRAO, ...(salvo || {}) }, campos: CAMPOS, lojas, servicos,
+        ia_liberada: g.ia_liberada, ia_configurada: iaDisponivel(), master: g.master, pode_enviar: await podeEnviar(db, empresa),
+      };
+    }));
+  }));
+
+  app.put('/api/whatsapp/robo', exigeLogin, comRecusa(async (req, res) => {
+    const b = req.body || {};
+    const etapas = (Array.isArray(b.etapas) ? b.etapas : []).slice(0, 20).map((e) => ({
+      campo: CAMPOS[e?.campo] ? e.campo : 'livre',
+      pergunta: texto(e?.pergunta, 500) || '',
+      obrigatorio: Boolean(e?.obrigatorio),
+    }));
+    if (etapas.some((e) => !e.pergunta)) throw new Recusa(400, 'Escreva a pergunta de cada etapa.');
+    await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
+      await exigirEnvio(db, empresa);
+      const ia = (await db.query('select ia_liberada from empresas where id = $1', [empresa])).rows[0].ia_liberada;
+      if (b.ia_ativa && !ia) throw new Recusa(403, 'A IA ainda não foi liberada para este grupo. Fale com o master (depende do contrato).');
+      const loja = UUID.test(b.loja_id || '') && (await db.query('select 1 from lojas where id = $1 and empresa_id = $2', [b.loja_id, empresa])).rowCount ? b.loja_id : null;
+      const servico = UUID.test(b.servico_id || '') && (await db.query('select 1 from servicos where id = $1 and empresa_id = $2', [b.servico_id, empresa])).rowCount ? b.servico_id : null;
+      await db.query(
+        `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, atualizado_em)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+         on conflict (empresa_id) do update set ativo = $2, saudacao = $3, etapas = $4, mensagem_final = $5, loja_id = $6,
+                servico_id = $7, ia_ativa = $8, ia_instrucoes = $9, atualizado_em = now()`,
+        [empresa, Boolean(b.ativo), texto(b.saudacao, 1000), JSON.stringify(etapas), texto(b.mensagem_final, 1000),
+         loja, servico, Boolean(b.ia_ativa) && ia, texto(b.ia_instrucoes, 4000)]);
+    });
+    res.json({ ok: true });
+  }));
+
+  // Liberar a IA para o grupo: só o master (depende do contrato de prestação)
+  app.put('/api/whatsapp/robo/ia', exigeLogin, comRecusa(async (req, res) => {
+    await comoUsuario(req.usuarioId, async (db) => {
+      if (!(await db.query('select eh_admin_rede() as m')).rows[0].m) throw new Recusa(403, 'Só o master libera a IA.');
+      const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
+      const liberada = Boolean(req.body?.liberada);
+      await db.query('update empresas set ia_liberada = $2 where id = $1', [empresa, liberada]);
+      if (!liberada) await db.query('update whatsapp_robo set ia_ativa = false where empresa_id = $1', [empresa]);
+    });
+    res.json({ ok: true });
+  }));
+
+  // Atendente assume a conversa (o robô para) ou devolve para o robô continuar
+  app.post('/api/whatsapp/chamados/:id/robo', exigeLogin, comRecusa(async (req, res) => {
+    if (!UUID.test(req.params.id)) throw new Recusa(404, 'Chamado não encontrado.');
+    await comoUsuario(req.usuarioId, async (db) => {
+      const ch = (await db.query('select * from whatsapp_chamados where id = $1', [req.params.id])).rows[0];
+      if (!ch) throw new Recusa(404, 'Chamado não encontrado.');
+      await exigirEnvio(db, ch.empresa_id);
+      if (ch.venda_id) throw new Recusa(400, 'O robô já abriu a venda deste atendimento.');
+      const estado = req.body?.acao === 'devolver' ? 'coletando' : 'humano';
+      await db.query('update whatsapp_chamados set robo_estado = $2, atualizado_em = now() where id = $1', [ch.id, estado]);
+      return ch.contato_id;
+    }).then((contato) => req.body?.acao === 'devolver' && atenderComRobo(contato, { enviarTexto, nacional, retomar: true }));
+    res.json({ ok: true });
+  }));
+
   // ------------------------------------------------------------ conversas
   app.get('/api/whatsapp/contatos', exigeLogin, comRecusa(async (req, res) => {
     const busca = texto(req.query.busca, 60);
@@ -372,14 +447,17 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const ve = (await db.query("select exists (select 1 from lojas l where l.empresa_id = $1 and pode(l.id, 'whatsapp.ver')) as ok", [k.empresa_id])).rows[0].ok;
       if (!ve) throw new Recusa(403, 'Seu perfil não tem acesso ao WhatsApp.');
       const mensagens = (await db.query(
-        `select m.id, m.direcao, m.texto, m.status, m.erro, m.criado_em, u.nome as enviado_por
+        `select m.id, m.direcao, m.texto, m.status, m.erro, m.criado_em, m.robo, u.nome as enviado_por
            from whatsapp_conversa m left join usuarios u on u.id = m.enviado_por
           where m.contato_id = $1 order by m.criado_em desc limit 300`, [k.id])).rows.reverse();
       const chamado = (await db.query(
-        `select h.id, h.coluna_id, h.titulo, h.responsavel_id, h.aberto from whatsapp_chamados h
+        `select h.id, h.coluna_id, h.titulo, h.responsavel_id, h.aberto, h.robo_estado, h.venda_id,
+                (select v.numero from vendas v where v.id = h.venda_id) as venda_numero,
+                (select v.situacao from vendas v where v.id = h.venda_id) as venda_situacao from whatsapp_chamados h
           where h.contato_id = $1 order by h.aberto desc, h.criado_em desc limit 1`, [k.id])).rows[0] || null;
       if (req.query.ler === '1') await db.query('update whatsapp_contatos set nao_lidas = 0 where id = $1', [k.id]);
-      return { ...k, mensagens, chamado, pode_enviar: await podeEnviar(db, k.empresa_id) };
+      const robo = (await db.query('select ativo from whatsapp_robo where empresa_id = $1', [k.empresa_id])).rows[0]?.ativo || false;
+      return { ...k, mensagens, chamado, robo, pode_enviar: await podeEnviar(db, k.empresa_id) };
     }));
   }));
 
@@ -417,7 +495,10 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     try { envio = await enviarTexto(k.phone_number_id, k.telefone, corpo); } catch (e) { falha = e; }
     const msg = await comoUsuario(req.usuarioId, async (db) => {
       const ch = (await db.query('select app_whatsapp_chamado_do_contato($1, $2, $3) as id', [k.empresa_id, k.id, req.usuarioId])).rows[0].id;
-      await db.query('update whatsapp_chamados set atualizado_em = now(), responsavel_id = coalesce(responsavel_id, $2) where id = $1', [ch, req.usuarioId]);
+      // atendente respondeu: o robô para neste atendimento
+      await db.query(`update whatsapp_chamados set atualizado_em = now(), responsavel_id = coalesce(responsavel_id, $2),
+                             robo_estado = case when venda_id is null and coalesce(robo_estado, 'coletando') = 'coletando' then 'humano' else robo_estado end
+                       where id = $1`, [ch, req.usuarioId]);
       await db.query('update whatsapp_contatos set ultima_em = now(), nao_lidas = 0 where id = $1', [k.id]);
       return (await db.query(
         `insert into whatsapp_conversa (empresa_id, contato_id, chamado_id, direcao, texto, status, erro, id_externo, enviado_por)
