@@ -13,6 +13,7 @@ import { rotasBackup } from './backup.js';
 import { rotasRecuperacao } from './recuperacao.js';
 import { rotasWhatsApp } from './whatsapp.js';
 import { rotasRelatorios } from './relatorios.js';
+import { rotasAgenda } from './agenda.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
@@ -229,6 +230,7 @@ rotasBackup(app, { exigeLogin, rota });
 rotasRecuperacao(app, { exigeLogin, rota });
 rotasWhatsApp(app, { exigeLogin, rota });
 rotasRelatorios(app, { exigeLogin, rota });
+rotasAgenda(app, { exigeLogin, rota });
 rotasGrupos(app, { exigeLogin, rota });
 rotasClientes(app, { exigeLogin, rota });
 

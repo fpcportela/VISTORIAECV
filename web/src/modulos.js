@@ -5,6 +5,7 @@ export const MODULOS = [
   // ficam só as vendas. As telas continuam no código (Vistorias.jsx) se voltar.
   { id: 'busca', nome: 'Consulta de placa', curto: 'Placa', permissao: 'placa.consultar' },
   { id: 'vendas', nome: 'Vendas', curto: 'Vendas', permissao: 'vendas.ver' },
+  { id: 'agenda', nome: 'Agenda', curto: 'Agenda', permissao: 'agenda.ver' },
   { id: 'clientes', nome: 'Clientes', curto: 'Clientes', permissao: 'clientes.ver' },
   { id: 'financeiro', nome: 'Financeiro', curto: 'Financeiro', permissao: 'financeiro.ver', sub: true },
   { id: 'royalties', nome: 'Royalties', curto: 'Royalties', permissao: 'royalties.ver' },

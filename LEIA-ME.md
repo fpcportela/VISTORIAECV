@@ -38,6 +38,19 @@ API_PLACAS_ROTA=completa
 mas não traz esses números. A mesma placa fica guardada por 30 dias: buscar de novo
 nesse período não gera cobrança, a não ser que você clique em "Atualizar consulta".
 
+## Agenda de vistorias
+
+Menu **Agenda**: os horários de cada loja por dia ou semana, com os livres e os agendados.
+Em **Horários** a loja define os dias e horas de atendimento, o almoço, a duração de cada vistoria,
+quantas vistorias cabem ao mesmo tempo, a antecedência mínima, até quantos dias à frente dá para
+agendar e os bloqueios (feriado, folga). **+ Agendar** marca na mão (com "Encaixe" para fora dos
+horários livres) e pode mandar a confirmação pelo WhatsApp.
+
+No robô do WhatsApp, a pergunta **Horário da vistoria (agenda)** mostra os próximos horários livres
+da loja do robô (o cliente responde com o número, ou MAIS para ver outros). O horário fica reservado
+na hora da escolha, a venda FUTURO abre com a data do agendamento e a mensagem final diz o dia, a hora
+e o endereço. Com IA, o robô oferece os mesmos horários livres na conversa.
+
 ## WhatsApp (API oficial da Meta)
 
 Sem configuração, o módulo WhatsApp fica em **modo teste**. Nesse modo as mensagens ficam só no
