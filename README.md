@@ -38,6 +38,32 @@ API_PLACAS_ROTA=completa
 mas não traz esses números. A mesma placa fica guardada por 30 dias: buscar de novo
 nesse período não gera cobrança, a não ser que você clique em "Atualizar consulta".
 
+## WhatsApp (API oficial da Meta)
+
+Sem configuração, o módulo WhatsApp fica em **modo teste**. Nesse modo as mensagens ficam só no
+sistema, e o código de "Esqueci a senha" aparece no terminal da API. Para ligar de verdade:
+
+1. Crie a conta no Meta Business, um app do tipo Empresa com o produto WhatsApp, e cadastre o número da loja.
+2. Gere um token permanente (usuário do sistema) e copie a chave secreta do app.
+3. Aprove um modelo de **autenticação** chamado `codigo_acesso`, em português, com o botão de copiar código.
+4. Coloque no `api/.env`:
+
+```
+WHATSAPP_PROVEDOR=meta
+WHATSAPP_TOKEN=token-permanente
+WHATSAPP_APP_SECRET=chave-secreta-do-app
+WHATSAPP_VERIFY_TOKEN=uma-senha-que-voce-inventa
+WHATSAPP_MODELO_CODIGO=codigo_acesso
+```
+
+5. No sistema, em WhatsApp > Configurar, informe o ID do número (Phone number ID) de cada grupo.
+6. Para **receber** mensagens, o sistema precisa estar num endereço público com https (a Hostinger).
+   No painel da Meta, cadastre o webhook `https://seu-endereco/api/whatsapp/webhook` com a mesma
+   `WHATSAPP_VERIFY_TOKEN` e assine o campo `messages`. No Mac (localhost), só o envio funciona.
+
+Pela regra do WhatsApp, uma resposta livre só pode ser enviada até 24 horas depois da última
+mensagem do cliente.
+
 ## Rodar no dia a dia
 
 ```bash

@@ -64,6 +64,8 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
            from colaborador_arquivos a left join tipos_arquivo t on t.id = a.tipo_id left join usuarios u on u.id = a.enviado_por
           where a.colaborador_id = $1 order by a.enviado_em desc`, [c.id])).rows;
       c.pode_editar = (await db.query("select pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
+      // login do colaborador no sistema (usuário e perfil; a senha nunca volta)
+      c.acesso = (await db.query('select * from app_colaborador_ver_acesso($1)', [c.id])).rows[0] || null;
       return c;
     }));
   }));
@@ -108,6 +110,16 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`, [empresa, ...campos])).rows[0].id;
       }
       for (const l of lojas) await db.query('insert into colaborador_lojas (colaborador_id, loja_id) values ($1, $2) on conflict do nothing', [cid, l]);
+      // "Acessa sistema": cria ou atualiza o login (usuário e senha) ligado ao colaborador; desmarcado, desativa o login
+      if (b.acesso && typeof b.acesso === 'object') {
+        const a = b.acesso;
+        const atual = (await db.query('select usuario_id from colaboradores where id = $1', [cid])).rows[0]?.usuario_id;
+        if (a.ativo || atual) {
+          if (a.ativo && !atual && String(a.senha || '').length < 6) throw new Recusa(400, 'Crie uma senha de pelo menos 6 caracteres para o acesso.');
+          await db.query('select app_colaborador_acesso($1, $2, $3, $4, $5)',
+            [cid, Boolean(a.ativo), texto(a.usuario, 80), a.senha ? String(a.senha) : null, UUID.test(a.perfil_id || '') ? a.perfil_id : null]);
+        }
+      }
       return cid;
     });
     res.json({ id: novoId });

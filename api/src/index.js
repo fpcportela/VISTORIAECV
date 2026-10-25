@@ -10,10 +10,12 @@ import { rotasPessoas } from './pessoas.js';
 import { rotasFipe } from './fipe.js';
 import { rotasFinanceiro } from './financeiro.js';
 import { rotasBackup } from './backup.js';
+import { rotasWhatsApp } from './whatsapp.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
-app.use(express.json({ limit: '3mb' })); // a foto do ponto vem em base64
+// a foto do ponto vem em base64; o corpo bruto fica guardado para conferir a assinatura do webhook do WhatsApp
+app.use(express.json({ limit: '3mb', verify: (req, res, buf) => { if (req.url.startsWith('/api/whatsapp/webhook')) req.corpoBruto = buf; } }));
 
 const SEGREDO = process.env.JWT_SECRET || 'troque-este-segredo-em-producao';
 const PORTA = Number(process.env.PORT || 3001);
@@ -222,6 +224,7 @@ rotasPessoas(app, { exigeLogin, rota });
 rotasFipe(app, { exigeLogin, rota });
 rotasFinanceiro(app, { exigeLogin, rota });
 rotasBackup(app, { exigeLogin, rota });
+rotasWhatsApp(app, { exigeLogin, rota });
 rotasGrupos(app, { exigeLogin, rota });
 rotasClientes(app, { exigeLogin, rota });
 

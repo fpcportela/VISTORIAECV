@@ -80,8 +80,8 @@ export default function Clientes({ perfil, loja }) {
 const vazio = (tipo, grupo) => ({ tipo, nome: '', nome_fantasia: '', cpf_cnpj: '', telefone: '', whatsapp: '', email: '', cep: '', endereco: '',
   cidade: '', uf: '', observacoes: '', ativo: true, grupo_cliente_id: grupo?.id || '' });
 
-function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicial, aoAbrir, aoFechar }) {
-  const [c, setC] = useState(id ? null : vazio(tipoInicial, grupoInicial));
+export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicial, inicial, aoAbrir, aoFechar, aoSalvar }) {
+  const [c, setC] = useState(id ? null : { ...vazio(tipoInicial, grupoInicial), ...inicial });
   const [extra, setExtra] = useState(null); // empresas do grupo, vendas, pode_editar
   const [grupos, setGrupos] = useState([]);
   const [loja, setLoja] = useState(lojas.some((l) => l.id === lojaInicial) ? lojaInicial : lojas[0]?.id || '');
@@ -137,7 +137,8 @@ function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicia
     try {
       const r = await api(id ? `/clientes/${id}` : '/clientes', { metodo: id ? 'PUT' : 'POST', corpo: { ...c, loja_id: loja } });
       // grupo novo: já abre para adicionar as empresas
-      if (!id && c.tipo === 'grupo') aoAbrir({ id: r.id }); else aoFechar();
+      if (aoSalvar) aoSalvar(r.id);
+      else if (!id && c.tipo === 'grupo') aoAbrir({ id: r.id }); else aoFechar();
     } catch (falha) { setErro(falha.message); setSalvando(false); }
   }
 

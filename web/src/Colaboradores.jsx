@@ -76,9 +76,14 @@ export default function Colaboradores({ perfil, loja }) {
 function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSalvar }) {
   const [c, setC] = useState(null);
   const [f, setF] = useState({ nome: '', data_nascimento: '', cpf: '', celular: '', cargo: '', cargo_id: '',
-    loja_ids: [lojasEditar.some((l) => l.id === lojaPadrao) ? lojaPadrao : lojasEditar[0]?.id].filter(Boolean), ativo: true });
+    loja_ids: [lojasEditar.some((l) => l.id === lojaPadrao) ? lojaPadrao : lojasEditar[0]?.id].filter(Boolean), ativo: true,
+    acesso: { ativo: false, usuario: '', senha: '', perfil_id: '' } });
   const [cargos, setCargos] = useState([]);
   useEffect(() => { api('/cargos').then((l) => setCargos(l.filter((x) => x.ativo))).catch(() => {}); }, []);
+  // "Acessa sistema" só para quem pode cadastrar usuários
+  const podeDarAcesso = criarTem(perfil, null)('usuarios.gerenciar');
+  const [perfis, setPerfis] = useState([]);
+  useEffect(() => { if (podeDarAcesso) api('/perfis').then(setPerfis).catch(() => {}); }, [podeDarAcesso]);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -88,7 +93,8 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
       setC(d);
       setF({ nome: d.nome, data_nascimento: d.data_nascimento || '', cpf: d.cpf ? mascaraCpf(d.cpf) : '',
         celular: d.celular ? mascaraTelefone(d.celular) : '', cargo: d.cargo || '', cargo_id: d.cargo_id || '',
-        loja_ids: d.loja_ids?.length ? d.loja_ids : [d.loja_id], ativo: d.ativo });
+        loja_ids: d.loja_ids?.length ? d.loja_ids : [d.loja_id], ativo: d.ativo,
+        acesso: { ativo: Boolean(d.acesso?.ativo), usuario: d.acesso?.login || '', senha: '', perfil_id: d.acesso?.perfil_id || '' } });
     } catch (falha) {
       setErro(falha.message);
     }
@@ -103,6 +109,12 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
     setErro('');
     if (f.cpf && !cpfValido(f.cpf)) return setErro('CPF inválido. Confira os números.');
     if (!f.loja_ids.length) return setErro('Marque pelo menos uma unidade.');
+    if (f.acesso.ativo) {
+      if (!f.celular) return setErro('Informe o celular: é por ele que chega o código de "Esqueci a senha".');
+      if (!f.acesso.usuario) return setErro('Informe o usuário de acesso.');
+      if (!c?.acesso && f.acesso.senha.length < 6) return setErro('Crie uma senha de pelo menos 6 caracteres.');
+      if (!f.acesso.perfil_id) return setErro('Escolha o perfil de acesso.');
+    }
     setSalvando(true);
     try {
       const r = await (id ? api(`/colaboradores/${id}`, { metodo: 'PUT', corpo: f }) : api('/colaboradores', { metodo: 'POST', corpo: f }));
@@ -168,6 +180,35 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
                   ))}
                 </fieldset>
                 {id && <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={muda('ativo')} /> Colaborador ativo (aparece no ponto)</label>}
+                {(podeDarAcesso || c?.acesso) && (
+                  <fieldset className="grupo-permissoes acesso-sistema" disabled={!podeDarAcesso}>
+                    <label className="linha-check"><input type="checkbox" checked={f.acesso.ativo} onChange={(e) => {
+                      const ativo = e.target.checked;
+                      // sugere o usuário pelo nome e o perfil pelo cargo
+                      const sugerido = f.acesso.usuario || f.nome.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).filter(Boolean)
+                        .filter((_, i, a) => i === 0 || i === a.length - 1).join('.').replace(/[^a-z0-9.]/g, '');
+                      const perfilCargo = cargos.find((x) => x.id === f.cargo_id)?.perfil_id || '';
+                      setF({ ...f, acesso: { ...f.acesso, ativo, usuario: sugerido, perfil_id: f.acesso.perfil_id || perfilCargo } });
+                    }} /> <strong>Acessa sistema</strong></label>
+                    {f.acesso.ativo && (
+                      <div className="dados-veiculo">
+                        <label>Usuário<input value={f.acesso.usuario} data-livre autoComplete="off" autoCapitalize="none" placeholder="ex.: joao.silva ou e-mail"
+                          onChange={(e) => setF({ ...f, acesso: { ...f.acesso, usuario: e.target.value.toLowerCase().replace(/\s/g, '') } })} /></label>
+                        <label>{c?.acesso ? 'Nova senha' : 'Senha'}<input type="password" value={f.acesso.senha} autoComplete="new-password"
+                          placeholder={c?.acesso ? 'Deixe em branco para manter' : 'Mínimo 6 caracteres'}
+                          onChange={(e) => setF({ ...f, acesso: { ...f.acesso, senha: e.target.value } })} /></label>
+                        <label>Perfil de acesso
+                          <select value={f.acesso.perfil_id} onChange={(e) => setF({ ...f, acesso: { ...f.acesso, perfil_id: e.target.value } })}>
+                            <option value="">Escolha…</option>
+                            {perfis.filter((x) => !grupoAtual || x.empresa_id === grupoAtual).map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                    {f.acesso.ativo && <small className="cinza">Entra na tela de login com este usuário e senha. Vale para as unidades marcadas acima. Se esquecer a senha, recebe um código no WhatsApp do celular cadastrado.</small>}
+                    {!f.acesso.ativo && c?.acesso?.ativo && <small className="cinza">Ao salvar, o login deste colaborador será desativado.</small>}
+                  </fieldset>
+                )}
               </fieldset>
               {erro && <p className="erro" role="alert">{erro}</p>}
               {podeEditar && (
