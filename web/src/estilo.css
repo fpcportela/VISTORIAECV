@@ -899,3 +899,13 @@ span.agenda-livre { cursor: default; color: #64748b; }
   .agenda-col { min-height: 0; }
   .agenda-cartao { min-width: 0; width: 100%; }
 }
+
+/* Números do WhatsApp no menu */
+.selos-menu { display: inline-flex; gap: 4px; margin-left: auto; align-items: center; }
+.selo-nao-lidas, .selo-abertos { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.selo-nao-lidas { background: #16a34a; color: #fff; }
+.selo-abertos { background: #fff; color: var(--forte); border: 1px solid currentColor; }
+.lista-menu .selos-menu { margin-left: 8px; }
+.selo-menu-celular { position: absolute; top: 2px; right: 18%; }
+.barra-inferior button { position: relative; }

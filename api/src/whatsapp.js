@@ -399,6 +399,18 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     res.json({ ok: true });
   }));
 
+  // ------------------------------------------------------------ números da barra lateral
+  // Conversas com mensagem não lida e chamados em aberto (do grupo escolhido, ou de todos que a pessoa vê)
+  app.get('/api/whatsapp/contadores', exigeLogin, comRecusa(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
+      `select (select count(*)::int from whatsapp_contatos k
+                where k.nao_lidas > 0 and (grupo_ativo() is null or k.empresa_id = grupo_ativo())
+                  and exists (select 1 from lojas l where l.empresa_id = k.empresa_id and pode(l.id, 'whatsapp.ver'))) as nao_lidas,
+              (select count(*)::int from whatsapp_chamados h
+                where h.aberto and (grupo_ativo() is null or h.empresa_id = grupo_ativo())
+                  and exists (select 1 from lojas l where l.empresa_id = h.empresa_id and pode(l.id, 'whatsapp.ver'))) as abertos`)).rows[0]));
+  }));
+
   // ------------------------------------------------------------ situação e número do grupo
   app.get('/api/whatsapp/situacao', exigeLogin, comRecusa(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => {

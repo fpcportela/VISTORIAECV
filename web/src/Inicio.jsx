@@ -60,6 +60,24 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       .catch((falha) => (falha.status === 401 ? aoSair() : setErro(falha.message)));
   }, [loja, tela]);
 
+  // Números do WhatsApp na barra lateral (conversas não lidas e chamados em aberto)
+  const [zap, setZap] = useState(null);
+  const veZap = tem('whatsapp.ver');
+  useEffect(() => {
+    if (!veZap) return undefined;
+    const ler = () => { if (!document.hidden) api('/whatsapp/contadores').then(setZap).catch(() => {}); };
+    ler();
+    const t = setInterval(ler, 20000);
+    document.addEventListener('visibilitychange', ler);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', ler); };
+  }, [veZap, tela]);
+  const selosZap = (m) => m.id === 'whatsapp' && zap && (zap.nao_lidas > 0 || zap.abertos > 0) && (
+    <span className="selos-menu" title={`${zap.nao_lidas} conversa(s) não lida(s) · ${zap.abertos} chamado(s) em aberto`}>
+      {zap.nao_lidas > 0 && <span className="selo-nao-lidas" aria-label={`${zap.nao_lidas} não lidas`}>{zap.nao_lidas > 99 ? '99+' : zap.nao_lidas}</span>}
+      {zap.abertos > 0 && <span className="selo-abertos" aria-label={`${zap.abertos} chamados em aberto`}>{zap.abertos > 99 ? '99+' : zap.abertos}</span>}
+    </span>
+  );
+
   function emBreve() {
     setAviso('Este módulo será desenvolvido nas próximas etapas.');
     clearTimeout(timerAviso.current);
@@ -364,6 +382,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           {[{ id: 'inicio', nome: 'Início' }, ...modulos].map((m) => (
             <button key={m.id} className={tela === m.id ? 'ativo' : ''} title={m.nome} aria-label={m.nome} onClick={() => abrir(m.id)}>
               <Icone nome={m.id} /><span className="rotulo">{m.nome}</span>
+              {selosZap(m)}
               {m.sub && <span className="seta"><Icone nome="direita" tamanho={16} /></span>}
             </button>
           ))}
@@ -433,7 +452,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         </span>
         {tem('vendas.ver') ? <button className={tela === 'vendas' ? 'ativo' : ''} onClick={() => abrir('vendas')}><Icone nome="vendas" tamanho={22} />Vendas</button>
           : tem('financeiro.ver') ? <button className={tela === 'financeiro' ? 'ativo' : ''} onClick={() => abrir('financeiro')}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}
-        <button className={menuAberto ? 'ativo' : ''} onClick={() => setMenuAberto(true)}><Icone nome="menu" tamanho={22} />Menu</button>
+        <button className={menuAberto ? 'ativo' : ''} onClick={() => setMenuAberto(true)}><Icone nome="menu" tamanho={22} />Menu
+          {zap?.nao_lidas > 0 && <span className="selo-nao-lidas selo-menu-celular" aria-label={`${zap.nao_lidas} conversas não lidas no WhatsApp`}>{zap.nao_lidas > 99 ? '99+' : zap.nao_lidas}</span>}</button>
       </nav>
 
       {menuAberto && (
@@ -447,7 +467,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             <div className="lista-menu">
               {modulos.map((m) => (
                 <button key={m.id} onClick={() => abrir(m.id)}>
-                  <span className="bolha"><Icone nome={m.id} tamanho={20} /></span>{m.nome}
+                  <span className="bolha"><Icone nome={m.id} tamanho={20} /></span>{m.nome}{selosZap(m)}
                 </button>
               ))}
             </div>
