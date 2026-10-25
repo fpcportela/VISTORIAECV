@@ -6,7 +6,8 @@ import { Placa, PlacaInput, limparPlaca } from './Placa.jsx';
 const TIPOS = { carro: 'Carro', moto: 'Moto', caminhao: 'Caminhão', outro: 'Outro' };
 
 // aoUsar(veiculo): opcional, mostra o botão "Usar nesta venda"
-export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar, aoUsar }) {
+// aoAbrirVenda(veiculo): opcional (consulta feita fora da venda): ao achar a placa, já abre uma venda nova com ela
+export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar, aoUsar, aoAbrirVenda }) {
   const [placa, setPlaca] = useState(limparPlaca(placaInicial));
   const [resultado, setResultado] = useState(null);
   const [erro, setErro] = useState('');
@@ -23,7 +24,9 @@ export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar, aoUsa
       const params = new URLSearchParams();
       if (loja) params.set('loja', loja);
       if (atualizar) params.set('atualizar', '1');
-      setResultado(await api(`/placa/${placa}?${params}`));
+      const r = await api(`/placa/${placa}?${params}`);
+      setResultado(r);
+      if (aoAbrirVenda && r?.veiculo) aoAbrirVenda(r.veiculo);
     } catch (falha) {
       setResultado(null);
       setErro(falha.message);

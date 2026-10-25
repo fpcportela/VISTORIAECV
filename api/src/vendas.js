@@ -103,6 +103,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
               c.nome as cliente, c.cpf_cnpj, u.nome as vendedor,
               (select string_agg(distinct ve.placa, ', ') from venda_itens i join veiculos ve on ve.id = i.veiculo_id
                 where i.venda_id = v.id) as placas,
+              (select ve.tipo from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id order by i.ctid limit 1) as tipo_veiculo,
               (select json_agg(x order by x.placa) from (select distinct ve.placa, nullif(concat_ws(' ', ve.marca, ve.modelo), '') as modelo
                  from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id) x) as veiculos
          from vendas v
@@ -144,7 +145,9 @@ export function rotasVendas(app, { exigeLogin, rota }) {
           where l.id = $1 and c.id = $2`, [v.loja_id, v.cliente_id, v.vendedor_id])).rows[0];
       const itens = (await db.query(
         `select i.id, i.servico_id, s.nome as servico, i.descricao, i.quantidade, i.valor_unit, i.valor_total,
-                ve.placa, ve.tipo as tipo_veiculo, ve.marca, ve.modelo
+                ve.placa, ve.tipo as tipo_veiculo, ve.marca, ve.modelo,
+                -- dados da consulta de placa, que aparecem como relatório anexado na venda
+                case when ve.consultado_em is not null then to_jsonb(ve) - 'dados_consulta' - 'id' end as consulta
            from venda_itens i join servicos s on s.id = i.servico_id
            left join veiculos ve on ve.id = i.veiculo_id
           where i.venda_id = $1 order by i.ctid`, [v.id])).rows;

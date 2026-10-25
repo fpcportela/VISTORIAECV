@@ -87,10 +87,11 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   }
 
   // Cada nova venda abre numa aba nova; uma venda já aberta só volta para a aba dela
-  const novaVenda = () => {
+  // veiculo: opcional, vindo da consulta de placa (a venda já abre com ele e o relatório da consulta)
+  const novaVenda = (veiculo) => {
     setMenuAberto(false); setTela('vendas');
     const chave = `nova-${++contadorAbas.current}`;
-    setAbasVenda((abas) => [...abas, { chave, id: null }]);
+    setAbasVenda((abas) => [...abas, { chave, id: null, veiculo: veiculo?.placa ? veiculo : null, placa: veiculo?.placa || '' }]);
     setAbaVenda(chave);
   };
   const abrirFinanceiro = (aba, novo = false) => {
@@ -411,7 +412,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             <div className="area-vendas" hidden={tela !== 'vendas'}>
               {abasVenda.map((a) => (
                 <div key={a.chave} hidden={abaVenda !== a.chave}>
-                  <EditorVenda id={a.id} perfil={perfil} lojaInicial={loja} lojasPermitidas={lojasCom('vendas.criar')}
+                  <EditorVenda id={a.id} perfil={perfil} lojaInicial={loja} lojasPermitidas={lojasCom('vendas.criar')} veiculoInicial={a.veiculo}
                     aoVoltar={() => setAbaVenda('lista')} aoSalvo={(id) => vendaSalva(a.chave, id)} aoTitulo={(info) => tituloAba(a.chave, info)} />
                 </div>
               ))}
@@ -472,7 +473,10 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           aoCriar={(id) => { setNovaVistoria(false); setTela('vistorias'); setVistoriaId(id); }} />
       )}
 
-      {consulta !== null && <ConsultaPlaca loja={loja} placaInicial={consulta} aoFechar={() => setConsulta(null)} />}
+      {consulta !== null && (
+        <ConsultaPlaca loja={loja} placaInicial={consulta} aoFechar={() => setConsulta(null)}
+          aoAbrirVenda={tem('vendas.criar') ? (v) => { setConsulta(null); novaVenda(v); } : undefined} />
+      )}
 
       {aviso && <div className="aviso" role="status">{aviso}</div>}
     </div>

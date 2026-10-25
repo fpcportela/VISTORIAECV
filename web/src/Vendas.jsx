@@ -21,7 +21,31 @@ export const FORMAS_PAGAMENTO = { pix: 'PIX', dinheiro: 'Dinheiro', cartao_credi
 const itemVazio = () => ({ servico_id: '', quantidade: '1', valor_unit: '' });
 let chaves = 0;
 // A venda é organizada por veículo: cada veículo tem os seus itens
-const veiculoVazio = () => ({ chave: ++chaves, placa: '', tipo_veiculo: null, marca: '', modelo: '', itens: [itemVazio()] });
+const veiculoVazio = () => ({ chave: ++chaves, placa: '', tipo_veiculo: null, marca: '', modelo: '', consulta: null, itens: [itemVazio()] });
+// Veículo vindo da consulta de placa: os campos da venda e o relatório da consulta
+const doConsultado = (d) => ({ placa: d.placa, tipo_veiculo: d.tipo, marca: d.marca || '', modelo: d.modelo || '', consulta: d.consultado_em ? d : null });
+const TIPOS_VEICULO = { carro: 'Carro', moto: 'Moto', caminhao: 'Caminhão', outro: 'Outro' };
+
+// Relatório da consulta de placa, anexado ao veículo da venda
+function RelatorioConsulta({ dados: d }) {
+  const linhas = [
+    ['Marca / modelo', [d.marca, d.modelo].filter(Boolean).join(' ') || d.versao],
+    ['Versão', d.versao],
+    ['Tipo', TIPOS_VEICULO[d.tipo]],
+    ['Ano', [d.ano_fabricacao, d.ano_modelo].filter(Boolean).join(' / ')],
+    ['Cor', d.cor], ['Combustível', d.combustivel], ['Chassi', d.chassi], ['Renavam', d.renavam], ['Motor', d.motor],
+    ['Município', [d.municipio, d.uf].filter(Boolean).join(' / ')],
+  ].filter(([, valor]) => valor);
+  return (
+    <details className="relatorio-consulta">
+      <summary>
+        <Icone nome="vistorias" tamanho={16} /> Relatório da consulta da placa {d.placa}
+        <small className="cinza"> · consultado em {new Date(d.consultado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</small>
+      </summary>
+      <dl>{linhas.map(([rotulo, valor]) => <div key={rotulo}><dt>{rotulo}</dt><dd>{valor}</dd></div>)}</dl>
+    </details>
+  );
+}
 const pagamentoVazio = (valor = '') => ({ chave: ++chaves, data_pagamento: hoje(), forma: 'pix', valor, detalhe: '', cv: '', bandeira: '' });
 
 // ---------------------------------------------------------------------------
@@ -121,7 +145,9 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
             {lista.map((v) => (
               <button key={v.id} className={`cartao linha-venda${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
                 onClick={() => (lote ? setLote((l) => { const n = new Set(l); if (n.has(v.id)) n.delete(v.id); else n.add(v.id); return n; }) : aoAbrir(v.id))}>
-                <span className="lv-num">{lote && <span className="marca-lote" aria-hidden="true">{lote.has(v.id) ? '✓' : ''}</span>}<strong>Nº {v.numero}</strong></span>
+                <span className="lv-num">{lote && <span className="marca-lote" aria-hidden="true">{lote.has(v.id) ? '✓' : ''}</span>}{v.tipo_veiculo && ['carro', 'moto', 'caminhao'].includes(v.tipo_veiculo) && (
+                  <span className="lv-tipo" title={TIPOS_VEICULO[v.tipo_veiculo]} aria-label={TIPOS_VEICULO[v.tipo_veiculo]}><Icone nome={v.tipo_veiculo} tamanho={20} /></span>
+                )}<strong>Nº {v.numero}</strong></span>
                 <span className="lv-cliente">
                   {!v.placas ? <small className="cinza lv-sem-placa">Sem placa</small>
                     : v.placas.includes(',') ? <PlacasDiversas tamanho="mini" /> : <Placa placa={v.placas} tamanho="mini" />}
@@ -210,7 +236,7 @@ function EdicaoLote({ vendas, lojas, aoFechar, aoConcluir }) {
 // ---------------------------------------------------------------------------
 // Nova venda / edição
 // ---------------------------------------------------------------------------
-export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar, aoSalvo, aoTitulo }) {
+export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoInicial, aoVoltar, aoSalvo, aoTitulo }) {
   const grupo = useId(); // nomes únicos dos botões de opção (várias vendas abertas em abas)
   const [venda, setVenda] = useState(null); // carregada do servidor (null = nova)
   const [loja, setLoja] = useState(lojasPermitidas.includes(lojaInicial) ? lojaInicial : lojasPermitidas[0] || '');
@@ -224,7 +250,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   const [clientes, setClientes] = useState([]);
   const [novo, setNovo] = useState({ tipo: 'pf', nome: '', cpf_cnpj: '', whatsapp: '', email: '' });
   const [receita, setReceita] = useState(''); // situação da busca do CNPJ
-  const [veiculos, setVeiculos] = useState(() => [veiculoVazio()]);
+  // venda aberta direto de uma consulta de placa: já vem com o veículo e o relatório da consulta
+  const [veiculos, setVeiculos] = useState(() => [veiculoInicial ? { ...veiculoVazio(), ...doConsultado(veiculoInicial) } : veiculoVazio()]);
   const [pagamentos, setPagamentos] = useState(() => [pagamentoVazio()]);
   const [desconto, setDesconto] = useState('');
   const [observacoes, setObservacoes] = useState('');
@@ -251,7 +278,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
       const grupos = [];
       for (const i of v.itens) {
         let g = grupos.find((x) => x.placa === (i.placa || ''));
-        if (!g) grupos.push(g = { ...veiculoVazio(), placa: i.placa || '', tipo_veiculo: i.tipo_veiculo || null, marca: i.marca || '', modelo: i.modelo || '', itens: [] });
+        if (!g) grupos.push(g = { ...veiculoVazio(), placa: i.placa || '', tipo_veiculo: i.tipo_veiculo || null, marca: i.marca || '', modelo: i.modelo || '', consulta: i.consulta || null, itens: [] });
         g.itens.push({ servico_id: i.servico_id, quantidade: String(Number(i.quantidade)), valor_unit: paraMoeda(i.valor_unit) });
       }
       setVeiculos(grupos.length ? grupos : [veiculoVazio()]);
@@ -318,7 +345,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
 
   // Placa consultada na API: preenche o veículo (o da lupa, ou o primeiro sem placa, ou um novo)
   function usarVeiculo(dados) {
-    const campos = { placa: dados.placa, tipo_veiculo: dados.tipo, marca: dados.marca || '', modelo: dados.modelo || '' };
+    const campos = doConsultado(dados);
     let n = consulta.indice ?? veiculos.findIndex((v) => !v.placa || v.placa === dados.placa);
     if (n < 0) { n = veiculos.length; setVeiculos((l) => [...l, veiculoVazio()]); }
     mudarVeiculo(n, campos);
@@ -502,7 +529,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
           <div key={v.chave} className="grupo-veiculo">
             <div className="bloco-veiculo">
               <div className="placa-item">
-                <PlacaInput valor={v.placa} tamanho="item" aoMudar={(p) => mudarVeiculo(n, { placa: p, marca: '', modelo: '' })} aria-label={`Placa do veículo ${n + 1}`} />
+                <PlacaInput valor={v.placa} tamanho="item" aoMudar={(p) => mudarVeiculo(n, { placa: p, marca: '', modelo: '', consulta: null })} aria-label={`Placa do veículo ${n + 1}`} />
                 <button type="button" className="botao-redondo clara" title="Consultar esta placa" aria-label="Consultar esta placa"
                   disabled={!podeLoja('placa.consultar')} onClick={() => setConsulta({ indice: n, placa: v.placa })}><Icone nome="busca" tamanho={18} /></button>
               </div>
@@ -510,6 +537,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
               <button type="button" className="fechar" aria-label={`Remover veículo ${n + 1}`} title="Remover este veículo e os itens dele"
                 disabled={veiculos.length === 1} onClick={() => setVeiculos((l) => l.filter((_, k) => k !== n))}>×</button>
             </div>
+            {v.consulta && <RelatorioConsulta dados={v.consulta} />}
             <div className="itens-venda">
               <div className="item-venda cabecalho-itens" aria-hidden="true">
                 <span>Serviço / produto</span><span>Qtd.</span><span>Valor unitário</span><span>Total</span><span />
