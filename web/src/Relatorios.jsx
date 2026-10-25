@@ -39,7 +39,7 @@ const COLUNAS = {
   ],
   financeiro: [
     { id: 'vencimento', nome: 'Vencimento', valor: (v) => dataBR(v.vencimento) },
-    { id: 'competencia', nome: 'Competência', valor: (v) => dataBR(v.competencia) },
+    { id: 'competencia', nome: 'Competência', valor: (v) => (v.competencia ? `${v.competencia.slice(5, 7)}/${v.competencia.slice(0, 4)}` : '') },
     { id: 'pago_em', nome: 'Pago em', valor: (v) => dataBR(v.pago_em) },
     { id: 'tipo', nome: 'Tipo', valor: (v) => (v.tipo === 'receber' ? 'RECEBER' : 'PAGAR') },
     { id: 'descricao', nome: 'Descrição', valor: (v) => `${v.descricao}${v.total_parcelas > 1 ? ` (${v.parcela}/${v.total_parcelas})` : ''}` },

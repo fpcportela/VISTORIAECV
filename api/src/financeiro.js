@@ -1,3 +1,4 @@
+import express from 'express';
 import { comoUsuario } from './db.js';
 import { Recusa, UUID, criarComRecusa, exigir, texto } from './comum.js';
 
@@ -188,6 +189,10 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
           where b.lancamento_id = $1 order by b.data, b.criado_em`, [l.id])).rows;
       l.pode = (await db.query(
         "select pode($1, 'financeiro.lancar') as lancar, pode($1, 'financeiro.excluir') as excluir", [l.loja_id])).rows[0];
+      l.arquivos = (await db.query(
+        `select a.id, a.nome, a.nome_arquivo, a.mime, a.tamanho, a.criado_em, u.nome as enviado_por
+           from lancamento_arquivos a left join usuarios u on u.id = a.enviado_por
+          where a.lancamento_id = $1 order by a.criado_em`, [l.id])).rows;
       return l;
     }));
   }));
@@ -198,7 +203,8 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
     if (!descricao) throw new Recusa(400, 'Informe a descrição.');
     const vencimento = dataValida(b.vencimento);
     if (!vencimento) throw new Recusa(400, 'Informe o vencimento.');
-    const competencia = dataValida(b.competencia) || vencimento;
+    // competência é só mês/ano: guarda o primeiro dia do mês
+    const competencia = `${(/^\d{4}-\d{2}$/.test(b.competencia || '') ? b.competencia : (dataValida(b.competencia) || vencimento).slice(0, 7))}-01`;
     const cat = (await db.query('select id, tipo, grupo from categorias_financeiras where id = $1 and empresa_id = $2 and ativo',
       [UUID.test(b.categoria_id || '') ? b.categoria_id : null, empresa])).rows[0];
     if (!cat || cat.grupo) throw new Recusa(400, 'Escolha a categoria do plano de contas.');
@@ -320,4 +326,107 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
     });
     res.json({ ok: true });
   }));
+
+  // ------------------------------------------------------------ documentos do lançamento
+  // O corpo é o próprio arquivo; o nome dado pela pessoa, o nome original e o tipo vão na URL
+  app.post('/api/financeiro/lancamentos/:id/arquivos', exigeLogin,
+    express.raw({ type: () => true, limit: 15 * 1024 * 1024 }),
+    comRecusa(async (req, res) => {
+      const conteudo = req.body;
+      if (!Buffer.isBuffer(conteudo) || !conteudo.length) throw new Recusa(400, 'Escolha o arquivo.');
+      const arquivo = texto(req.query.arquivo, 150) || 'arquivo';
+      const nome = (texto(req.query.nome, 120) || arquivo.replace(/\.[^.]+$/, '')).toUpperCase();
+      const mime = /^[\w.+-]+\/[\w.+-]+$/.test(req.query.mime || '') ? req.query.mime : 'application/octet-stream';
+      const id = await comoUsuario(req.usuarioId, async (db) => {
+        const l = await lancamento(db, req.params.id);
+        await exigir(db, l.loja_id, 'financeiro.lancar', 'Seu perfil não pode anexar documentos.');
+        return (await db.query(
+          `insert into lancamento_arquivos (lancamento_id, nome, nome_arquivo, mime, tamanho, conteudo, enviado_por)
+           values ($1, $2, $3, $4, $5, $6, $7) returning id`, [l.id, nome, arquivo, mime, conteudo.length, conteudo, req.usuarioId])).rows[0].id;
+      });
+      res.json({ id });
+    }));
+
+  const arquivoLancamento = async (db, id, permissao, mensagem) => {
+    if (!UUID.test(id || '')) throw new Recusa(404, 'Arquivo não encontrado.');
+    const a = (await db.query('select a.*, l.loja_id from lancamento_arquivos a join lancamentos l on l.id = a.lancamento_id where a.id = $1', [id])).rows[0];
+    if (!a) throw new Recusa(404, 'Arquivo não encontrado.');
+    await exigir(db, a.loja_id, permissao, mensagem);
+    return a;
+  };
+
+  app.get('/api/financeiro/arquivos/:id', exigeLogin, comRecusa(async (req, res) => {
+    const a = await comoUsuario(req.usuarioId, (db) => arquivoLancamento(db, req.params.id, 'financeiro.ver', 'Seu perfil não pode ver o financeiro.'));
+    // baixa com o nome dado + a extensão do arquivo original
+    const ext = /\.[A-Za-z0-9]{1,6}$/.exec(a.nome_arquivo)?.[0] || '';
+    const nome = /\.[A-Za-z0-9]{1,6}$/.test(a.nome) ? a.nome : `${a.nome}${ext}`;
+    res.set('Content-Type', a.mime);
+    res.set('Content-Disposition', `${req.query.baixar ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(nome)}`);
+    res.send(a.conteudo);
+  }));
+
+  app.put('/api/financeiro/arquivos/:id', exigeLogin, comRecusa(async (req, res) => {
+    const nome = texto(req.body?.nome, 120)?.toUpperCase();
+    if (!nome) throw new Recusa(400, 'Informe o nome do documento.');
+    await comoUsuario(req.usuarioId, async (db) => {
+      const a = await arquivoLancamento(db, req.params.id, 'financeiro.lancar', 'Seu perfil não pode alterar documentos.');
+      await db.query('update lancamento_arquivos set nome = $2 where id = $1', [a.id, nome]);
+    });
+    res.json({ ok: true });
+  }));
+
+  app.delete('/api/financeiro/arquivos/:id', exigeLogin, comRecusa(async (req, res) => {
+    await comoUsuario(req.usuarioId, async (db) => {
+      const a = await arquivoLancamento(db, req.params.id, 'financeiro.lancar', 'Seu perfil não pode excluir documentos.');
+      await db.query('delete from lancamento_arquivos where id = $1', [a.id]);
+    });
+    res.json({ ok: true });
+  }));
+
+  // ------------------------------------------------------------ contas de recebimento e pagamento (caixa e bancos)
+  // Todas as contas das lojas do grupo, com o saldo (saldo inicial + recebido − pago desde a data do saldo inicial)
+  app.get('/api/financeiro/contas/todas', exigeLogin, comRecusa(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await empresaDaLoja(db, req.query.loja);
+      return (await db.query(
+        `select c.id, c.loja_id, lj.nome as loja, c.tipo, c.nome, c.banco_codigo, c.agencia, c.conta, c.saldo_inicial,
+                c.data_saldo_inicial, c.ativo, pode(c.loja_id, 'financeiro.lancar') as pode_editar,
+                c.saldo_inicial + coalesce((select sum(case when l.tipo = 'receber' then 1 else -1 end * (b.valor + b.juros + b.multa - b.desconto))
+                                              from lancamento_baixas b join lancamentos l on l.id = b.lancamento_id
+                                             where b.conta_id = c.id and b.data >= c.data_saldo_inicial), 0) as saldo
+           from contas_financeiras c join lojas lj on lj.id = c.loja_id
+          where lj.empresa_id = $1 and c.tipo <> 'adquirente' and pode(c.loja_id, 'financeiro.ver')
+          order by c.ativo desc, lj.nome, c.nome`, [empresa])).rows;
+    }));
+  }));
+
+  const salvarConta = (id) => comRecusa(async (req, res) => {
+    const b = req.body || {};
+    const nome = texto(b.nome, 80)?.toUpperCase();
+    if (!nome) throw new Recusa(400, 'Informe o nome da conta.');
+    const tipo = ['caixa', 'conta_corrente', 'poupanca'].includes(b.tipo) ? b.tipo : 'conta_corrente';
+    const saldo = dinheiro(b.saldo_inicial ?? 0);
+    if (saldo === null) throw new Recusa(400, 'Saldo inicial inválido.');
+    const desde = dataValida(b.data_saldo_inicial) || new Date().toLocaleDateString('sv-SE', { timeZone: FUSO });
+    const dados = [nome, tipo, texto(b.banco_codigo, 10), texto(b.agencia, 20), texto(b.conta, 30), saldo, desde, b.ativo !== false];
+    const novo = await comoUsuario(req.usuarioId, async (db) => {
+      if (id) {
+        if (!UUID.test(id)) throw new Recusa(404, 'Conta não encontrada.');
+        const c = (await db.query('select loja_id from contas_financeiras where id = $1', [id])).rows[0];
+        if (!c) throw new Recusa(404, 'Conta não encontrada.');
+        await exigir(db, c.loja_id, 'financeiro.lancar', 'Seu perfil não pode alterar contas.');
+        await db.query(
+          `update contas_financeiras set nome = $2, tipo = $3, banco_codigo = $4, agencia = $5, conta = $6, saldo_inicial = $7,
+                  data_saldo_inicial = $8, ativo = $9 where id = $1`, [id, ...dados]);
+        return id;
+      }
+      await exigir(db, b.loja_id, 'financeiro.lancar', 'Seu perfil não pode criar contas nesta loja.');
+      return (await db.query(
+        `insert into contas_financeiras (loja_id, nome, tipo, banco_codigo, agencia, conta, saldo_inicial, data_saldo_inicial, ativo)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`, [b.loja_id, ...dados])).rows[0].id;
+    });
+    res.json({ id: novo });
+  });
+  app.post('/api/financeiro/contas', exigeLogin, salvarConta(null));
+  app.put('/api/financeiro/contas/:id', exigeLogin, (req, res) => salvarConta(req.params.id)(req, res));
 }

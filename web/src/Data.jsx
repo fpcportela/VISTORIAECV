@@ -83,3 +83,38 @@ export function CampoData({ value, onChange, required, min, max, className, ...r
     </span>
   );
 }
+
+// Campo de mês (competência): sempre MM/AAAA, só números (a barra entra sozinha).
+// Por fora trabalha com AAAA-MM-01 (primeiro dia do mês), como o servidor guarda.
+export const mascaraMes = (t) => {
+  const d = String(t ?? '').replace(/\D/g, '').slice(0, 6);
+  return [d.slice(0, 2), d.slice(2)].filter(Boolean).join('/');
+};
+export const paraMes = (iso) => (/^\d{4}-\d{2}/.test(iso || '') ? `${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
+export function lerMes(t) {
+  const m = /^(\d{2})\/(\d{4})$/.exec(t || '');
+  if (!m || Number(m[1]) < 1 || Number(m[1]) > 12 || Number(m[2]) < 1900 || Number(m[2]) > 2100) return null;
+  return `${m[2]}-${m[1]}-01`;
+}
+
+export function CampoMes({ value, onChange, required, className, ...resto }) {
+  const [texto, setTexto] = useState(paraMes(value));
+  const campo = useRef(null);
+  useEffect(() => {
+    if ((lerMes(texto) || '') !== (value ? `${value.slice(0, 7)}-01` : '')) setTexto(paraMes(value));
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const invalido = texto.length === 7 && !lerMes(texto);
+  useEffect(() => {
+    campo.current?.setCustomValidity(invalido ? 'Mês inválido. Use MM/AAAA.' : texto && texto.length < 7 ? 'Complete o mês: MM/AAAA.' : '');
+  }, [invalido, texto]);
+  function mudar(t) {
+    setTexto(t);
+    const novo = lerMes(t) || '';
+    if (novo !== (value || '')) onChange?.({ target: { value: novo } });
+  }
+  return (
+    <input {...resto} ref={campo} className={className} type="text" inputMode="numeric" autoComplete="off" data-livre
+      placeholder="MM/AAAA" maxLength={7} value={texto} required={required} aria-invalid={invalido || undefined}
+      onChange={(e) => mudar(mascaraMes(e.target.value))} />
+  );
+}

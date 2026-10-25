@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { api, moeda } from './api.js';
+import { api, moeda, sessao } from './api.js';
 import { paraMoeda } from './entrada.js';
 import { Icone } from './icones.jsx';
 import { criarTem } from './modulos.js';
-import { CampoData } from './Data.jsx';
+import { CampoData, CampoMes } from './Data.jsx';
+import { abrirArquivo } from './Colaboradores.jsx';
 
 // Financeiro: contas a receber e a pagar (com parcelas, pagamento parcial,
 // categoria do plano de contas e centro de custo), o plano de contas e os centros de custo.
@@ -36,7 +37,7 @@ export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoI
     .then(([p, c]) => { setPlano(p); setCentros(c); }).catch((f) => setErro(f.message));
   useEffect(() => { carregarCadastros(); }, [lojaGrupo]);
 
-  const abas = [['receber', 'A receber'], ['pagar', 'A pagar'], ['plano', 'Plano de contas'], ['centros', 'Centros de custo']];
+  const abas = [['receber', 'A receber'], ['pagar', 'A pagar'], ['contas', 'Contas (caixa e bancos)'], ['plano', 'Plano de contas'], ['centros', 'Centros de custo']];
   return (
     <>
       <div className="cabecalho"><h1>Financeiro</h1></div>
@@ -46,6 +47,8 @@ export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoI
       {erro && <p className="erro" role="alert">{erro}</p>}
       {aba === 'receber' || aba === 'pagar' ? (
         <Lancamentos key={aba} tipo={aba} loja={loja} perfil={perfil} lojasLancar={lojasLancar} plano={plano} centros={centros} novoInicial={novoInicial} />
+      ) : aba === 'contas' ? (
+        <ContasFinanceiras loja={lojaGrupo} perfil={perfil} lojasLancar={lojasLancar} />
       ) : aba === 'plano' ? (
         <PlanoContas loja={lojaGrupo} plano={plano} podeEditar={podePlano} aoMudar={carregarCadastros} />
       ) : (
@@ -175,7 +178,8 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
   const lojaPadrao = lojasLancar.some((x) => x.id === loja) ? loja : lojasLancar[0]?.id || '';
   const centroDaLoja = (lj) => centros.find((c) => c.loja_id === lj && c.ativo)?.id || '';
   const [f, setF] = useState({ loja_id: lojaPadrao, descricao: '', categoria_id: '', centro_custo_id: centroDaLoja(lojaPadrao),
-    valor: '', vencimento: hoje(), competencia: hoje(), parcelas: '1', documento: '', observacoes: '' });
+    valor: '', vencimento: hoje(), competencia: `${hoje().slice(0, 7)}-01`, parcelas: '1', documento: '', observacoes: '' });
+  const [novosArquivos, setNovosArquivos] = useState([]); // { arquivo, nome } anexados ao lançar
   const [baixando, setBaixando] = useState(false);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -200,7 +204,15 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
   const editavel = !id || (l?.pode.lancar && l.status !== 'cancelado');
   const muda = (campo) => (e) => {
     const v = e.target.value;
-    setF((x) => ({ ...x, [campo]: v, ...(campo === 'loja_id' && { centro_custo_id: centroDaLoja(v) }) }));
+    setF((x) => {
+      const novo = { ...x, [campo]: v };
+      // sem campo Loja: a loja do lançamento é a do centro de custo (se for de uma loja em que a pessoa lança)
+      if (campo === 'centro_custo_id' && !id) {
+        const lj = centros.find((c) => c.id === v)?.loja_id;
+        novo.loja_id = lojasLancar.some((x2) => x2.id === lj) ? lj : lojaPadrao;
+      }
+      return novo;
+    });
   };
   const valorParcela = numero(f.valor) / Math.max(1, Number(f.parcelas) || 1);
 
@@ -210,7 +222,11 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
     try {
       const corpo = { ...f, tipo, valor: numero(f.valor) };
       if (id) await api(`/financeiro/lancamentos/${id}`, { metodo: 'PUT', corpo });
-      else await api('/financeiro/lancamentos', { metodo: 'POST', corpo });
+      else {
+        const { ids } = await api('/financeiro/lancamentos', { metodo: 'POST', corpo });
+        // documentos escolhidos antes de lançar vão para a 1ª parcela
+        for (const a of novosArquivos) await enviarArquivo(ids[0], a);
+      }
       aoSalvar();
     } catch (falha) {
       setErro(falha.message); setSalvando(false);
@@ -265,16 +281,9 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
                       {centros.filter((c) => c.ativo || c.id === f.centro_custo_id).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                     </select>
                   </label>
-                  {!id && lojasLancar.length > 1 && (
-                    <label>Loja
-                      <select value={f.loja_id} onChange={muda('loja_id')}>
-                        {lojasLancar.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
-                      </select>
-                    </label>
-                  )}
                   <label>{id ? 'Valor (R$)' : 'Valor total (R$)'}<input value={f.valor} onChange={muda('valor')} inputMode="numeric" data-moeda required placeholder="0,00" /></label>
                   <label>{!id && Number(f.parcelas) > 1 ? '1º vencimento' : 'Vencimento'}<CampoData value={f.vencimento} onChange={muda('vencimento')} required /></label>
-                  <label>Competência<CampoData value={f.competencia} onChange={muda('competencia')} /></label>
+                  <label>Competência<CampoMes value={f.competencia} onChange={muda('competencia')} /></label>
                   {!id && (
                     <label>Parcelas
                       <select value={f.parcelas} onChange={muda('parcelas')}>
@@ -289,6 +298,8 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
                 )}
                 <label>Observações<textarea rows={2} value={f.observacoes} onChange={muda('observacoes')} /></label>
               </fieldset>
+              <Documentos id={id} arquivos={l?.arquivos || []} podeEditar={editavel} novos={novosArquivos} aoNovos={setNovosArquivos}
+                aoMudar={carregar} aoErro={setErro} />
               {erro && <p className="erro" role="alert">{erro}</p>}
               <div className="acoes-modal">
                 {l?.pode.excluir && l.valor_pago === 0 && <button type="button" className="botao-contorno perigo" onClick={excluir}>Excluir</button>}
@@ -510,6 +521,183 @@ function CentrosCusto({ loja, centros, podeEditar, aoMudar }) {
         </form>
       )}
       {erro && <p className="erro" role="alert">{erro}</p>}
+    </>
+  );
+}
+
+// Envia um documento para o lançamento (o corpo é o próprio arquivo)
+async function enviarArquivo(lancamentoId, { arquivo, nome }) {
+  const q = new URLSearchParams({ arquivo: arquivo.name, nome: nome || '', mime: arquivo.type || 'application/octet-stream' });
+  const r = await fetch(`/api/financeiro/lancamentos/${lancamentoId}/arquivos?${q}`, {
+    method: 'POST', body: arquivo, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || (r.status === 413 ? `"${arquivo.name}" passa de 15 MB.` : `Não foi possível enviar "${arquivo.name}".`));
+}
+
+const tamanho = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+// Documentos do lançamento: nome dado por quem anexa, abrir, baixar, renomear e excluir
+function Documentos({ id, arquivos, podeEditar, novos, aoNovos, aoMudar, aoErro }) {
+  const [arquivo, setArquivo] = useState(null);
+  const [nome, setNome] = useState('');
+  const [chave, setChave] = useState(0);
+  const [enviando, setEnviando] = useState(false);
+  const [renomeando, setRenomeando] = useState(null);
+
+  async function anexar() {
+    if (!arquivo) return;
+    if (arquivo.size > 15 * 1024 * 1024) return aoErro('O arquivo passa de 15 MB.');
+    if (!id) { aoNovos([...novos, { arquivo, nome }]); setArquivo(null); setNome(''); setChave((k) => k + 1); return; }
+    setEnviando(true); aoErro('');
+    try { await enviarArquivo(id, { arquivo, nome }); setArquivo(null); setNome(''); setChave((k) => k + 1); aoMudar(); }
+    catch (falha) { aoErro(falha.message); }
+    finally { setEnviando(false); }
+  }
+  async function baixar(a) {
+    try {
+      const r = await fetch(`/api/financeiro/arquivos/${a.id}?baixar=1`, { headers: { Authorization: `Bearer ${sessao.token()}` } });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || 'Não foi possível baixar o arquivo.');
+      const nomeBaixado = decodeURIComponent((/filename\*=UTF-8''([^;]+)/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || a.nome_arquivo);
+      const url = URL.createObjectURL(await r.blob());
+      const link = Object.assign(document.createElement('a'), { href: url, download: nomeBaixado });
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (falha) { aoErro(falha.message); }
+  }
+  const acao = async (fn) => { aoErro(''); try { await fn(); aoMudar(); } catch (falha) { aoErro(falha.message); } };
+  const renomear = () => acao(async () => { await api(`/financeiro/arquivos/${renomeando.id}`, { metodo: 'PUT', corpo: { nome: renomeando.nome } }); setRenomeando(null); });
+
+  return (
+    <fieldset className="grupo-permissoes documentos-fin">
+      <legend>Documentos</legend>
+      {arquivos.length === 0 && novos.length === 0 && <small className="cinza">Nenhum documento anexado.</small>}
+      {arquivos.length > 0 && (
+        <ul className="lista-arquivos">
+          {arquivos.map((a) => (
+            <li key={a.id}>
+              {renomeando?.id === a.id ? (
+                <span className="linha-tipo">
+                  <input value={renomeando.nome} onChange={(e) => setRenomeando({ ...renomeando, nome: e.target.value })} autoFocus aria-label="Nome do documento"
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); renomear(); } }} />
+                  <button type="button" className="botao-primario pequeno" onClick={renomear}>Salvar</button>
+                  <button type="button" className="botao-contorno pequeno" onClick={() => setRenomeando(null)}>Cancelar</button>
+                </span>
+              ) : (
+                <>
+                  <button type="button" className="botao-texto" onClick={() => abrirArquivo(`/financeiro/arquivos/${a.id}`).catch((f) => aoErro(f.message))}>📎 {a.nome}</button>
+                  <small className="cinza">{a.nome_arquivo} · {tamanho(a.tamanho)}{a.enviado_por && ` · ${a.enviado_por}`}</small>
+                  <button type="button" className="botao-contorno pequeno" onClick={() => baixar(a)}>Baixar</button>
+                  {podeEditar && <button type="button" className="botao-texto" onClick={() => setRenomeando({ id: a.id, nome: a.nome })}>Renomear</button>}
+                  {podeEditar && <button type="button" className="fechar" aria-label={`Excluir ${a.nome}`}
+                    onClick={() => confirm(`Excluir o documento "${a.nome}"?`) && acao(() => api(`/financeiro/arquivos/${a.id}`, { metodo: 'DELETE' }))}>×</button>}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {novos.map((a, i) => (
+        <small key={i} className="cinza">Vai anexar ao lançar: <strong>{a.nome || a.arquivo.name}</strong> ({a.arquivo.name})
+          <button type="button" className="botao-texto" onClick={() => aoNovos(novos.filter((_, k) => k !== i))}>tirar</button></small>
+      ))}
+      {podeEditar && (
+        <div className="envio-arquivo">
+          <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do documento (ex.: NOTA FISCAL)" aria-label="Nome do documento"
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); anexar(); } }} />
+          <input key={chave} type="file" onChange={(e) => { const a = e.target.files[0] || null; setArquivo(a); if (a && !nome) setNome(a.name.replace(/\.[^.]+$/, '').toUpperCase()); }} aria-label="Arquivo" />
+          <button type="button" className="botao-primario" disabled={enviando || !arquivo} onClick={anexar}>{enviando ? 'Enviando…' : 'Anexar'}</button>
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
+// Contas onde o dinheiro entra e sai (caixa e bancos), por loja, com o saldo
+const TIPOS_CONTA = { caixa: 'Caixa', conta_corrente: 'Conta corrente', poupanca: 'Poupança' };
+function ContasFinanceiras({ loja, lojasLancar }) {
+  const [contas, setContas] = useState(null);
+  const [editando, setEditando] = useState(null);
+  const [erro, setErro] = useState('');
+  const carregar = () => loja && api(`/financeiro/contas/todas?loja=${loja}`).then(setContas).catch((f) => setErro(f.message));
+  useEffect(() => { carregar(); }, [loja]);
+  const novaConta = () => setEditando({ loja_id: lojasLancar.find((l) => l.id === loja)?.id || lojasLancar[0]?.id || '', tipo: 'conta_corrente', nome: '', banco_codigo: '', agencia: '', conta: '', saldo_inicial: '0,00', data_saldo_inicial: hoje(), ativo: true });
+
+  async function salvar(e) {
+    e.preventDefault(); setErro('');
+    try {
+      const corpo = { ...editando, saldo_inicial: numero(editando.saldo_inicial) };
+      if (editando.id) await api(`/financeiro/contas/${editando.id}`, { metodo: 'PUT', corpo });
+      else await api('/financeiro/contas', { metodo: 'POST', corpo });
+      setEditando(null); carregar();
+    } catch (falha) { setErro(falha.message); }
+  }
+  const muda = (campo) => (e) => setEditando({ ...editando, [campo]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+
+  if (!contas) return erro ? <p className="erro" role="alert">{erro}</p> : <p className="cinza">Carregando…</p>;
+  return (
+    <>
+      <div className="linha-filtro">
+        <p className="cinza ajuda">Contas onde os recebimentos e pagamentos entram e saem. Na hora de receber ou pagar um lançamento, escolha a conta.</p>
+        {lojasLancar.length > 0 && <button className="botao-primario" onClick={novaConta}>+ Nova conta</button>}
+      </div>
+      <div className="lista-cadastro">
+        {contas.map((c) => (
+          <button key={c.id} className="cartao item-cadastro" disabled={!c.pode_editar}
+            onClick={() => setEditando({ ...c, saldo_inicial: paraMoeda(c.saldo_inicial), banco_codigo: c.banco_codigo || '', agencia: c.agencia || '', conta: c.conta || '' })}>
+            <span className="item-titulo">
+              <strong>{c.nome}</strong>
+              <span className="etiqueta">{TIPOS_CONTA[c.tipo] || c.tipo}</span>
+              {!c.ativo && <span className="etiqueta inativa">Inativa</span>}
+            </span>
+            <small className="cinza">{[c.loja, c.banco_codigo && `Banco ${c.banco_codigo}`, c.agencia && `Ag. ${c.agencia}`, c.conta && `Conta ${c.conta}`].filter(Boolean).join(' · ')}</small>
+            <small>Saldo: <strong className={Number(c.saldo) < 0 ? 'negativo' : 'positivo'}>R$ {moeda(c.saldo)}</strong></small>
+          </button>
+        ))}
+        {contas.length === 0 && <p className="cinza">Nenhuma conta ainda. O caixa de cada loja aparece aqui no primeiro recebimento.</p>}
+      </div>
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      {editando && (
+        <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && setEditando(null)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-label="Conta">
+            <div className="modal-topo">
+              <h2>{editando.id ? 'Editar conta' : 'Nova conta'}</h2>
+              <button className="fechar" onClick={() => setEditando(null)} aria-label="Fechar">×</button>
+            </div>
+            <form className="formulario" onSubmit={salvar}>
+              <label>Nome<input value={editando.nome} onChange={muda('nome')} required placeholder="Ex.: ITAÚ CONTA CORRENTE" /></label>
+              <div className="dados-veiculo">
+                <label>Tipo
+                  <select value={editando.tipo} onChange={muda('tipo')}>
+                    {Object.entries(TIPOS_CONTA).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+                  </select>
+                </label>
+                {!editando.id && lojasLancar.length > 1 && (
+                  <label>Loja
+                    <select value={editando.loja_id} onChange={muda('loja_id')}>
+                      {lojasLancar.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+                    </select>
+                  </label>
+                )}
+                {editando.tipo !== 'caixa' && (
+                  <>
+                    <label>Banco (código)<input value={editando.banco_codigo} onChange={muda('banco_codigo')} inputMode="numeric" placeholder="Ex.: 341" /></label>
+                    <label>Agência<input value={editando.agencia} onChange={muda('agencia')} /></label>
+                    <label>Conta<input value={editando.conta} onChange={muda('conta')} /></label>
+                  </>
+                )}
+                <label>Saldo inicial (R$)<input value={editando.saldo_inicial} onChange={muda('saldo_inicial')} inputMode="numeric" data-moeda /></label>
+                <label>Saldo em<CampoData value={editando.data_saldo_inicial} onChange={muda('data_saldo_inicial')} required /></label>
+              </div>
+              {editando.id && <label className="linha-check"><input type="checkbox" checked={editando.ativo} onChange={muda('ativo')} /> Conta ativa (aparece na hora de receber e pagar)</label>}
+              {erro && <p className="erro" role="alert">{erro}</p>}
+              <div className="acoes-modal">
+                <button type="button" className="botao-contorno" onClick={() => setEditando(null)}>Cancelar</button>
+                <button className="botao-primario">Salvar</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </>
   );
 }

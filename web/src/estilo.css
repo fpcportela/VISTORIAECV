@@ -835,3 +835,6 @@ button.tf-linha:hover { border-color: var(--forte); }
 .achados-colab { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: #fff7e6; border: 1px solid #f5d9a6; font-size: 14px; }
 .achado-colab { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .achados-colab > .botao-texto { align-self: flex-start; padding: 0; }
+.documentos-fin .lista-arquivos li { flex-wrap: wrap; }
+.documentos-fin .envio-arquivo { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.documentos-fin .envio-arquivo input:not([type=file]) { flex: 1 1 220px; }
