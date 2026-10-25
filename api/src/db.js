@@ -16,6 +16,8 @@ export async function comoUsuario(usuarioId, fn) {
   try {
     await client.query('begin');
     await client.query("select set_config('app.usuario_id', $1, true)", [usuarioId || '']);
+    // "hoje" e o mês são os do Brasil, não os do servidor
+    await client.query("set local time zone 'America/Sao_Paulo'");
     const resultado = await fn(client);
     await client.query('commit');
     return resultado;

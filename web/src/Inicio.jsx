@@ -11,12 +11,14 @@ import { EditorVenda, ListaVendas, SITUACOES } from './Vendas.jsx';
 import Servicos from './Servicos.jsx';
 import Colaboradores from './Colaboradores.jsx';
 import Ponto from './Ponto.jsx';
+import Financeiro from './Financeiro.jsx';
 import { Placa } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [loja, setLoja] = useState('');
   const [tela, setTela] = useState('inicio');
+  const [financeiroAbre, setFinanceiroAbre] = useState({ aba: 'receber', novo: false, chave: 0 });
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [oculto, setOculto] = useState(false);
@@ -60,9 +62,10 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   function abrir(id) {
     setMenuAberto(false);
-    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto'].includes(id)) {
+    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro'].includes(id)) {
       setTela(id); setVistoriaId(null); setBuscaVendas('');
       if (id === 'vendas') setAbaVenda('lista');
+      if (id === 'financeiro') setFinanceiroAbre((f) => ({ aba: 'receber', novo: false, chave: f.chave + 1 }));
     }
     else if (id === 'busca') setConsulta('');
     else emBreve();
@@ -84,6 +87,10 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     const chave = `nova-${++contadorAbas.current}`;
     setAbasVenda((abas) => [...abas, { chave, id: null }]);
     setAbaVenda(chave);
+  };
+  const abrirFinanceiro = (aba, novo = false) => {
+    setMenuAberto(false); setTela('financeiro');
+    setFinanceiroAbre((f) => ({ aba, novo, chave: f.chave + 1 }));
   };
   const abrirVistoria = (id) => { setTela('vistorias'); setVistoriaId(id); };
   const abrirVenda = (id) => {
@@ -234,7 +241,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             <label>Mostrar
               <select defaultValue="ambos"><option value="ambos">A receber e a pagar</option><option>Só a receber</option><option>Só a pagar</option></select>
             </label>
-            <button className="botao-claro" onClick={emBreve}>Relação de contas a receber/pagar</button>
+            <button className="botao-claro" onClick={() => abrirFinanceiro('receber')}>Relação de contas a receber/pagar</button>
           </div>
 
           <div className="contas">
@@ -243,7 +250,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               <section className="bloco" key={titulo} aria-label={titulo}>
                 <div className="bloco-topo">
                   <h2>{titulo}</h2>
-                  {tem(permissao) && <button className="botao-contorno pequeno" onClick={emBreve}>{acao}</button>}
+                  {tem(permissao) && <button className="botao-contorno pequeno" onClick={titulo === 'A pagar' ? () => abrirFinanceiro('pagar', true) : novaVenda}>{acao}</button>}
                 </div>
                 <div className="duas-colunas">
                   <div className="cartao valor">
@@ -362,6 +369,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
             : tela === 'colaboradores' ? <Colaboradores perfil={perfil} loja={loja} />
             : tela === 'ponto' ? <Ponto perfil={perfil} loja={loja} />
+            : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} />
             : tela === 'servicos' ? (() => {
                 const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;
@@ -394,7 +402,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           {tem('vendas.criar') && <button className="botao-central" onClick={novaVenda} aria-label="Nova venda"><Icone nome="mais" tamanho={26} traco={2.6} /></button>}
         </span>
         {tem('vendas.ver') ? <button className={tela === 'vendas' ? 'ativo' : ''} onClick={() => abrir('vendas')}><Icone nome="vendas" tamanho={22} />Vendas</button>
-          : tem('financeiro.ver') ? <button onClick={emBreve}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}
+          : tem('financeiro.ver') ? <button className={tela === 'financeiro' ? 'ativo' : ''} onClick={() => abrir('financeiro')}><Icone nome="financeiro" tamanho={22} />Financeiro</button> : <span />}
         <button className={menuAberto ? 'ativo' : ''} onClick={() => setMenuAberto(true)}><Icone nome="menu" tamanho={22} />Menu</button>
       </nav>
 

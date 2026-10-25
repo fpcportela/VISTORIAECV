@@ -517,3 +517,45 @@ div.linha-loja { display: flex; align-items: center; gap: 8px; }
   .seletor-veiculo { grid-template-columns: 1fr 1fr; }
   .seletor-veiculo input[aria-label="Modelo"] { grid-column: 1 / -1; }
 }
+
+/* Financeiro */
+.cabecalho-secao { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.resumo-fin { display: flex; gap: 10px; flex-wrap: wrap; }
+.resumo-fin .cartao { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; min-width: 140px; }
+.resumo-fin small { color: var(--cinza); font-size: 12px; font-weight: 700; }
+.resumo-fin strong { font-size: 18px; }
+.tabela-fin { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.tf-linha { display: grid; grid-template-columns: 100px minmax(180px, 2fr) 1.3fr 1fr 130px 130px; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font: inherit; font-size: 14px; }
+button.tf-linha { background: #fff; border: 1px solid #e3e7ee; border-radius: 8px; cursor: pointer; color: var(--texto); }
+button.tf-linha:hover { border-color: var(--forte); }
+.tf-cabecalho { font-size: 12px; font-weight: 800; color: var(--cinza); padding-top: 0; padding-bottom: 0; }
+.tf-desc { display: flex; flex-direction: column; min-width: 0; }
+.tf-desc strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-valor { display: flex; flex-direction: column; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tf-linha.cancelado { opacity: .6; }
+.tf-linha.cancelado strong { text-decoration: line-through; }
+.fin-em_aberto { background: #e8f0fe; color: #1e40af; }
+.fin-pago_parcial { background: #fef3c7; color: #92400e; }
+.fin-pago { background: #dcfce7; color: var(--positivo); }
+.fin-cancelado { background: #eef1f5; color: var(--cinza); }
+.fin-vencido { background: #fde8e8; color: var(--negativo); }
+.saldo-lancamento { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; background: #f6f8fb; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+.saldo-lancamento span { display: flex; flex-direction: column; font-size: 12px; color: var(--cinza); font-weight: 700; }
+.saldo-lancamento strong { font-size: 17px; color: var(--texto); }
+.saldo-lancamento .botao-primario { margin-left: auto; }
+.colunas-plano { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 16px; }
+.plano-coluna { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; }
+.plano-grupo { border-top: 1px solid #eef1f5; padding-top: 6px; }
+.plano-linha { display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 18px; font-size: 14px; }
+.plano-linha span:first-child { flex: 1; }
+.plano-linha.grupo { padding-left: 0; }
+.plano-linha.grupo strong { flex: 1; }
+.plano-linha .botao-texto { padding: 0 4px; font-size: 13px; }
+.plano-linha.inativo, .plano-grupo.inativo { opacity: .55; }
+.botao-texto.perigo, .botao-contorno.perigo { color: var(--negativo); }
+@media (max-width: 820px) {
+  .tf-cabecalho { display: none; }
+  .tf-linha { grid-template-columns: 1fr auto; }
+  .tf-linha > span[data-rotulo] { display: none; }
+  .tf-desc { grid-column: 1 / -1; order: -1; }
+}

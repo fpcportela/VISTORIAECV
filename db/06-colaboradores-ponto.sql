@@ -99,8 +99,18 @@ end $$;
 -- Auditoria e atualizado_em
 drop trigger if exists aud_colaboradores on colaboradores;
 create trigger aud_colaboradores after insert or update or delete on colaboradores for each row execute function auditar();
+-- no ponto, a auditoria guarda tudo menos a foto (que já fica no próprio registro)
+create or replace function auditar_ponto() returns trigger
+language plpgsql security definer as $$
+begin
+  insert into auditoria (usuario_id, tabela, registro_id, acao, antes, depois)
+  values (app_usuario_atual(), tg_table_name, case when tg_op = 'DELETE' then old.id else new.id end, lower(tg_op),
+          case when tg_op <> 'INSERT' then to_jsonb(old) - 'foto' end,
+          case when tg_op <> 'DELETE' then to_jsonb(new) - 'foto' end);
+  return null;
+end $$;
 drop trigger if exists aud_ponto_registros on ponto_registros;
-create trigger aud_ponto_registros after insert or update or delete on ponto_registros for each row execute function auditar();
+create trigger aud_ponto_registros after insert or update or delete on ponto_registros for each row execute function auditar_ponto();
 drop trigger if exists aud_ponto_justificativas on ponto_justificativas;
 create trigger aud_ponto_justificativas after insert or update or delete on ponto_justificativas for each row execute function auditar();
 drop trigger if exists upd_colaboradores on colaboradores;
