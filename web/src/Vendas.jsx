@@ -5,7 +5,7 @@ import { PlacaInput, placaValida } from './Placa.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 
-const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Cancelada' };
+export const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Cancelada' };
 const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', cancelada: 'Cancelou' };
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const dataBR = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
@@ -140,7 +140,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
   async function carregar() {
     try {
       const v = await api(`/vendas/${id}`);
-      setVenda(v); setLoja(v.loja_id); aoTitulo?.(`Venda nº ${v.numero}`); setData(String(v.data_venda).slice(0, 10));
+      setVenda(v); setLoja(v.loja_id); aoTitulo?.(`Venda nº ${v.numero}`, v.situacao); setData(String(v.data_venda).slice(0, 10));
       setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' ? 'avulso' : 'atual');
       setItens(v.itens.map((i, k) => ({ servico_id: i.servico_id, placa: i.placa || '', tipo_veiculo: i.tipo_veiculo, veiculo: [i.marca, i.modelo].filter(Boolean).join(' '), quantidade: String(i.quantidade), valor_unit: String(i.valor_unit),
         mesma: k > 0 && !!i.placa && i.placa === v.itens[k - 1].placa })));

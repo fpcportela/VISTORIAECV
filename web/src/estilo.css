@@ -435,3 +435,9 @@ div.linha-loja { display: flex; align-items: center; gap: 8px; }
 .aba-venda .fechar-aba:hover { color: var(--negativo); }
 .abas-vendas .ativa { background: #fff; color: var(--forte); border-color: var(--borda); box-shadow: 0 2px 0 #fff; position: relative; top: 2px; }
 .abas-vendas .nova-aba { padding: 6px 12px; font-size: 20px; line-height: 1; color: var(--forte); background: transparent; border: none; }
+/* Cor da aba = situação da venda (amarelo aberta, verde finalizada, vermelho cancelada) */
+.abas-vendas .aba-venda.st-aberta { background: #fef3c7; color: #92400e; border-color: #f5d27a; }
+.abas-vendas .aba-venda.st-finalizada { background: #dcfce7; color: var(--positivo); border-color: #94d9ad; }
+.abas-vendas .aba-venda.st-cancelada { background: #fde8e8; color: var(--negativo); border-color: #f2a5a5; }
+.abas-vendas .aba-venda[class*=st-] { opacity: .8; }
+.abas-vendas .aba-venda.ativa[class*=st-] { opacity: 1; border-top-width: 3px; box-shadow: none; }

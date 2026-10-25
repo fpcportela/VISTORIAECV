@@ -7,7 +7,7 @@ import ConsultaPlaca from './ConsultaPlaca.jsx';
 import EditorAtalhos from './EditorAtalhos.jsx';
 import UsuariosPermissoes from './UsuariosPermissoes.jsx';
 import { ExecutarVistoria, ListaVistorias, NovaVistoria } from './Vistorias.jsx';
-import { EditorVenda, ListaVendas } from './Vendas.jsx';
+import { EditorVenda, ListaVendas, SITUACOES } from './Vendas.jsx';
 import Servicos from './Servicos.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
@@ -93,7 +93,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     setAbasVenda((abas) => abas.filter((a) => a.id !== id || a.chave === chave).map((a) => (a.chave === chave ? { ...a, chave: id, id } : a)));
     setAbaVenda(id);
   };
-  const tituloAba = (chave, titulo) => setAbasVenda((abas) => abas.map((a) => (a.chave === chave ? { ...a, titulo } : a)));
+  const tituloAba = (chave, titulo, situacao) => setAbasVenda((abas) => abas.map((a) => (a.chave === chave ? { ...a, titulo, situacao } : a)));
   function fecharAba(aba) {
     if (!aba.id && !confirm('Fechar esta venda sem salvar?')) return;
     const resto = abasVenda.filter((a) => a.chave !== aba.chave);
@@ -344,7 +344,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
                 <Icone nome="vendas" tamanho={16} /> Lista
               </button>
               {abasVenda.map((a) => (
-                <span key={a.chave} className={abaVenda === a.chave ? 'aba-venda ativa' : 'aba-venda'}>
+                <span key={a.chave} className={`aba-venda${a.situacao ? ` st-${a.situacao}` : ''}${abaVenda === a.chave ? ' ativa' : ''}`}
+                  title={a.situacao ? SITUACOES[a.situacao] : 'Ainda não salva'}>
                   <button role="tab" aria-selected={abaVenda === a.chave} onClick={() => setAbaVenda(a.chave)}>{a.titulo}</button>
                   <button className="fechar-aba" aria-label={`Fechar ${a.titulo}`} title="Fechar" onClick={() => fecharAba(a)}>×</button>
                 </span>
@@ -369,7 +370,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               {abasVenda.map((a) => (
                 <div key={a.chave} hidden={abaVenda !== a.chave}>
                   <EditorVenda id={a.id} perfil={perfil} lojaInicial={loja} lojasPermitidas={lojasCom('vendas.criar')}
-                    aoVoltar={() => setAbaVenda('lista')} aoSalvo={(id) => vendaSalva(a.chave, id)} aoTitulo={(t) => tituloAba(a.chave, t)} />
+                    aoVoltar={() => setAbaVenda('lista')} aoSalvo={(id) => vendaSalva(a.chave, id)} aoTitulo={(t, s) => tituloAba(a.chave, t, s)} />
                 </div>
               ))}
             </div>
