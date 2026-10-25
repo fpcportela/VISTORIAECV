@@ -6,6 +6,7 @@ import { lerMoeda, paraMoeda, semAcento } from './entrada.js';
 import { SeletorVeiculo } from './Veiculo.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
+import { CampoData } from './Data.jsx';
 
 export const SITUACOES = { aberta: 'Aberta', finalizada: 'Finalizada', cancelada: 'Cancelada' };
 const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', cancelada: 'Cancelou', desconto: 'Deu desconto' };
@@ -92,8 +93,8 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
             <button key={v} role="tab" aria-selected={periodoAtivo === v} className={periodoAtivo === v ? 'ativa' : ''} onClick={() => setIntervalo(PERIODOS[v]())}>{n}</button>
           ))}
         </div>
-        <label className="filtro-data">De<input type="date" value={de} max={ate || undefined} onChange={(e) => setIntervalo([e.target.value, ate])} /></label>
-        <label className="filtro-data">Até<input type="date" value={ate} min={de || undefined} onChange={(e) => setIntervalo([de, e.target.value])} /></label>
+        <label className="filtro-data">De<CampoData value={de} max={ate || undefined} onChange={(e) => setIntervalo([e.target.value, ate])} aria-label="De" /></label>
+        <label className="filtro-data">Até<CampoData value={ate} min={de || undefined} onChange={(e) => setIntervalo([de, e.target.value])} aria-label="Até" /></label>
         <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação">
           <option value="">Todas as situações</option>
           {Object.entries(SITUACOES).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
@@ -187,7 +188,7 @@ function EdicaoLote({ vendas, lojas, aoFechar, aoConcluir }) {
               {responsaveis.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
             </select>
           </label>
-          <label>Data do serviço<input type="date" value={data} onChange={(e) => setData(e.target.value)} /></label>
+          <label>Data do serviço<CampoData value={data} onChange={(e) => setData(e.target.value)} /></label>
           <label>Centro de custo (loja)
             <select value={loja} onChange={(e) => setLoja(e.target.value)}>
               <option value="">Não alterar</option>
@@ -414,7 +415,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
         <legend>Informações</legend>
         <div className="grade-venda">
           <label className="campo">Número<input value={venda ? venda.numero : 'Gerado ao salvar'} readOnly className="somente-leitura" /></label>
-          <label className="campo">Data do serviço<input type="date" value={data} onChange={(e) => setData(e.target.value)} /></label>
+          <label className="campo">Data do serviço<CampoData value={data} onChange={(e) => setData(e.target.value)} /></label>
           <div className="campo">
             <span className="rotulo-campo">Unidade (centro de custo)</span>
             {/* Escolhe a unidade só quando a venda nasce em "Todas as lojas"; depois, troca só com senha */}
@@ -552,7 +553,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, aoVoltar
           {pagamentos.map((pg, n) => (
             <div key={pg.chave} className={`pagamento-venda${ehCartao(pg.forma) ? ' com-cartao' : ''}`}>
               <label><span className="rotulo-campo">Data do pagamento</span>
-                <input type="date" value={pg.data_pagamento} onChange={(e) => mudarPagamento(n, { data_pagamento: e.target.value })} aria-label={`Data do pagamento ${n + 1}`} />
+                <CampoData value={pg.data_pagamento} onChange={(e) => mudarPagamento(n, { data_pagamento: e.target.value })} aria-label={`Data do pagamento ${n + 1}`} />
               </label>
               <label><span className="rotulo-campo">Forma de pagamento</span>
                 <select value={pg.forma} onChange={(e) => mudarPagamento(n, { forma: e.target.value })} aria-label={`Forma do pagamento ${n + 1}`}>

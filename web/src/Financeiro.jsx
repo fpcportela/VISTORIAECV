@@ -3,6 +3,7 @@ import { api, moeda } from './api.js';
 import { paraMoeda } from './entrada.js';
 import { Icone } from './icones.jsx';
 import { criarTem } from './modulos.js';
+import { CampoData } from './Data.jsx';
 
 // Financeiro: contas a receber e a pagar (com parcelas, pagamento parcial,
 // categoria do plano de contas e centro de custo), o plano de contas e os centros de custo.
@@ -112,8 +113,8 @@ function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInic
             <button key={n} role="tab" aria-selected={p[0] === de && p[1] === ate} className={p[0] === de && p[1] === ate ? 'ativa' : ''} onClick={() => setIntervalo(p)}>{n}</button>
           ))}
         </div>
-        <label className="filtro-data">De<input type="date" value={de} onChange={(e) => setIntervalo([e.target.value, ate])} /></label>
-        <label className="filtro-data">Até<input type="date" value={ate} onChange={(e) => setIntervalo([de, e.target.value])} /></label>
+        <label className="filtro-data">De<CampoData value={de} onChange={(e) => setIntervalo([e.target.value, ate])} aria-label="De" /></label>
+        <label className="filtro-data">Até<CampoData value={ate} onChange={(e) => setIntervalo([de, e.target.value])} aria-label="Até" /></label>
         <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação">
           <option value="">Todas as situações</option>
           <option value="aberto">Em aberto</option><option value="vencido">Vencidos</option>
@@ -272,8 +273,8 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
                     </label>
                   )}
                   <label>{id ? 'Valor (R$)' : 'Valor total (R$)'}<input value={f.valor} onChange={muda('valor')} inputMode="numeric" data-moeda required placeholder="0,00" /></label>
-                  <label>{!id && Number(f.parcelas) > 1 ? '1º vencimento' : 'Vencimento'}<input type="date" value={f.vencimento} onChange={muda('vencimento')} required /></label>
-                  <label>Competência<input type="date" value={f.competencia} onChange={muda('competencia')} /></label>
+                  <label>{!id && Number(f.parcelas) > 1 ? '1º vencimento' : 'Vencimento'}<CampoData value={f.vencimento} onChange={muda('vencimento')} required /></label>
+                  <label>Competência<CampoData value={f.competencia} onChange={muda('competencia')} /></label>
                   {!id && (
                     <label>Parcelas
                       <select value={f.parcelas} onChange={muda('parcelas')}>
@@ -354,7 +355,7 @@ function Baixa({ l, receita, aoFechar, aoSalvar }) {
         </div>
         <form className="formulario" onSubmit={salvar}>
           <div className="dados-veiculo">
-            <label>Data<input type="date" value={f.data} onChange={muda('data')} required /></label>
+            <label>Data<CampoData value={f.data} onChange={muda('data')} required /></label>
             <label>Valor (R$)<input value={f.valor} onChange={muda('valor')} inputMode="numeric" data-moeda required /></label>
             <label>Forma de pagamento
               <select value={f.forma_pagamento} onChange={muda('forma_pagamento')}>

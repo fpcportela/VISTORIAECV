@@ -666,3 +666,14 @@ button.tf-linha:hover { border-color: var(--forte); }
 .unidade-venda { display: flex; align-items: center; gap: 6px; }
 .unidade-venda input { flex: 1; min-width: 0; }
 .unidade-venda .botao-texto { min-height: 36px; padding: 6px 8px; }
+
+/* Campo de data DD/MM/AAAA com botão de calendário */
+.campo-data { position: relative; display: flex; align-items: center; min-width: 0; }
+.campo-data > input[type="text"] { width: 100%; min-width: 0; padding-right: 34px; font-variant-numeric: tabular-nums; }
+.campo-data > input[aria-invalid] { border-color: #c62828; }
+.campo-data-cal { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center;
+  width: 28px; height: 28px; padding: 0; border: 0; background: none; color: var(--cinza); cursor: pointer; border-radius: 6px; }
+.campo-data-cal:hover { color: var(--primaria); background: rgba(0,0,0,.05); }
+.campo-data-nativo { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; min-height: 0 !important; }
+.filtro-data .campo-data { flex: none; width: 140px; }
+@media (max-width: 820px) { .filtro-data .campo-data { flex: 1; width: auto; } }

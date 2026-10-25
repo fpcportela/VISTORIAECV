@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, sessao } from './api.js';
 import { criarTem } from './modulos.js';
 import { cpfValido, mascaraCpf, mascaraTelefone } from './documentos.js';
+import { CampoData } from './Data.jsx';
 
 // Cadastro de colaboradores (funcionários das lojas), com arquivos anexados
 // por tipo (RG, CNH, Contrato… e outros que o grupo criar).
@@ -139,7 +140,7 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
               <fieldset className="sem-borda" disabled={!podeEditar}>
                 <label>Nome completo<input value={f.nome} onChange={muda('nome')} required autoComplete="off" /></label>
                 <div className="dados-veiculo">
-                  <label>Data de nascimento<input type="date" value={f.data_nascimento} onChange={muda('data_nascimento')} /></label>
+                  <label>Data de nascimento<CampoData value={f.data_nascimento} onChange={muda('data_nascimento')} /></label>
                   <label>CPF<input value={f.cpf} inputMode="numeric" placeholder="123.456.789-10" onChange={muda('cpf', mascaraCpf)} /></label>
                   <label>Celular<input value={f.celular} inputMode="tel" placeholder="(11) 99999-9999" onChange={muda('celular', mascaraTelefone)} /></label>
                   {cargosDoGrupo.length > 0 ? (
