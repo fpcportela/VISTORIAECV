@@ -26,27 +26,65 @@ export function cnpjValido(cnpj) {
   return dv(12) === Number(cnpj[12]) && dv(13) === Number(cnpj[13]);
 }
 
-export async function consultarCnpj(cnpj) {
-  let resposta;
-  try {
-    resposta = await fetch(`${BRASILAPI}/cnpj/v1/${cnpj}`, { signal: AbortSignal.timeout(12000) });
-  } catch {
-    return { erro: 'Não foi possível consultar a Receita agora. Preencha a razão social manualmente.', status: 502 };
-  }
-  if (resposta.status === 404) return { erro: 'CNPJ não encontrado na Receita.', status: 404 };
-  if (!resposta.ok) return { erro: 'A consulta de CNPJ não respondeu. Preencha a razão social manualmente.', status: 502 };
-  const d = await resposta.json();
-  const telefone = String(d.ddd_telefone_1 || '').replace(/\D/g, '');
+// Formato da BrasilAPI e da Minha Receita (os dois vêm do mesmo projeto)
+const deBrasilApi = (d) => ({
+  razao_social: d.razao_social, nome_fantasia: d.nome_fantasia, situacao: d.descricao_situacao_cadastral,
+  telefone: d.ddd_telefone_1, email: d.email, cep: d.cep,
+  endereco: [d.descricao_tipo_de_logradouro, d.logradouro, d.numero, d.complemento, d.bairro],
+  cidade: d.municipio, uf: d.uf,
+});
+// Formato do CNPJ.ws
+const deCnpjWs = (d) => {
+  const e = d.estabelecimento || {};
   return {
-    cnpj,
-    razao_social: d.razao_social || null,
-    nome_fantasia: d.nome_fantasia || null,
-    situacao: d.descricao_situacao_cadastral || null,
-    telefone: telefone.length >= 10 ? telefone : null,
-    email: d.email ? String(d.email).toLowerCase() : null,
-    cep: d.cep ? String(d.cep).replace(/\D/g, '') : null,
-    endereco: [d.descricao_tipo_de_logradouro, d.logradouro, d.numero, d.complemento, d.bairro].filter(Boolean).join(', ') || null,
-    cidade: d.municipio || null,
-    uf: d.uf || null,
+    razao_social: d.razao_social, nome_fantasia: e.nome_fantasia, situacao: e.situacao_cadastral,
+    telefone: `${e.ddd1 || ''}${e.telefone1 || ''}`, email: e.email, cep: e.cep,
+    endereco: [e.tipo_logradouro, e.logradouro, e.numero, e.complemento, e.bairro],
+    cidade: e.cidade?.nome, uf: e.estado?.sigla,
   };
+};
+
+// Fontes públicas dos dados da Receita, na ordem: se uma estiver fora do ar ou
+// limitando consultas, tenta a próxima.
+const FONTES = [
+  { nome: 'BrasilAPI', url: (c) => `${BRASILAPI}/cnpj/v1/${c}`, ler: deBrasilApi },
+  { nome: 'Minha Receita', url: (c) => `${process.env.MINHARECEITA_URL || 'https://minhareceita.org'}/${c}`, ler: deBrasilApi },
+  { nome: 'CNPJ.ws', url: (c) => `${process.env.CNPJWS_URL || 'https://publica.cnpj.ws/cnpj'}/${c}`, ler: deCnpjWs },
+];
+
+export async function consultarCnpj(cnpj) {
+  let naoAchou = 0;
+  for (const fonte of FONTES) {
+    let resposta;
+    try {
+      resposta = await fetch(fonte.url(cnpj), {
+        headers: { Accept: 'application/json', 'User-Agent': 'VistoriaECV/1.0' },
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (e) {
+      console.error(`[cnpj] ${fonte.nome}: ${e.cause?.code || e.message}`);
+      continue;
+    }
+    if (resposta.status === 404) { naoAchou++; continue; }
+    if (!resposta.ok) { console.error(`[cnpj] ${fonte.nome}: HTTP ${resposta.status}`); continue; }
+    const bruto = await resposta.json().catch(() => null);
+    if (!bruto) continue;
+    const d = fonte.ler(bruto);
+    if (!d.razao_social) continue;
+    const telefone = String(d.telefone || '').replace(/\D/g, '');
+    return {
+      cnpj,
+      razao_social: d.razao_social || null,
+      nome_fantasia: d.nome_fantasia || null,
+      situacao: d.situacao || null,
+      telefone: telefone.length >= 10 ? telefone : null,
+      email: d.email ? String(d.email).toLowerCase() : null,
+      cep: d.cep ? String(d.cep).replace(/\D/g, '') : null,
+      endereco: d.endereco.filter(Boolean).join(', ') || null,
+      cidade: d.cidade || null,
+      uf: d.uf || null,
+    };
+  }
+  if (naoAchou) return { erro: 'CNPJ não encontrado na Receita.', status: 404 };
+  return { erro: 'Não foi possível consultar a Receita agora. Preencha a razão social manualmente.', status: 502 };
 }

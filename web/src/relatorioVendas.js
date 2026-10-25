@@ -21,19 +21,38 @@ export async function gerarPdfVendas({ lista, filtros, empresa }) {
   doc.text(`Gerado em ${new Date().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`, 283, 16, { align: 'right' });
 
   const validas = lista.filter((v) => v.situacao !== 'cancelada');
+  // Venda com vários veículos: a linha da venda mostra DIVERSOS e, logo abaixo do cliente,
+  // uma linha por veículo (placa e marca/modelo), com recuo.
+  const linhas = [];
+  const corpo = [];
+  for (const v of lista) {
+    const veiculos = v.veiculos || [];
+    const varios = veiculos.length > 1;
+    linhas.push({ venda: v });
+    corpo.push([v.numero, dataBR(v.data_venda), v.cliente, formatarDoc(v.cpf_cnpj), varios ? 'DIVERSOS' : veiculos[0]?.placa || '',
+      varios ? `${veiculos.length} veículos` : veiculos[0]?.modelo || '', v.loja, SITUACOES[v.situacao], v.desconto ? real(v.desconto) : '', real(v.valor_total)]);
+    if (varios) {
+      for (const ve of veiculos) {
+        linhas.push({ venda: v, veiculo: true });
+        corpo.push(['', '', { content: `${ve.placa}${ve.modelo ? `   ${ve.modelo}` : ''}`, colSpan: 8, styles: { cellPadding: { top: 0.6, bottom: 0.6, left: 6, right: 1.8 } } }]);
+      }
+    }
+  }
   autoTable(doc, {
     startY: 32,
-    head: [['Nº', 'Data', 'Cliente', 'CPF/CNPJ', 'Placas', 'Marca/Modelo', 'Loja', 'Situação', 'Desconto', 'Total']],
-    body: lista.map((v) => [v.numero, dataBR(v.data_venda), v.cliente, formatarDoc(v.cpf_cnpj), v.placas || '', v.veiculos || '',
-      v.loja, SITUACOES[v.situacao], v.desconto ? real(v.desconto) : '', real(v.valor_total)]),
+    head: [['Nº', 'Data', 'Cliente', 'CPF/CNPJ', 'Placa', 'Marca/Modelo', 'Loja', 'Situação', 'Desconto', 'Total']],
+    body: corpo,
     foot: [['', '', `${lista.length} registro(s)`, '', '', '', '', 'Vendas (sem canceladas)', '', real(validas.reduce((t, v) => t + v.valor_total, 0))]],
     styles: { fontSize: 8, cellPadding: 1.8 },
     headStyles: { fillColor: rgb },
     footStyles: { fillColor: [241, 245, 249], textColor: 30, fontStyle: 'bold' },
     columnStyles: { 0: { cellWidth: 12 }, 5: { cellWidth: 48 }, 8: { halign: 'right' }, 9: { halign: 'right' } },
     didParseCell: (d) => {
-      if (d.section !== 'body' || lista[d.row.index]?.situacao !== 'cancelada') return;
-      d.cell.styles.textColor = d.column.index === 7 ? [197, 34, 31] : [150, 150, 150];
+      if (d.section !== 'body') return;
+      const l = linhas[d.row.index];
+      if (l?.veiculo) { d.cell.styles.fontSize = 7.5; d.cell.styles.textColor = [70, 70, 70]; d.cell.styles.fillColor = [250, 251, 253]; }
+      if (l?.venda.situacao !== 'cancelada') return;
+      d.cell.styles.textColor = d.column.index === 7 && !l.veiculo ? [197, 34, 31] : [150, 150, 150];
       if (d.column.index === 7) d.cell.styles.fontStyle = 'bold';
     },
   });

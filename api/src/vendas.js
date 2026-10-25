@@ -103,8 +103,8 @@ export function rotasVendas(app, { exigeLogin, rota }) {
               c.nome as cliente, c.cpf_cnpj, u.nome as vendedor,
               (select string_agg(distinct ve.placa, ', ') from venda_itens i join veiculos ve on ve.id = i.veiculo_id
                 where i.venda_id = v.id) as placas,
-              (select string_agg(distinct nullif(concat_ws(' ', ve.marca, ve.modelo), ''), ', ') from venda_itens i join veiculos ve on ve.id = i.veiculo_id
-                where i.venda_id = v.id) as veiculos
+              (select json_agg(x order by x.placa) from (select distinct ve.placa, nullif(concat_ws(' ', ve.marca, ve.modelo), '') as modelo
+                 from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id) x) as veiculos
          from vendas v
          join lojas l on l.id = v.loja_id
          join clientes c on c.id = v.cliente_id

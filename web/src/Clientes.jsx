@@ -85,6 +85,10 @@ function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicia
   const [extra, setExtra] = useState(null); // empresas do grupo, vendas, pode_editar
   const [grupos, setGrupos] = useState([]);
   const [loja, setLoja] = useState(lojas.some((l) => l.id === lojaInicial) ? lojaInicial : lojas[0]?.id || '');
+  const gruposLojas = [...lojas.reduce((m, l) => {
+    const g = m.get(l.empresa_id) || { id: l.empresa_id, nome: l.empresa, loja: l.id, lojas: [] };
+    g.lojas.push(l.id); return m.set(l.empresa_id, g);
+  }, new Map()).values()];
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -151,9 +155,12 @@ function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicia
               ))}
             </div>
           )}
-          {!id && lojas.length > 1 && (
-            <label>Loja (grupo do sistema)
-              <select value={loja} onChange={(e) => setLoja(e.target.value)}>{lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}</select>
+          {/* o cliente é do grupo: a loja só serve para saber qual grupo; só pergunta quando há mais de um */}
+          {!id && gruposLojas.length > 1 && (
+            <label>Grupo
+              <select value={gruposLojas.find((g) => g.lojas.includes(loja))?.loja || ''} onChange={(e) => setLoja(e.target.value)}>
+                {gruposLojas.map((g) => <option key={g.id} value={g.loja}>{g.nome}</option>)}
+              </select>
             </label>
           )}
           {c.tipo !== 'grupo' && (
