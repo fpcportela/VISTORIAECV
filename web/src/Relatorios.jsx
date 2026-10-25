@@ -95,9 +95,11 @@ export function CampoCliente({ cliente, aoEscolher, obrigatorio }) {
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState([]);
   const [aberta, setAberta] = useState(false);
+  const [buscou, setBuscou] = useState('');
   useEffect(() => {
-    if (busca.trim().length < 2) { setLista([]); return undefined; }
-    const t = setTimeout(() => api(`/clientes?busca=${encodeURIComponent(busca)}`).then((l) => setLista(l.filter((c) => c.tipo !== 'avulso'))).catch(() => setLista([])), 300);
+    if (busca.trim().length < 2) { setLista([]); setBuscou(''); return undefined; }
+    const t = setTimeout(() => api(`/clientes?busca=${encodeURIComponent(busca)}`)
+      .then((l) => { setLista(l.filter((c) => !(c.tipo === 'avulso' && c.nome === 'CLIENTE PARTICULAR / AVULSO'))); setBuscou(busca); }).catch(() => setLista([])), 300);
     return () => clearTimeout(t);
   }, [busca]);
   if (cliente) {
@@ -121,6 +123,10 @@ export function CampoCliente({ cliente, aoEscolher, obrigatorio }) {
             </button></li>
           ))}
         </ul>
+      )}
+      {aberta && buscou === busca && busca.trim().length >= 2 && lista.length === 0 && (
+        <ul className="sugestoes-cliente"><li className="cinza sem-cliente">Nenhum cliente cadastrado com esse nome, CPF ou CNPJ
+          (o "cliente particular / avulso" genérico não entra no faturamento).</li></ul>
       )}
     </span>
   );
@@ -309,6 +315,7 @@ function Faturar({ perfil, loja }) {
   const [cliente, setCliente] = useState(null);
   const [f, setF] = useState({ de: '', ate: '' });
   const [linhas, setLinhas] = useState(null);
+  const [motivos, setMotivos] = useState(null);
   const [marcadas, setMarcadas] = useState(new Set());
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
@@ -324,7 +331,19 @@ function Faturar({ perfil, loja }) {
     if (f.ate) q.set('ate', f.ate);
     try {
       const l = await api(`/relatorios/vendas?${q}`);
-      setLinhas(l); setMarcadas(new Set(l.map((v) => v.id)));
+      setLinhas(l); setMarcadas(new Set(l.map((v) => v.id))); setMotivos(null);
+      // nada a faturar: mostra por que as vendas do cliente ficaram de fora
+      if (!l.length) {
+        q.delete('faturar');
+        const todas = await api(`/relatorios/vendas?${q}`);
+        const conta = {};
+        for (const v of todas) {
+          const m = v.situacao === 'cancelada' ? 'cancelada(s)' : v.situacao === 'futuro' ? 'FUTURO (falta confirmar)'
+            : v.faturada_em ? 'já faturada(s)' : 'já paga(s)';
+          conta[m] = (conta[m] || 0) + 1;
+        }
+        setMotivos({ total: todas.length, conta });
+      }
     } catch (falha) { setErro(falha.message); }
   }
   useEffect(() => { setLinhas(null); setMarcadas(new Set()); if (cliente) buscar(); }, [cliente]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -348,7 +367,14 @@ function Faturar({ perfil, loja }) {
       </form>
       {aviso && <p className="aviso-ok" role="status">{aviso}</p>}
       {erro && <p className="erro" role="alert">{erro}</p>}
-      {linhas && (linhas.length === 0 ? <p className="cinza vazio">Nenhuma venda a faturar para este cliente{f.de || f.ate ? ' no período' : ''}.</p> : (
+      {linhas && (linhas.length === 0 ? (
+        <p className="cinza vazio">
+          Nenhuma venda a faturar para este cliente{f.de || f.ate ? ' no período' : ''}.
+          {motivos && (motivos.total === 0
+            ? ` Ele não tem vendas${f.de || f.ate ? ' no período' : ''}${loja ? ' nesta loja (troque a loja no topo para "Todas as lojas")' : ''}.`
+            : ` Das ${motivos.total} venda(s) dele: ${Object.entries(motivos.conta).map(([m, n]) => `${n} ${m}`).join(', ')}. Só entram vendas com valor ainda a receber (sem pagamento, ou pagas como "Faturado").`)}
+        </p>
+      ) : (
         <div className="tabela-relatorio-caixa">
           <table className="tabela-relatorio">
             <thead>

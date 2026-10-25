@@ -909,3 +909,4 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .lista-menu .selos-menu { margin-left: 8px; }
 .selo-menu-celular { position: absolute; top: 2px; right: 18%; }
 .barra-inferior button { position: relative; }
+.sugestoes-cliente .sem-cliente { padding: 10px 12px; font-size: 14px; }
