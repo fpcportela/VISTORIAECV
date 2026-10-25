@@ -501,3 +501,19 @@ div.linha-loja { display: flex; align-items: center; gap: 8px; }
 .filtros label.filtro-check { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; white-space: nowrap; }
 .filtros .filtro-check input { width: 18px; height: 18px; min-height: 0; padding: 0; accent-color: var(--forte); }
 .filtros input[type=month] { max-width: 220px; }
+/* Placa em miniatura (abas e lista de vendas) */
+.placa-br.mini { --l: 86px; box-shadow: none; }
+.placa-br.mini .placa-br-faixa small { display: none; }
+.aba-venda .placa-br.mini { margin: -2px 0; }
+.lv-placa-cliente { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lv-placa-cliente strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Tipo, marca e modelo do veículo em cada item da venda */
+.item-venda .veiculo-item { grid-column: 1 / -1; order: 1; margin-top: -4px; padding-bottom: 8px; border-bottom: 1px dashed #e3e7ee; }
+.seletor-veiculo { display: grid; grid-template-columns: 130px minmax(140px, 1fr) minmax(200px, 2fr); gap: 8px; align-items: center; }
+.seletor-veiculo select, .seletor-veiculo input { border: 1px solid var(--borda); border-radius: 6px; padding: 7px 10px; font: inherit; font-size: 14px; min-height: 38px; background: #fff; color: var(--texto); min-width: 0; }
+.seletor-veiculo :disabled { background: #f6f7f9; color: #4b5563; }
+.aviso-fipe { grid-column: 1 / -1; }
+@media (max-width: 820px) {
+  .seletor-veiculo { grid-template-columns: 1fr 1fr; }
+  .seletor-veiculo input[aria-label="Modelo"] { grid-column: 1 / -1; }
+}

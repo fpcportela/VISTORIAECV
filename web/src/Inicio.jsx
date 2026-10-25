@@ -11,6 +11,7 @@ import { EditorVenda, ListaVendas, SITUACOES } from './Vendas.jsx';
 import Servicos from './Servicos.jsx';
 import Colaboradores from './Colaboradores.jsx';
 import Ponto from './Ponto.jsx';
+import { Placa } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
@@ -81,13 +82,13 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const novaVenda = () => {
     setMenuAberto(false); setTela('vendas');
     const chave = `nova-${++contadorAbas.current}`;
-    setAbasVenda((abas) => [...abas, { chave, id: null, titulo: 'Nova venda' }]);
+    setAbasVenda((abas) => [...abas, { chave, id: null }]);
     setAbaVenda(chave);
   };
   const abrirVistoria = (id) => { setTela('vistorias'); setVistoriaId(id); };
   const abrirVenda = (id) => {
     setTela('vendas');
-    setAbasVenda((abas) => (abas.some((a) => a.id === id) ? abas : [...abas, { chave: id, id, titulo: 'Venda' }]));
+    setAbasVenda((abas) => (abas.some((a) => a.id === id) ? abas : [...abas, { chave: id, id }]));
     setAbaVenda(id);
   };
   const vendaSalva = (chave, id) => {
@@ -95,7 +96,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     setAbasVenda((abas) => abas.filter((a) => a.id !== id || a.chave === chave).map((a) => (a.chave === chave ? { ...a, chave: id, id } : a)));
     setAbaVenda(id);
   };
-  const tituloAba = (chave, titulo, situacao) => setAbasVenda((abas) => abas.map((a) => (a.chave === chave ? { ...a, titulo, situacao } : a)));
+  const tituloAba = (chave, info) => setAbasVenda((abas) => abas.map((a) => (a.chave === chave ? { ...a, ...info } : a)));
+  const nomeAba = (a) => (a.numero ? `Venda nº ${a.numero}` : a.id ? 'Venda' : 'Nova venda');
   function fecharAba(aba) {
     if (!aba.id && !confirm('Fechar esta venda sem salvar?')) return;
     const resto = abasVenda.filter((a) => a.chave !== aba.chave);
@@ -347,9 +349,11 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               </button>
               {abasVenda.map((a) => (
                 <span key={a.chave} className={`aba-venda${a.situacao ? ` st-${a.situacao}` : ''}${abaVenda === a.chave ? ' ativa' : ''}`}
-                  title={a.situacao ? SITUACOES[a.situacao] : 'Ainda não salva'}>
-                  <button role="tab" aria-selected={abaVenda === a.chave} onClick={() => setAbaVenda(a.chave)}>{a.titulo}</button>
-                  <button className="fechar-aba" aria-label={`Fechar ${a.titulo}`} title="Fechar" onClick={() => fecharAba(a)}>×</button>
+                  title={`${nomeAba(a)} · ${a.situacao ? SITUACOES[a.situacao] : 'ainda não salva'}`}>
+                  <button role="tab" aria-selected={abaVenda === a.chave} onClick={() => setAbaVenda(a.chave)} aria-label={`${nomeAba(a)}${a.placa ? `, placa ${a.placa}` : ''}`}>
+                    {a.placa ? <Placa placa={a.placa} tamanho="mini" /> : nomeAba(a)}
+                  </button>
+                  <button className="fechar-aba" aria-label={`Fechar ${nomeAba(a)}`} title="Fechar" onClick={() => fecharAba(a)}>×</button>
                 </span>
               ))}
               {tem('vendas.criar') && <button className="nova-aba" onClick={novaVenda} title="Nova venda" aria-label="Nova venda em outra aba">+</button>}
@@ -374,7 +378,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               {abasVenda.map((a) => (
                 <div key={a.chave} hidden={abaVenda !== a.chave}>
                   <EditorVenda id={a.id} perfil={perfil} lojaInicial={loja} lojasPermitidas={lojasCom('vendas.criar')}
-                    aoVoltar={() => setAbaVenda('lista')} aoSalvo={(id) => vendaSalva(a.chave, id)} aoTitulo={(t, s) => tituloAba(a.chave, t, s)} />
+                    aoVoltar={() => setAbaVenda('lista')} aoSalvo={(id) => vendaSalva(a.chave, id)} aoTitulo={(info) => tituloAba(a.chave, info)} />
                 </div>
               ))}
             </div>

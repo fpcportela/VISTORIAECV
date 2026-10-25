@@ -187,9 +187,10 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         if (!placa) throw new Recusa(400, `${linha} placa inválida.`);
         const tv = TIPOS_VEICULO.includes(i.tipo_veiculo) ? i.tipo_veiculo : null;
         const ve = (await db.query(
-          `insert into veiculos (placa, tipo) values ($1, coalesce($2::tipo_veiculo, 'carro'))
-           on conflict (placa) do update set tipo = coalesce($2::tipo_veiculo, veiculos.tipo)
-           returning id, placa, marca, modelo`, [placa, tv])).rows[0];
+          `insert into veiculos (placa, tipo, marca, modelo) values ($1, coalesce($2::tipo_veiculo, 'carro'), $3, $4)
+           on conflict (placa) do update set tipo = coalesce($2::tipo_veiculo, veiculos.tipo),
+                  marca = coalesce($3, veiculos.marca), modelo = coalesce($4, veiculos.modelo)
+           returning id, placa, marca, modelo`, [placa, tv, texto(i.marca, 60)?.toUpperCase() ?? null, texto(i.modelo, 120)?.toUpperCase() ?? null])).rows[0];
         veiculo = ve.id;
         descricao = [[ve.marca, ve.modelo].filter(Boolean).join(' '), ve.placa].filter(Boolean).join(' // ');
       }

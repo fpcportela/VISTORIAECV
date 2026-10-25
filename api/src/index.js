@@ -5,6 +5,7 @@ import { rotasAcessos } from './acessos.js';
 import { rotasVistorias } from './vistorias.js';
 import { rotasVendas } from './vendas.js';
 import { rotasPessoas } from './pessoas.js';
+import { rotasFipe } from './fipe.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
@@ -204,5 +205,6 @@ rotasAcessos(app, { exigeLogin, rota });
 rotasVistorias(app, { exigeLogin, rota });
 rotasVendas(app, { exigeLogin, rota });
 rotasPessoas(app, { exigeLogin, rota });
+rotasFipe(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));
