@@ -91,7 +91,7 @@ export async function comprovanteDoDia(usuarioId, colaboradorId, data) {
   else if (!ctx.phone) envio = 'sem_whatsapp';
   else {
     try {
-      const r = await enviarDocumento(ctx.phone, tel, { bytes: arquivo, nome, parametros: [ctx.colaborador.nome.split(' ')[0], dataBR(data)] });
+      const r = await enviarDocumento(ctx.phone, tel, { bytes: arquivo, nome, parametros: [ctx.colaborador.nome.split(' ')[0], dataBR(data)], legenda: `Comprovante do ponto de ${dataBR(data)} - ${ctx.colaborador.nome}` });
       envio = r.status === 'simulada' ? 'simulado' : 'enviado';
     } catch (e) { envio = 'falhou'; erro = e.message; }
   }

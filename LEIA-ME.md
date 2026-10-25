@@ -69,6 +69,30 @@ modelo aprovado com cabeçalho de **documento**, chamado `comprovante_ponto`, co
 {{1}} para o nome e {{2}} para a data. Para usar outro nome, coloque `WHATSAPP_MODELO_PONTO=nome-do-modelo`
 no `api/.env`. O comprovante também fica guardado no espelho do ponto (ícone 🧾 na coluna Horas).
 
+### WhatsApp por QR code, sem a Meta (Evolution API, não oficial)
+
+Liga o WhatsApp normal de um celular lendo um QR code, como no WhatsApp Web. Não precisa de conta na
+Meta nem de modelos aprovados. **Atenção:** é contra as regras do WhatsApp e o número pode ser bloqueado,
+principalmente se mandar muitas mensagens para quem não falou com a loja antes. Use um número de teste.
+
+1. Invente uma chave longa e coloque a mesma `EVOLUTION_API_KEY` no `.env` da raiz (o do Docker) e no `api/.env`.
+2. No `api/.env`, coloque também:
+
+```
+WHATSAPP_PROVEDOR=evolution
+EVOLUTION_URL=http://localhost:8080
+EVOLUTION_API_KEY=a-mesma-chave
+```
+
+3. Rode `npm run whatsapp:ligar` (baixa e liga o serviço da Evolution no Docker, ao lado do banco).
+4. Religue a API (`npm run iniciar`). No sistema, em WhatsApp > Configurar, clique em **Mostrar QR code**
+   e leia com o celular em WhatsApp > Dispositivos conectados > Conectar dispositivo.
+
+As mensagens recebidas chegam no quadro e o robô responde, mesmo no Mac (não precisa de endereço público).
+O comprovante do ponto vai como arquivo, sem modelo. Para desligar o serviço: `npm run whatsapp:parar`.
+Se a API não estiver no mesmo computador do Docker, ajuste `EVOLUTION_WEBHOOK_URL`
+(padrão `http://host.docker.internal:3001/api/whatsapp/evolution`).
+
 ### Robô de atendimento
 
 Em WhatsApp > Robô de atendimento cada grupo monta as perguntas (nome, CPF/CNPJ, placa, tipo de

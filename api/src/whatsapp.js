@@ -12,8 +12,15 @@ import { CAMPOS, ROBO_PADRAO, atenderComRobo, iaDisponivel } from './robo.js';
 //   WHATSAPP_VERIFY_TOKEN=...       senha que você inventa e repete no cadastro do webhook
 //   WHATSAPP_MODELO_CODIGO=codigo_acesso   modelo de autenticação aprovado (código da senha)
 // O número de cada grupo (phone_number_id) é cadastrado na tela WhatsApp > Configurar.
+//
+// Opção sem a Meta (não oficial, por QR code): a Evolution API, que roda no Docker ao lado do banco.
+//   WHATSAPP_PROVEDOR=evolution
+//   EVOLUTION_URL=http://localhost:8080
+//   EVOLUTION_API_KEY=...           a mesma chave do serviço da Evolution (docker-compose)
+//   EVOLUTION_WEBHOOK_URL=http://host.docker.internal:3001/api/whatsapp/evolution
+// Cada grupo vira uma "instância" da Evolution; o celular é ligado lendo o QR code em WhatsApp > Configurar.
 
-const provedor = () => (process.env.WHATSAPP_PROVEDOR === 'meta' ? 'meta' : 'teste');
+const provedor = () => (['meta', 'evolution'].includes(process.env.WHATSAPP_PROVEDOR) ? process.env.WHATSAPP_PROVEDOR : 'teste');
 const GRAPH = process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com/v21.0';
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
 
@@ -53,9 +60,78 @@ async function chamarMeta(phoneNumberId, corpo) {
   return d?.messages?.[0]?.id || null;
 }
 
+// ------------------------------------------------------------ Evolution API (QR code)
+const EVO = () => (process.env.EVOLUTION_URL || 'http://localhost:8080').replace(/\/+$/, '');
+const instanciaDoGrupo = (empresa) => `vistoria-${empresa}`;
+// Senha que a Evolution manda no cabeçalho do webhook (vem da própria chave, sem outra configuração)
+const chaveWebhook = () => crypto.createHash('sha256').update(`webhook:${process.env.EVOLUTION_API_KEY || ''}`).digest('hex');
+
+function textoErroEvo(d) {
+  const m = d?.response?.message ?? d?.message ?? d?.error;
+  const lista = Array.isArray(m) ? m : [m];
+  if (lista.some((x) => x && typeof x === 'object' && x.exists === false)) return 'este número não tem WhatsApp';
+  return lista.map((x) => (typeof x === 'string' ? x : x ? JSON.stringify(x) : '')).filter(Boolean).join('; ') || 'erro desconhecido';
+}
+
+async function chamarEvolution(caminho, { metodo = 'GET', corpo } = {}) {
+  const chave = process.env.EVOLUTION_API_KEY;
+  if (!chave) throw new ErroWhatsApp('O WhatsApp por QR code ainda não foi configurado. Coloque a EVOLUTION_API_KEY no arquivo api/.env.');
+  const r = await fetch(`${EVO()}${caminho}`, {
+    method: metodo,
+    headers: { apikey: chave, 'Content-Type': 'application/json' },
+    body: corpo ? JSON.stringify(corpo) : undefined,
+    signal: AbortSignal.timeout(30000),
+  }).catch(() => { throw new ErroWhatsApp('O serviço do WhatsApp (Evolution) não está ligado. No Mac, rode: npm run whatsapp:ligar'); });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = new ErroWhatsApp(`O WhatsApp recusou: ${textoErroEvo(d)}.`);
+    e.status = r.status;
+    throw e;
+  }
+  return d;
+}
+
+async function enviarEvolution(instancia, caminho, corpo) {
+  if (!instancia) throw new ErroWhatsApp('Ligue o WhatsApp deste grupo em WhatsApp > Configurar (ler o QR code).');
+  const d = await chamarEvolution(`/message/${caminho}/${encodeURIComponent(instancia)}`, { metodo: 'POST', corpo });
+  return { id_externo: d?.key?.id || null, status: 'enviada' };
+}
+
+// Situação da instância do grupo: sem_instancia | close | connecting | open
+async function estadoEvolution(instancia) {
+  try {
+    const d = await chamarEvolution(`/instance/connectionState/${encodeURIComponent(instancia)}`);
+    return d?.instance?.state || d?.state || 'close';
+  } catch (e) {
+    if (e.status === 404) return 'sem_instancia';
+    throw e;
+  }
+}
+
+async function prepararInstancia(instancia) {
+  const webhook = {
+    enabled: true,
+    url: process.env.EVOLUTION_WEBHOOK_URL || 'http://host.docker.internal:3001/api/whatsapp/evolution',
+    headers: { 'x-vistoria-chave': chaveWebhook() },
+    byEvents: false,
+    base64: false,
+    events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
+  };
+  if ((await estadoEvolution(instancia)) === 'sem_instancia') {
+    await chamarEvolution('/instance/create', {
+      metodo: 'POST',
+      corpo: { instanceName: instancia, integration: 'WHATSAPP-BAILEYS', qrcode: true, groupsIgnore: true, rejectCall: false, alwaysOnline: false, readMessages: false, webhook },
+    });
+  } else {
+    // confere o endereço do webhook a cada ligação (pode ter mudado no .env)
+    await chamarEvolution(`/webhook/set/${encodeURIComponent(instancia)}`, { metodo: 'POST', corpo: { webhook } });
+  }
+}
+
 // Devolve { id_externo, status }
 export async function enviarTexto(phoneNumberId, para, corpo) {
   if (provedor() === 'teste') return { id_externo: `teste-${crypto.randomUUID()}`, status: 'simulada' };
+  if (provedor() === 'evolution') return enviarEvolution(phoneNumberId, 'sendText', { number: para, text: corpo });
   const id = await chamarMeta(phoneNumberId, { to: para, type: 'text', text: { body: corpo, preview_url: false } });
   return { id_externo: id, status: 'enviada' };
 }
@@ -64,10 +140,16 @@ export async function enviarTexto(phoneNumberId, para, corpo) {
 // 24 horas (ex.: comprovante do ponto). O modelo precisa ter cabeçalho de DOCUMENTO e o corpo com
 // {{1}} = nome e {{2}} = data. Devolve { id_externo, status }.
 //   WHATSAPP_MODELO_PONTO=comprovante_ponto
-export async function enviarDocumento(phoneNumberId, para, { bytes, nome, mime = 'application/pdf', parametros = [] }) {
+export async function enviarDocumento(phoneNumberId, para, { bytes, nome, mime = 'application/pdf', parametros = [], legenda }) {
   if (provedor() === 'teste') {
     console.log(`[WhatsApp modo teste] documento ${nome} (${bytes.length} bytes) para ${para}`);
     return { id_externo: `teste-${crypto.randomUUID()}`, status: 'simulada' };
+  }
+  if (provedor() === 'evolution') {
+    // sem modelo aprovado: o arquivo vai direto, com a legenda
+    return enviarEvolution(phoneNumberId, 'sendMedia', {
+      number: para, mediatype: 'document', mimetype: mime, fileName: nome, caption: legenda || nome, media: Buffer.from(bytes).toString('base64'),
+    });
   }
   const token = process.env.WHATSAPP_TOKEN;
   if (!token) throw new ErroWhatsApp('O WhatsApp ainda não foi configurado. Coloque o WHATSAPP_TOKEN no arquivo api/.env.');
@@ -103,6 +185,12 @@ async function enviarCodigo(phoneNumberId, para, codigo) {
   if (provedor() === 'teste') {
     // modo teste: o código aparece só no terminal da API (quem tem acesso ao servidor)
     console.log(`[WhatsApp modo teste] código de senha para ${para}: ${codigo}`);
+    return;
+  }
+  if (provedor() === 'evolution') {
+    await enviarEvolution(phoneNumberId, 'sendText', {
+      number: para, text: `Seu código para trocar a senha do Vistoria ECV é *${codigo}*. Ele vale por 15 minutos. Não passe este código para ninguém.`,
+    });
     return;
   }
   await chamarMeta(phoneNumberId, {
@@ -210,6 +298,105 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     res.sendStatus(200);
     // o robô responde depois (a Meta quer o 200 rápido)
     for (const c of recebidos) atenderComRobo(c, { enviarTexto, nacional });
+  }));
+
+  // ------------------------------------------------------------ webhook da Evolution (sem login)
+  const TIPOS_EVO = {
+    imageMessage: 'Imagem', audioMessage: 'Áudio', documentMessage: 'Documento', documentWithCaptionMessage: 'Documento',
+    videoMessage: 'Vídeo', locationMessage: 'Localização', stickerMessage: 'Figurinha', contactMessage: 'Contato',
+  };
+  const STATUS_EVO = { DELIVERY_ACK: 'entregue', READ: 'lida', PLAYED: 'lida', ERROR: 'falhou' };
+  app.post('/api/whatsapp/evolution', rota(async (req, res) => {
+    const recebida = String(req.headers['x-vistoria-chave'] || '');
+    const esperada = process.env.EVOLUTION_API_KEY ? chaveWebhook() : '';
+    if (!esperada || recebida.length !== esperada.length || !crypto.timingSafeEqual(Buffer.from(recebida), Buffer.from(esperada))) {
+      return res.sendStatus(401);
+    }
+    const { event, instance, data } = req.body || {};
+    const lista = Array.isArray(data) ? data : data ? [data] : [];
+    const recebidos = new Set();
+    await comoUsuario(null, async (db) => {
+      if (event === 'messages.upsert') {
+        for (const m of lista) {
+          const jid = String(m?.key?.remoteJid || '');
+          // só conversas de pessoas (sem grupos, status e o que a própria loja mandou)
+          if (m?.key?.fromMe || !jid.endsWith('@s.whatsapp.net')) continue;
+          const msg = m.message || {};
+          const corpo = msg.conversation || msg.extendedTextMessage?.text
+            || msg.buttonsResponseMessage?.selectedDisplayText || msg.listResponseMessage?.title
+            || msg.imageMessage?.caption || msg.videoMessage?.caption
+            || `[${TIPOS_EVO[m.messageType] || 'Mensagem'} recebida: abra no celular]`;
+          const c = (await db.query('select app_whatsapp_receber($1, $2, $3, $4, $5, to_timestamp($6)) as id',
+            [instance, digitos(jid.split('@')[0]), m.pushName || null, String(corpo).slice(0, 4000), m.key.id || null,
+              Number(m.messageTimestamp) || Date.now() / 1000])).rows[0].id;
+          if (c) recebidos.add(c);
+        }
+      } else if (event === 'messages.update') {
+        for (const s of lista) {
+          const st = STATUS_EVO[s?.status];
+          if (st && (s.keyId || s.messageId)) await db.query('select app_whatsapp_status($1, $2, null)', [s.keyId || s.messageId, st]);
+        }
+      }
+    });
+    res.sendStatus(200);
+    for (const c of recebidos) atenderComRobo(c, { enviarTexto, nacional });
+  }));
+
+  // ------------------------------------------------------------ ligar o celular por QR code (Evolution)
+  const grupoDoMaster = async (db) => {
+    if (!(await db.query('select eh_admin_rede() as m')).rows[0].m) throw new Recusa(403, 'Só o master liga o WhatsApp do grupo.');
+    return grupoDoWhatsApp(db, 'whatsapp.ver');
+  };
+  const exigirEvolution = () => {
+    if (provedor() !== 'evolution') throw new Recusa(400, 'O WhatsApp por QR code não está ativo. Coloque WHATSAPP_PROVEDOR=evolution no api/.env.');
+  };
+
+  app.get('/api/whatsapp/evolution/estado', exigeLogin, comErroZap(async (req, res) => {
+    exigirEvolution();
+    const empresa = await comoUsuario(req.usuarioId, (db) => grupoDoWhatsApp(db, 'whatsapp.ver'));
+    const instancia = instanciaDoGrupo(empresa);
+    const estado = await estadoEvolution(instancia);
+    let numero = null, nome = null;
+    if (estado === 'open') {
+      const d = await chamarEvolution(`/instance/fetchInstances?instanceName=${encodeURIComponent(instancia)}`).catch(() => null);
+      const i = Array.isArray(d) ? d[0] : d;
+      numero = digitos(String(i?.ownerJid || i?.instance?.owner || '').split('@')[0]) || null;
+      nome = i?.profileName || i?.instance?.profileName || null;
+      if (numero) {
+        await comoUsuario(req.usuarioId, (db) => db.query(
+          'update whatsapp_numeros set numero = $2, atualizado_em = now() where phone_number_id = $1 and numero is distinct from $2', [instancia, numero]));
+      }
+    }
+    res.json({ estado, numero, nome });
+  }));
+
+  app.post('/api/whatsapp/evolution/conectar', exigeLogin, comErroZap(async (req, res) => {
+    exigirEvolution();
+    const empresa = await comoUsuario(req.usuarioId, async (db) => {
+      const e = await grupoDoMaster(db);
+      const instancia = instanciaDoGrupo(e);
+      if ((await db.query('select 1 from whatsapp_numeros where phone_number_id = $1 and empresa_id <> $2', [instancia, e])).rowCount) {
+        throw new Recusa(400, 'Este número já está ligado a outro grupo.');
+      }
+      await db.query(
+        `insert into whatsapp_numeros (empresa_id, phone_number_id, numero) values ($1, $2, null)
+         on conflict (empresa_id) do update set phone_number_id = $2, ativo = true, atualizado_em = now()`, [e, instancia]);
+      return e;
+    });
+    const instancia = instanciaDoGrupo(empresa);
+    await prepararInstancia(instancia);
+    if ((await estadoEvolution(instancia)) === 'open') return res.json({ estado: 'open' });
+    const d = await chamarEvolution(`/instance/connect/${encodeURIComponent(instancia)}`);
+    res.json({ estado: 'connecting', qr: d?.base64 || null, codigo: d?.pairingCode || null });
+  }));
+
+  app.post('/api/whatsapp/evolution/desconectar', exigeLogin, comErroZap(async (req, res) => {
+    exigirEvolution();
+    const empresa = await comoUsuario(req.usuarioId, grupoDoMaster);
+    await chamarEvolution(`/instance/logout/${encodeURIComponent(instanciaDoGrupo(empresa))}`, { metodo: 'DELETE' }).catch((e) => {
+      if (e.status !== 404 && e.status !== 400) throw e;
+    });
+    res.json({ ok: true });
   }));
 
   // ------------------------------------------------------------ situação e número do grupo

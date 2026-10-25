@@ -53,7 +53,9 @@ export default function WhatsApp({ perfil, loja, aoVenda }) {
       {situacao.provedor === 'teste' ? (
         <p className="aviso-zap"><strong>Modo teste:</strong> as mensagens ficam só no sistema e não saem pelo WhatsApp. Para ligar de verdade, coloque as chaves da API oficial no servidor (veja o LEIA-ME, parte WhatsApp).</p>
       ) : !situacao.numero ? (
-        <p className="aviso-zap"><strong>Falta o número:</strong> {situacao.master ? 'clique em Configurar e informe o ID do número do WhatsApp deste grupo.' : 'peça ao master para cadastrar o número do WhatsApp deste grupo.'}</p>
+        <p className="aviso-zap"><strong>Falta o número:</strong> {situacao.provedor === 'evolution'
+          ? (situacao.master ? 'clique em Configurar e leia o QR code com o celular do WhatsApp deste grupo.' : 'peça ao master para ligar o celular do WhatsApp deste grupo.')
+          : (situacao.master ? 'clique em Configurar e informe o ID do número do WhatsApp deste grupo.' : 'peça ao master para cadastrar o número do WhatsApp deste grupo.')}</p>
       ) : null}
       <div className="abas" role="tablist">
         <button role="tab" aria-selected={aba === 'chamados'} className={aba === 'chamados' ? 'ativa' : ''} onClick={() => setAba('chamados')}>Chamados</button>
@@ -474,7 +476,81 @@ function Simular({ aoFechar, aoEnviar }) {
   );
 }
 
+// WhatsApp por QR code (Evolution): o master lê o QR code com o celular do grupo, como no WhatsApp Web
+const ESTADOS_QR = { open: 'ligado', connecting: 'esperando a leitura do QR code', close: 'desligado', sem_instancia: 'desligado' };
+function ConectarQr({ aoFechar, aoSalvar }) {
+  const [e, setE] = useState(null);
+  const [qr, setQr] = useState(null);
+  const [erro, setErro] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+  const ligou = useRef(false);
+
+  const ver = () => api('/whatsapp/evolution/estado').then((r) => {
+    setE(r); setErro('');
+    if (r.estado === 'open') { setQr(null); ligou.current = true; }
+  }).catch((f) => setErro(f.message));
+  useEffect(() => { ver(); }, []);
+  // enquanto o QR code está na tela, confere a cada 3 segundos e troca o código a cada 30 (ele vence)
+  useEffect(() => {
+    if (!qr) return undefined;
+    const t = setInterval(ver, 3000);
+    const n = setInterval(() => conectar(true), 30000);
+    return () => { clearInterval(t); clearInterval(n); };
+  }, [qr?.desde]);
+
+  async function conectar(renovar) {
+    if (!renovar) setOcupado(true);
+    setErro('');
+    try {
+      const r = await api('/whatsapp/evolution/conectar', { metodo: 'POST' });
+      if (r.estado === 'open') { setQr(null); await ver(); } else { setQr({ imagem: r.qr, codigo: r.codigo, desde: renovar ? qr?.desde : Date.now() }); setE((x) => ({ ...x, estado: 'connecting' })); }
+    } catch (f) { setErro(f.message); } finally { setOcupado(false); }
+  }
+  async function desligar() {
+    if (!confirm('Desligar o WhatsApp deste grupo? As mensagens param de chegar até ler o QR code de novo.')) return;
+    setOcupado(true);
+    try { await api('/whatsapp/evolution/desconectar', { metodo: 'POST' }); await ver(); } catch (f) { setErro(f.message); } finally { setOcupado(false); }
+  }
+  const fechar = () => (ligou.current ? aoSalvar() : aoFechar());
+
+  return (
+    <Janela titulo="Ligar o WhatsApp do grupo" aoFechar={fechar}>
+      <div className="formulario conectar-qr">
+        <p className="cinza ajuda">
+          WhatsApp por QR code (não oficial). Use de preferência um número que não seja o principal da loja:
+          o WhatsApp pode bloquear números que mandam muitas mensagens para quem não falou com eles antes.
+        </p>
+        {!e && !erro && <p className="cinza">Carregando…</p>}
+        {e && <p>Situação: <strong>{ESTADOS_QR[e.estado] || e.estado}</strong>
+          {e.estado === 'open' && e.numero && <> · número {mascaraTelefone(String(e.numero).replace(/^55/, ''))}{e.nome ? ` (${e.nome})` : ''}</>}</p>}
+        {qr && (
+          <div className="qr-caixa">
+            {qr.imagem ? <img src={qr.imagem} alt="QR code para ligar o WhatsApp" width="260" height="260" /> : <p className="cinza">Gerando o QR code…</p>}
+            <ol className="cinza ajuda">
+              <li>No celular, abra o WhatsApp.</li>
+              <li>Toque em <strong>Configurações</strong> (ou nos três pontinhos) e depois em <strong>Dispositivos conectados</strong>.</li>
+              <li>Toque em <strong>Conectar dispositivo</strong> e aponte a câmera para este QR code.</li>
+            </ol>
+          </div>
+        )}
+        {erro && <p className="erro" role="alert">{erro}</p>}
+        <div className="acoes-modal">
+          {e?.estado === 'open'
+            ? <button type="button" className="botao-contorno" disabled={ocupado} onClick={desligar}>Desligar</button>
+            : !qr && <button type="button" className="botao-primario" disabled={ocupado || !e} onClick={() => conectar(false)}>{ocupado ? 'Preparando…' : 'Mostrar QR code'}</button>}
+          <button type="button" className="botao-contorno" onClick={fechar}>{e?.estado === 'open' ? 'Pronto' : 'Fechar'}</button>
+        </div>
+      </div>
+    </Janela>
+  );
+}
+
 function Configurar({ situacao, aoFechar, aoSalvar }) {
+  if (situacao.provedor === 'evolution') return <ConectarQr aoFechar={aoFechar} aoSalvar={aoSalvar} />;
+  return <ConfigurarMeta situacao={situacao} aoFechar={aoFechar} aoSalvar={aoSalvar} />;
+}
+
+function ConfigurarMeta({ situacao, aoFechar, aoSalvar }) {
   const n = situacao.numero;
   const [f, setF] = useState({ phone_number_id: n?.phone_number_id || '', numero: n?.numero ? mascaraTelefone(String(n.numero).replace(/^55/, '')) : '' });
   const [erro, setErro] = useState('');

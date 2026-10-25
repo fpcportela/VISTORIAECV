@@ -852,3 +852,8 @@ button.tf-linha:hover { border-color: var(--forte); }
   .ti-linha > span[data-rotulo]::before { content: attr(data-rotulo) ': '; color: #64748b; font-size: 12px; }
   .ti-registros li { grid-template-columns: 1fr; }
 }
+
+/* WhatsApp por QR code */
+.conectar-qr .qr-caixa { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.conectar-qr .qr-caixa img { background: #fff; padding: 8px; border: 1px solid var(--borda, #e2e8f0); border-radius: 8px; }
+.conectar-qr .qr-caixa ol { margin: 0; padding-left: 18px; max-width: 280px; line-height: 1.6; }
