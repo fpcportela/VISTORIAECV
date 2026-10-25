@@ -93,7 +93,8 @@ O `ANTHROPIC_MODELO` é opcional. Com `claude-haiku-5-5` cada mensagem sai mais 
 ```bash
 cd ~/Documents/"AI CLAUDE"/vistoria-ecv
 npm run banco      # liga o banco de dados (o Docker Desktop precisa estar aberto)
-npm run dev        # liga a API e o app
+npm run iniciar    # liga a API e o app para usar no dia a dia (não recarrega sozinho)
+npm run dev        # só para quem está mexendo no código: recarrega a tela a cada arquivo alterado
 ```
 
 Abra **http://localhost:5173** no navegador.
