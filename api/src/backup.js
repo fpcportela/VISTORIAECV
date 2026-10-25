@@ -9,7 +9,7 @@ import { comoUsuario } from './db.js';
 // Em outro servidor, troque pela linha de comando certa em BACKUP_CMD.
 const COMANDO = process.env.BACKUP_CMD || 'docker exec vistoria-ecv-banco pg_dump -U vistoria -Fc vistoria_ecv';
 
-function rodarDump() {
+export function rodarDump() {
   return new Promise((resolve, reject) => {
     const [programa, ...args] = COMANDO.split(/\s+/);
     const proc = spawn(programa, args);
