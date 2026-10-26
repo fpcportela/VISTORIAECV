@@ -78,13 +78,14 @@ export default function Clientes({ perfil, loja }) {
 }
 
 const vazio = (tipo, grupo) => ({ tipo, nome: '', nome_fantasia: '', cpf_cnpj: '', telefone: '', whatsapp: '', email: '', cep: '', endereco: '',
-  cidade: '', uf: '', observacoes: '', ativo: true, grupo_cliente_id: grupo?.id || '', comissao_tipo: '', comissao_valor: '' });
+  cidade: '', uf: '', observacoes: '', ativo: true, grupo_cliente_id: grupo?.id || '', parceiro: false, comissoes: [] });
 const valorBR = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicial, inicial, aoAbrir, aoFechar, aoSalvar }) {
   const [c, setC] = useState(id ? null : { ...vazio(tipoInicial, grupoInicial), ...inicial });
   const [extra, setExtra] = useState(null); // empresas do grupo, vendas, pode_editar
   const [grupos, setGrupos] = useState([]);
+  const [servicos, setServicos] = useState([]);
   const [loja, setLoja] = useState(lojas.some((l) => l.id === lojaInicial) ? lojaInicial : lojas[0]?.id || '');
   const gruposLojas = [...lojas.reduce((m, l) => {
     const g = m.get(l.empresa_id) || { id: l.empresa_id, nome: l.empresa, loja: l.id, lojas: [] };
@@ -99,9 +100,10 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
     api(`/clientes/${id}`).then((d) => {
       setC({ ...vazio(d.tipo), ...Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v ?? ''])),
         cpf_cnpj: d.cpf_cnpj ? formatarDoc(d.cpf_cnpj) : '', telefone: d.telefone ? mascaraTelefone(d.telefone) : '',
-        whatsapp: d.whatsapp ? mascaraTelefone(d.whatsapp) : '', cep: mascaraCep(d.cep), ativo: d.ativo, comissao_valor: valorBR(d.comissao_valor) });
-      setExtra({ empresas: d.empresas, vendas: d.vendas, pode_editar: d.pode_editar, grupo_nome: d.grupo_nome,
-        grupo_comissao: d.grupo_comissao_tipo ? { grupo: d.grupo_cliente_id, tipo: d.grupo_comissao_tipo, valor: d.grupo_comissao_valor } : null });
+        whatsapp: d.whatsapp ? mascaraTelefone(d.whatsapp) : '', cep: mascaraCep(d.cep), ativo: d.ativo,
+        parceiro: d.parceiro, comissoes: d.comissoes.map((r) => ({ servico_id: r.servico_id || '', tipo: r.tipo, valor: valorBR(r.valor) })) });
+      setExtra({ empresas: d.empresas, vendas: d.vendas, pode_editar: d.pode_editar, grupo_nome: d.grupo_nome, indicadas: d.indicadas,
+        empresa: d.empresa_id });
     }).catch((f) => setErro(f.message));
   }, [id]);
 
@@ -109,6 +111,12 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
   useEffect(() => {
     if (c?.tipo === 'pj') api(`/clientes?tipo=grupo${lojaInicial ? `&loja=${lojaInicial}` : ''}`).then(setGrupos).catch(() => {});
   }, [c?.tipo]);
+
+  // serviços do grupo do cliente, para a comissão do parceiro
+  const lojaServicos = (extra?.empresa && lojas.find((l) => l.empresa_id === extra.empresa)?.id) || loja;
+  useEffect(() => {
+    if (c?.parceiro && lojaServicos) api(`/servicos?loja=${lojaServicos}&uso=venda`).then(setServicos).catch(() => {});
+  }, [c?.parceiro, lojaServicos]);
 
   if (!c) return <Janela titulo="Cliente" aoFechar={aoFechar}>{erro ? <p className="erro">{erro}</p> : <p className="cinza">Carregando…</p>}</Janela>;
 
@@ -199,23 +207,35 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
               </div>
             </>
           )}
-          <div className="linha-campos dois">
-            <label>Comissão
-              <select value={c.comissao_tipo} onChange={(e) => setC({ ...c, comissao_tipo: e.target.value, comissao_valor: e.target.value ? c.comissao_valor : '' })}>
-                <option value="">{c.tipo === 'pj' && c.grupo_cliente_id ? 'A do grupo (ou sem comissão)' : 'Sem comissão'}</option>
-                <option value="fixo">Valor fixo por venda (R$)</option>
-                <option value="percentual">Porcentagem da venda (%)</option>
-              </select>
-            </label>
-            {c.comissao_tipo && (
-              <label>{c.comissao_tipo === 'fixo' ? 'Valor por venda (R$)' : 'Porcentagem (%)'}
-                <input value={c.comissao_valor} inputMode="decimal" required placeholder={c.comissao_tipo === 'fixo' ? '0,00' : '10'}
-                  onChange={(e) => setC({ ...c, comissao_valor: e.target.value.replace(/[^\d,.]/g, '') })} />
-              </label>
-            )}
-          </div>
-          {!c.comissao_tipo && c.tipo === 'pj' && c.grupo_cliente_id && extra?.grupo_comissao?.grupo === c.grupo_cliente_id && (
-            <small className="cinza">Usa a comissão do grupo: {extra.grupo_comissao.tipo === 'fixo' ? `R$ ${valorBR(extra.grupo_comissao.valor)} por venda` : `${valorBR(extra.grupo_comissao.valor)}% da venda`}.</small>
+          {c.tipo !== 'grupo' && (
+            <label className="linha-check"><input type="checkbox" checked={c.parceiro}
+              onChange={(e) => setC({ ...c, parceiro: e.target.checked, comissoes: e.target.checked && !c.comissoes.length ? [{ servico_id: '', tipo: 'fixo', valor: '' }] : c.comissoes })} />
+              Parceiro (indica clientes e recebe comissão por vistoria)</label>
+          )}
+          {c.parceiro && c.tipo !== 'grupo' && (
+            <section className="comissoes-parceiro">
+              <strong>Comissão do parceiro por serviço</strong>
+              <small className="cinza">Valor fixo (R$) por serviço ou porcentagem (%) do valor do serviço. "Demais serviços" vale para os que não estão na lista.</small>
+              {c.comissoes.map((r, n) => {
+                const muda = (x) => setC({ ...c, comissoes: c.comissoes.map((y, m) => (m === n ? { ...y, ...x } : y)) });
+                return (
+                  <div key={n} className="linha-comissao">
+                    <select value={r.servico_id} aria-label="Serviço" onChange={(e) => muda({ servico_id: e.target.value })}>
+                      <option value="">Demais serviços</option>
+                      {servicos.map((sv) => <option key={sv.id} value={sv.id}>{sv.nome}</option>)}
+                    </select>
+                    <select value={r.tipo} aria-label="Tipo da comissão" onChange={(e) => muda({ tipo: e.target.value })}>
+                      <option value="fixo">R$</option><option value="percentual">%</option>
+                    </select>
+                    <input value={r.valor} inputMode="decimal" aria-label="Valor da comissão" placeholder={r.tipo === 'fixo' ? '0,00' : '10'}
+                      onChange={(e) => muda({ valor: e.target.value.replace(/[^\d,.]/g, '') })} />
+                    <button type="button" className="fechar" aria-label="Tirar" onClick={() => setC({ ...c, comissoes: c.comissoes.filter((_, m) => m !== n) })}>×</button>
+                  </div>
+                );
+              })}
+              <button type="button" className="botao-texto" onClick={() => setC({ ...c, comissoes: [...c.comissoes, { servico_id: '', tipo: 'fixo', valor: '' }] })}>+ Adicionar serviço</button>
+              {extra?.indicadas && <small className="cinza">{extra.indicadas.qtd} venda(s) indicada(s), total R$ {valorBR(extra.indicadas.total)}.</small>}
+            </section>
           )}
           <label>Observações<textarea rows={2} value={c.observacoes} onChange={muda('observacoes')} /></label>
           {id && <label className="linha-check"><input type="checkbox" checked={c.ativo} onChange={(e) => setC({ ...c, ativo: e.target.checked })} /> Cliente ativo</label>}

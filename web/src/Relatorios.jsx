@@ -30,13 +30,14 @@ const COLUNAS = {
     { id: 'servicos', nome: 'Serviços', valor: (v) => v.servicos || '' },
     { id: 'loja', nome: 'Loja', valor: (v) => v.loja },
     { id: 'vendedor', nome: 'Responsável', valor: (v) => v.vendedor || '' },
+    { id: 'parceiro', nome: 'Parceiro', valor: (v) => v.parceiro || '' },
     { id: 'formas', nome: 'Pagamento', valor: (v) => (v.formas || '').split(',').filter(Boolean).map((f) => FORMAS[f] || f).join(', ') },
     { id: 'situacao', nome: 'Situação', valor: (v) => SIT_VENDA[v.situacao] || v.situacao },
     { id: 'valor_bruto', nome: 'Bruto', soma: true },
     { id: 'desconto', nome: 'Desconto', soma: true },
     { id: 'valor_total', nome: 'Total', soma: true },
     { id: 'a_faturar', nome: 'A receber', soma: true },
-    { id: 'comissao', nome: 'Comissão', soma: true },
+    { id: 'comissao_parceiro', nome: 'Comissão do parceiro', soma: true },
   ],
   financeiro: [
     { id: 'vencimento', nome: 'Vencimento', valor: (v) => dataBR(v.vencimento) },
@@ -61,7 +62,7 @@ const PADRAO = {
 };
 const mes = (iso) => (iso ? new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' }) : 'SEM DATA');
 const GRUPOS = {
-  vendas: { '': 'Sem agrupar', cliente: 'Cliente', loja: 'Loja', vendedor: 'Responsável', dia: 'Dia', mes: 'Mês', situacao: 'Situação', formas: 'Pagamento' },
+  vendas: { '': 'Sem agrupar', cliente: 'Cliente', loja: 'Loja', vendedor: 'Responsável', parceiro: 'Parceiro', dia: 'Dia', mes: 'Mês', situacao: 'Situação', formas: 'Pagamento' },
   financeiro: { '': 'Sem agrupar', categoria: 'Categoria', centro: 'Centro de custo', loja: 'Loja', cliente: 'Cliente', mes: 'Mês do vencimento', status: 'Situação', tipo: 'Tipo' },
 };
 const chaveGrupo = (fonte, g, v) => {
@@ -83,23 +84,24 @@ export default function Relatorios({ perfil, loja, empresa, logo }) {
       <div className="abas" role="tablist">
         <button role="tab" aria-selected={aba === 'personalizado'} className={aba === 'personalizado' ? 'ativa' : ''} onClick={() => setAba('personalizado')}>Relatório personalizado</button>
         {podeFaturar && <button role="tab" aria-selected={aba === 'faturar'} className={aba === 'faturar' ? 'ativa' : ''} onClick={() => setAba('faturar')}>Faturar cliente</button>}
+        {podeFaturar && <button role="tab" aria-selected={aba === 'comissao'} className={aba === 'comissao' ? 'ativa' : ''} onClick={() => setAba('comissao')}>Comissão de parceiros</button>}
       </div>
       {aba === 'personalizado'
         ? <Personalizado loja={loja} empresa={empresa} logo={logo} podeFinanceiro={tem('financeiro.ver')} />
-        : <Faturar perfil={perfil} loja={loja} />}
+        : <Faturar key={aba} perfil={perfil} loja={loja} modo={aba} />}
     </>
   );
 }
 
 // ------------------------------------------------------------ busca de cliente
-export function CampoCliente({ cliente, aoEscolher, obrigatorio }) {
+export function CampoCliente({ cliente, aoEscolher, obrigatorio, parceiro }) {
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState([]);
   const [aberta, setAberta] = useState(false);
   const [buscou, setBuscou] = useState('');
   useEffect(() => {
     if (busca.trim().length < 2) { setLista([]); setBuscou(''); return undefined; }
-    const t = setTimeout(() => api(`/clientes?busca=${encodeURIComponent(busca)}`)
+    const t = setTimeout(() => api(`/clientes?busca=${encodeURIComponent(busca)}${parceiro ? '&parceiro=1' : ''}`)
       .then((l) => { setLista(l.filter((c) => !(c.tipo === 'avulso' && c.nome === 'CLIENTE PARTICULAR / AVULSO'))); setBuscou(busca); }).catch(() => setLista([])), 300);
     return () => clearTimeout(t);
   }, [busca]);
@@ -113,7 +115,7 @@ export function CampoCliente({ cliente, aoEscolher, obrigatorio }) {
   }
   return (
     <span className="campo-cliente">
-      <input type="search" value={busca} placeholder={obrigatorio ? 'Busque o cliente (nome, CPF ou CNPJ)' : 'Todos os clientes'} aria-label="Cliente"
+      <input type="search" value={busca} placeholder={parceiro ? 'Busque o parceiro (nome, CPF ou CNPJ)' : obrigatorio ? 'Busque o cliente (nome, CPF ou CNPJ)' : 'Todos os clientes'} aria-label="Cliente"
         onChange={(e) => { setBusca(e.target.value); setAberta(true); }} onFocus={() => setAberta(true)} onBlur={() => setTimeout(() => setAberta(false), 200)} />
       {aberta && lista.length > 0 && (
         <ul className="sugestoes-cliente" role="listbox">
@@ -126,8 +128,9 @@ export function CampoCliente({ cliente, aoEscolher, obrigatorio }) {
         </ul>
       )}
       {aberta && buscou === busca && busca.trim().length >= 2 && lista.length === 0 && (
-        <ul className="sugestoes-cliente"><li className="cinza sem-cliente">Nenhum cliente cadastrado com esse nome, CPF ou CNPJ
-          (o "cliente particular / avulso" genérico não entra no faturamento).</li></ul>
+        <ul className="sugestoes-cliente"><li className="cinza sem-cliente">{parceiro
+          ? 'Nenhum parceiro com esse nome, CPF ou CNPJ. Marque "Parceiro" no cadastro do cliente.'
+          : 'Nenhum cliente cadastrado com esse nome, CPF ou CNPJ (o "cliente particular / avulso" genérico não entra no faturamento).'}</li></ul>
       )}
     </span>
   );
@@ -312,7 +315,25 @@ function GrupoLinhas({ titulo, lista, cols, soma }) {
 }
 
 // ------------------------------------------------------------ faturar cliente
-function Faturar({ perfil, loja }) {
+// Faturar cliente (conta a receber com o que falta receber das vendas) e comissão de parceiro
+// (conta a pagar ao parceiro com a comissão das vendas que ele indicou): mesma tela, dois modos.
+const MODOS = {
+  faturar: {
+    filtro: 'faturar', quem: 'cliente', valor: 'a_faturar', coluna: 'A receber', rota: '/relatorios/faturar', tipo: 'receber',
+    acao: 'Gerar recebimento', prefixo: 'FATURA', sugestao: /vistori|servi/i,
+    ajuda: `Escolha o cliente para ver as vendas dele que ainda não foram pagas nem faturadas. Marque as que entram e clique em
+      "Gerar recebimento": o sistema cria a conta a receber no Financeiro, como previsão. Cada venda só pode ser faturada uma vez.`,
+  },
+  comissao: {
+    filtro: 'comissao', quem: 'parceiro', valor: 'comissao_parceiro', coluna: 'Comissão', rota: '/relatorios/comissao', tipo: 'pagar',
+    acao: 'Gerar pagamento', prefixo: 'COMISSÃO', sugestao: /comiss/i,
+    ajuda: `Escolha o parceiro para ver as vendas que ele indicou e a comissão de cada uma (pela regra do cadastro dele, por serviço).
+      Marque as que entram e clique em "Gerar pagamento": o sistema cria a conta a pagar ao parceiro no Financeiro. Cada venda entra uma vez só.`,
+  },
+};
+
+function Faturar({ perfil, loja, modo = 'faturar' }) {
+  const m = MODOS[modo];
   const [cliente, setCliente] = useState(null);
   const [f, setF] = useState({ de: '', ate: '', situacao: '' });
   const [linhas, setLinhas] = useState(null);
@@ -324,9 +345,9 @@ function Faturar({ perfil, loja }) {
 
   async function buscar(e) {
     e?.preventDefault();
-    if (!cliente) return setErro('Escolha o cliente.');
+    if (!cliente) return setErro(`Escolha o ${m.quem}.`);
     setErro('');
-    const q = new URLSearchParams({ faturar: '1', cliente: cliente.id });
+    const q = new URLSearchParams({ [m.filtro]: '1', [m.quem]: cliente.id });
     if (loja) q.set('loja', loja);
     if (f.de) q.set('de', f.de);
     if (f.ate) q.set('ate', f.ate);
@@ -334,15 +355,16 @@ function Faturar({ perfil, loja }) {
     try {
       const l = await api(`/relatorios/vendas?${q}`);
       setLinhas(l); setMarcadas(new Set(l.map((v) => v.id))); setMotivos(null);
-      // nada a faturar: mostra por que as vendas do cliente ficaram de fora
+      // nada a lançar: mostra por que as vendas ficaram de fora
       if (!l.length) {
-        q.delete('faturar');
+        q.delete(m.filtro);
         const todas = await api(`/relatorios/vendas?${q}`);
         const conta = {};
         for (const v of todas) {
-          const m = v.situacao === 'cancelada' ? 'cancelada(s)' : v.situacao === 'futuro' ? 'FUTURO (falta confirmar)'
-            : v.faturada_em ? 'já faturada(s)' : v.comissao !== null ? 'com comissão zero' : 'já paga(s)';
-          conta[m] = (conta[m] || 0) + 1;
+          const x = v.situacao === 'cancelada' ? 'cancelada(s)' : v.situacao === 'futuro' ? 'FUTURO (falta confirmar)'
+            : modo === 'comissao' ? (v.comissao_lancada_em ? 'com a comissão já lançada' : 'sem comissão para o serviço')
+              : v.faturada_em ? 'já faturada(s)' : 'já paga(s)';
+          conta[x] = (conta[x] || 0) + 1;
         }
         setMotivos({ total: todas.length, conta });
       }
@@ -351,22 +373,18 @@ function Faturar({ perfil, loja }) {
   useEffect(() => { setLinhas(null); setMarcadas(new Set()); if (cliente) buscar(); }, [cliente]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const escolhidas = (linhas || []).filter((v) => marcadas.has(v.id));
-  const total = escolhidas.reduce((t, v) => t + Number(v.valor_fatura), 0);
-  const porComissao = (linhas || []).some((v) => v.comissao !== null);
-  const semComissao = (linhas || []).some((v) => v.comissao === null);
-  const regra = (v) => (v.comissao_tipo === 'fixo' ? `${real(v.comissao_regra)} por venda` : `${moeda(v.comissao_regra)}% da venda`);
-  const regras = [...new Set((linhas || []).filter((v) => v.comissao !== null).map(regra))];
+  const total = escolhidas.reduce((t, v) => t + Number(v[m.valor]), 0);
   const todas = linhas?.length > 0 && escolhidas.length === linhas.length;
-  const marcar = (id, sim) => setMarcadas((m) => { const n = new Set(m); if (sim) n.add(id); else n.delete(id); return n; });
+  const marcar = (id, sim) => setMarcadas((x) => { const n = new Set(x); if (sim) n.add(id); else n.delete(id); return n; });
+  const periodo = f.de || f.ate ? ' no período' : '';
 
   return (
     <>
-      <p className="cinza ajuda">Escolha o cliente para ver as vendas dele que ainda não foram faturadas. Cliente com comissão no cadastro: entram todas as
-        vendas (pagas ou não) e o valor faturado é a comissão de cada uma. Sem comissão: entram as vendas que ainda não foram pagas, pelo valor a receber.
-        Marque as que entram e clique em "Gerar recebimento": o sistema cria a conta a receber no Financeiro, como previsão. Cada venda só pode ser faturada uma vez.</p>
+      <p className="cinza ajuda">{m.ajuda}</p>
       <form className="relatorio-config" onSubmit={buscar}>
         <div className="linha-config">
-          <label className="config-cliente">Cliente<CampoCliente cliente={cliente} aoEscolher={setCliente} obrigatorio /></label>
+          <label className="config-cliente">{modo === 'comissao' ? 'Parceiro' : 'Cliente'}
+            <CampoCliente cliente={cliente} aoEscolher={setCliente} obrigatorio parceiro={modo === 'comissao'} /></label>
           <label>Vendas de<CampoData value={f.de} onChange={(e) => setF({ ...f, de: e.target.value })} /></label>
           <label>Até<CampoData value={f.ate} onChange={(e) => setF({ ...f, ate: e.target.value })} /></label>
           <label>Situação
@@ -379,18 +397,14 @@ function Faturar({ perfil, loja }) {
       </form>
       {aviso && <p className="aviso-ok" role="status">{aviso}</p>}
       {erro && <p className="erro" role="alert">{erro}</p>}
-      {linhas?.length > 0 && (
-        <p className="cinza">
-          {porComissao ? `Comissão do cliente: ${regras.join(' / ')}.` : 'Este cliente não tem comissão no cadastro: o faturamento usa o valor que falta receber de cada venda.'}
-          {porComissao && semComissao && ' Algumas empresas não têm comissão e entram pelo valor a receber.'}
-        </p>
-      )}
       {linhas && (linhas.length === 0 ? (
         <p className="cinza vazio">
-          Nenhuma venda a faturar para este cliente{f.de || f.ate ? ' no período' : ''}.
+          {modo === 'comissao' ? `Nenhuma venda com comissão a lançar para este parceiro${periodo}.` : `Nenhuma venda a faturar para este cliente${periodo}.`}
           {motivos && (motivos.total === 0
-            ? ` Ele não tem vendas${f.de || f.ate ? ' no período' : ''}${loja ? ' nesta loja (troque a loja no topo para "Todas as lojas")' : ''}.`
-            : ` Das ${motivos.total} venda(s) dele: ${Object.entries(motivos.conta).map(([m, n]) => `${n} ${m}`).join(', ')}. Sem comissão no cadastro do cliente, só entram vendas com valor ainda a receber (sem pagamento, ou pagas como "Faturado").`)}
+            ? ` ${modo === 'comissao' ? 'Ele não indicou vendas' : 'Ele não tem vendas'}${periodo}${loja ? ' nesta loja (troque a loja no topo para "Todas as lojas")' : ''}.`
+            : ` Das ${motivos.total} venda(s): ${Object.entries(motivos.conta).map(([x, n]) => `${n} ${x}`).join(', ')}.${modo === 'comissao'
+              ? ' Confira a comissão por serviço no cadastro do parceiro.'
+              : ' Só entram vendas com valor ainda a receber (sem pagamento, ou pagas como "Faturado").'}`)}
         </p>
       ) : (
         <div className="tabela-relatorio-caixa">
@@ -400,7 +414,7 @@ function Faturar({ perfil, loja }) {
                 <th className="marcar"><input type="checkbox" checked={todas} aria-label="Marcar todas"
                   onChange={(e) => setMarcadas(e.target.checked ? new Set(linhas.map((v) => v.id)) : new Set())} /></th>
                 <th>Nº</th><th>Data</th><th>Cliente</th><th>Placa</th><th>Marca/Modelo</th><th>Serviços</th><th>Loja</th><th>Pagamento</th>
-                <th className="num">Total</th>{semComissao && <th className="num">A receber</th>}{porComissao && <th className="num">Comissão</th>}
+                <th className="num">Total</th><th className="num">{m.coluna}</th>
               </tr>
             </thead>
             <tbody>
@@ -410,66 +424,68 @@ function Faturar({ perfil, loja }) {
                   <td>{v.numero}</td><td>{dataBR(v.data_venda)}</td><td>{v.cliente}</td><td>{v.placas || ''}</td><td>{v.veiculos || ''}</td>
                   <td>{v.servicos || ''}</td><td>{v.loja}</td>
                   <td>{(v.formas || '').split(',').filter(Boolean).map((x) => FORMAS[x] || x).join(', ') || 'SEM PAGAMENTO'}</td>
-                  <td className="num">{moeda(v.valor_total)}</td>
-                  {semComissao && <td className="num">{v.comissao === null ? moeda(v.a_faturar) : ''}</td>}
-                  {porComissao && <td className="num">{v.comissao === null ? '' : moeda(v.comissao)}</td>}
+                  <td className="num">{moeda(v.valor_total)}</td><td className="num">{moeda(v[m.valor])}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="rodape-faturar">
-            <span>{escolhidas.length} de {linhas.length} venda(s) marcada(s) · {porComissao ? 'comissão ' : ''}<strong>{real(total)}</strong></span>
-            <button className="botao-primario" disabled={!escolhidas.length} onClick={() => setGerando(true)}>Gerar recebimento</button>
+            <span>{escolhidas.length} de {linhas.length} venda(s) marcada(s) · <strong>{real(total)}</strong></span>
+            <button className="botao-primario" disabled={!escolhidas.length} onClick={() => setGerando(true)}>{m.acao}</button>
           </div>
         </div>
       ))}
       {gerando && (
-        <GerarRecebimento perfil={perfil} cliente={cliente} vendas={escolhidas} total={total}
+        <GerarLancamento modo={modo} cliente={cliente} vendas={escolhidas} total={total}
           aoFechar={() => setGerando(false)}
-          aoGerar={(n) => { setGerando(false); setAviso(`Recebimento gerado: ${n} conta(s) a receber no Financeiro, total ${real(total)}.`); buscar(); }} />
+          aoGerar={(n) => {
+            setGerando(false);
+            setAviso(`${modo === 'comissao' ? 'Pagamento gerado' : 'Recebimento gerado'}: ${n} conta(s) a ${m.tipo} no Financeiro, total ${real(total)}.`);
+            buscar();
+          }} />
       )}
     </>
   );
 }
 
-function GerarRecebimento({ perfil, cliente, vendas, total, aoFechar, aoGerar }) {
+function GerarLancamento({ modo, cliente, vendas, total, aoFechar, aoGerar }) {
+  const m = MODOS[modo];
   const lojaGrupo = vendas[0]?.loja_id;
   const [categorias, setCategorias] = useState([]);
-  const comissao = vendas.every((v) => v.comissao !== null);
-  const [f, setF] = useState({ vencimento: somarDias(hojeISO(), 30), categoria_id: '', descricao: `${comissao ? 'COMISSÃO' : 'FATURA'} ${cliente.nome}`, documento: '' });
+  const [f, setF] = useState({ vencimento: somarDias(hojeISO(), 30), categoria_id: '', descricao: `${m.prefixo} ${cliente.nome}`, documento: '' });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   const lojas = [...new Set(vendas.map((v) => v.loja))];
 
   useEffect(() => {
     api(`/financeiro/plano?loja=${lojaGrupo}`).then((l) => {
-      const receitas = l.filter((c) => c.tipo === 'receber' && !c.grupo && c.ativo);
-      setCategorias(receitas);
-      // sugere a categoria de vistoria/serviços, se houver
-      const sugerida = (comissao && receitas.find((c) => /comiss/i.test(c.nome))) || receitas.find((c) => /vistori|servi/i.test(c.nome)) || receitas[0];
+      const lista = l.filter((c) => c.tipo === m.tipo && !c.grupo && c.ativo);
+      setCategorias(lista);
+      const sugerida = lista.find((c) => m.sugestao.test(c.nome)) || lista[0];
       setF((x) => ({ ...x, categoria_id: x.categoria_id || sugerida?.id || '' }));
     }).catch((falha) => setErro(falha.message));
-  }, [lojaGrupo]);
+  }, [lojaGrupo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function salvar(e) {
     e.preventDefault();
     setSalvando(true); setErro('');
     try {
-      const r = await api('/relatorios/faturar', { metodo: 'POST', corpo: { ...f, vendas: vendas.map((v) => v.id) } });
+      const r = await api(m.rota, { metodo: 'POST', corpo: { ...f, vendas: vendas.map((v) => v.id) } });
       aoGerar(r.lancamentos.length);
     } catch (falha) { setErro(falha.message); setSalvando(false); }
   }
 
   return (
     <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
-      <section className="modal" role="dialog" aria-modal="true" aria-label="Gerar recebimento">
+      <section className="modal" role="dialog" aria-modal="true" aria-label={m.acao}>
         <div className="modal-topo">
-          <h2>Gerar recebimento</h2>
+          <h2>{m.acao}</h2>
           <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
         </div>
-        <p><strong>{cliente.nome}</strong><br /><span className="cinza">{vendas.length} venda(s) · {comissao ? 'comissão ' : ''}{real(total)}</span></p>
+        <p><strong>{cliente.nome}</strong><br /><span className="cinza">{vendas.length} venda(s) · {modo === 'comissao' ? 'comissão ' : ''}{real(total)}</span></p>
         <form className="formulario" onSubmit={salvar}>
-          <label>Previsão de recebimento (vencimento)<CampoData value={f.vencimento} onChange={(e) => setF({ ...f, vencimento: e.target.value })} required /></label>
+          <label>{modo === 'comissao' ? 'Previsão de pagamento (vencimento)' : 'Previsão de recebimento (vencimento)'}
+            <CampoData value={f.vencimento} onChange={(e) => setF({ ...f, vencimento: e.target.value })} required /></label>
           <label>Categoria (plano de contas)
             <select value={f.categoria_id} onChange={(e) => setF({ ...f, categoria_id: e.target.value })} required>
               <option value="">Escolha…</option>
@@ -477,12 +493,12 @@ function GerarRecebimento({ perfil, cliente, vendas, total, aoFechar, aoGerar })
             </select>
           </label>
           <label>Descrição<input value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} required maxLength={200} /></label>
-          <label>Documento<input value={f.documento} onChange={(e) => setF({ ...f, documento: e.target.value })} placeholder="Opcional: nº da fatura, boleto ou NF" /></label>
-          {lojas.length > 1 && <p className="cinza ajuda">As vendas são de {lojas.length} lojas: será criada uma conta a receber para cada loja ({lojas.join(', ')}).</p>}
+          <label>Documento<input value={f.documento} onChange={(e) => setF({ ...f, documento: e.target.value })} placeholder="Opcional: nº da fatura, boleto, NF ou recibo" /></label>
+          {lojas.length > 1 && <p className="cinza ajuda">As vendas são de {lojas.length} lojas: será criada uma conta a {m.tipo} para cada loja ({lojas.join(', ')}).</p>}
           {erro && <p className="erro" role="alert">{erro}</p>}
           <div className="acoes-modal">
             <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
-            <button className="botao-primario" disabled={salvando}>{salvando ? 'Gerando…' : 'Gerar recebimento'}</button>
+            <button className="botao-primario" disabled={salvando}>{salvando ? 'Gerando…' : m.acao}</button>
           </div>
         </form>
       </section>

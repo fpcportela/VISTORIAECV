@@ -56,13 +56,18 @@ já cadastrado (ou cadastra um novo ao agendar) e, ao digitar o nome, aparecem o
 Sem documento, o agendamento fica só com o nome. O robô faz igual: com CPF/CNPJ usa o cadastro
 existente; sem documento, a venda vai para o particular/avulso e ninguém é cadastrado.
 
-## Comissão do cliente e Faturar cliente
+## Parceiros e comissão
 
-No cadastro do cliente, **Comissão** pode ser um valor fixo por venda ou uma porcentagem do total da
-venda (a empresa de um grupo sem comissão própria usa a do grupo). Em **Relatórios > Faturar cliente**,
-o cliente com comissão mostra todas as vendas dele ainda não faturadas (pagas ou não, filtrando por
-período e situação) com a comissão de cada uma; o recebimento gerado no Financeiro é a soma das
-comissões. Cliente sem comissão continua faturando o que falta receber das vendas.
+Um cliente (pessoa física ou empresa) pode ser **parceiro**: indica clientes para a loja (uma revenda
+de carros, por exemplo) e recebe uma comissão por vistoria. No cadastro do cliente, marque
+**Parceiro** e informe a comissão por serviço: valor fixo (R$) ou porcentagem (%) do valor do serviço;
+"Demais serviços" vale para os que não estão na lista. Na venda, escolha o **Parceiro que indicou**.
+
+Em **Relatórios > Comissão de parceiros**, filtre por parceiro, período e situação: aparecem as vendas
+que ele indicou com a comissão de cada uma. **Gerar pagamento** cria a conta a pagar ao parceiro no
+Financeiro (categoria "Comissões de parceiros"). Cada venda entra uma vez; se a conta for cancelada, as
+vendas voltam para o relatório. **Faturar cliente** continua gerando a conta a receber com o que falta
+receber das vendas de um cliente.
 
 ## WhatsApp (API oficial da Meta)
 

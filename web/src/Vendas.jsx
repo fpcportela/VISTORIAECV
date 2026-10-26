@@ -250,6 +250,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const [clientes, setClientes] = useState([]);
   const [novo, setNovo] = useState({ tipo: 'pf', nome: '', cpf_cnpj: '', whatsapp: '', email: '' });
   const [receita, setReceita] = useState(''); // situação da busca do CNPJ
+  const [parceiro, setParceiro] = useState(''); // parceiro que indicou a venda
+  const [parceiros, setParceiros] = useState([]);
   // venda aberta direto de uma consulta de placa: já vem com o veículo e o relatório da consulta
   const [veiculos, setVeiculos] = useState(() => [veiculoInicial ? { ...veiculoVazio(), ...doConsultado(veiculoInicial) } : veiculoVazio()]);
   const [pagamentos, setPagamentos] = useState(() => [pagamentoVazio()]);
@@ -273,6 +275,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     try {
       const v = await api(`/vendas/${id}`);
       setVenda(v); setLoja(v.loja_id); setData(String(v.data_venda).slice(0, 10));
+      setParceiro(v.parceiro_id || '');
+      if (v.parceiro_id) setParceiros((l) => (l.some((x) => x.id === v.parceiro_id) ? l : [...l, { id: v.parceiro_id, nome: v.parceiro_nome }]));
       setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' && v.cliente.nome === 'CLIENTE PARTICULAR / AVULSO' ? 'avulso' : 'atual');
       // agrupa os itens por placa, na ordem em que foram lançados
       const grupos = [];
@@ -296,6 +300,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
 
   useEffect(() => {
     if (loja) api(`/servicos?loja=${loja}&uso=venda`).then(setServicos).catch((f) => setErro(f.message));
+    if (loja) api(`/clientes?loja=${loja}&parceiro=1`).then((l) => setParceiros((atual) => [...l, ...atual.filter((x) => !l.some((y) => y.id === x.id))])).catch(() => {});
   }, [loja]);
 
   useEffect(() => {
@@ -384,7 +389,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     setOcupado(true);
     try {
       const corpo = {
-        loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
+        loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes, parceiro_id: parceiro || null,
         ...(autorizacao && { autorizacao_desconto: autorizacao }),
         itens: veiculos.flatMap(({ placa, tipo_veiculo, marca, modelo, itens }) => itens.filter((i) => i.servico_id)
           .map(({ servico_id, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) }))),
@@ -530,6 +535,14 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
             <label>E-mail<input value={novo.email} type="email" placeholder="Opcional" onChange={(e) => setNovo({ ...novo, email: e.target.value })} /></label>
             {receita && <small className="aviso-receita">{receita}</small>}
           </div>
+        )}
+        {parceiros.length > 0 && (
+          <label className="campo-parceiro">Parceiro que indicou
+            <select value={parceiro} onChange={(e) => setParceiro(e.target.value)}>
+              <option value="">Nenhum</option>
+              {parceiros.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </label>
         )}
       </fieldset>
 

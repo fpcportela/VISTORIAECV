@@ -142,9 +142,10 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const dados = await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
       const extra = (await db.query(
-        `select l.nome as loja, to_jsonb(c) - 'consulta_serasa' || jsonb_build_object('grupo_nome', (select g.nome from clientes g where g.id = c.grupo_cliente_id)) as cliente, u.nome as vendedor
+        `select l.nome as loja, to_jsonb(c) - 'consulta_serasa' || jsonb_build_object('grupo_nome', (select g.nome from clientes g where g.id = c.grupo_cliente_id)) as cliente, u.nome as vendedor,
+                (select p.nome from clientes p where p.id = $4) as parceiro_nome
            from lojas l, clientes c left join usuarios u on u.id = $3
-          where l.id = $1 and c.id = $2`, [v.loja_id, v.cliente_id, v.vendedor_id])).rows[0];
+          where l.id = $1 and c.id = $2`, [v.loja_id, v.cliente_id, v.vendedor_id, v.parceiro_id])).rows[0];
       const itens = (await db.query(
         `select i.id, i.servico_id, s.nome as servico, i.descricao, i.quantidade, i.valor_unit, i.valor_total,
                 ve.placa, ve.tipo as tipo_veiculo, ve.marca, ve.modelo,
@@ -237,6 +238,16 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const cliente = existente && !b.cliente_id && !b.cliente_novo?.nome && !b.cliente_avulso
       ? existente.cliente_id
       : await resolverCliente(db, { empresa, loja, cliente_id: b.cliente_id, cliente_novo: b.cliente_novo });
+    // parceiro que indicou a venda (cliente marcado como parceiro, do mesmo grupo)
+    let parceiro = b.parceiro_id === undefined ? existente?.parceiro_id || null : null;  // não veio: mantém
+    if (UUID.test(b.parceiro_id || '')) {
+      parceiro = (await db.query('select id from clientes where id = $1 and empresa_id = $2 and parceiro', [b.parceiro_id, empresa])).rows[0]?.id;
+      if (!parceiro) throw new Recusa(400, 'Parceiro não encontrado.');
+    }
+    if (existente && (existente.parceiro_id || null) !== parceiro
+        && (await db.query('select 1 from parceiro_comissao_vendas where venda_id = $1', [existente.id])).rowCount) {
+      throw new Recusa(400, 'A comissão desta venda já foi lançada para o parceiro. Cancele a conta a pagar da comissão antes de trocar o parceiro.');
+    }
     const categoria = (await db.query(
       "select id from categorias_financeiras where empresa_id = $1 and tipo = 'receber' and ativo order by nome = 'Receitas de Serviços' desc, nome limit 1",
       [empresa])).rows[0]?.id || null;
@@ -244,16 +255,16 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     let id = existente?.id;
     if (id) {
       await db.query(
-        `update vendas set tipo = $2, cliente_id = $3, data_venda = $4, desconto = $5, observacoes = $6 where id = $1`,
-        [id, tipo, cliente, data, desconto, texto(b.observacoes, 2000)]);
+        `update vendas set tipo = $2, cliente_id = $3, data_venda = $4, desconto = $5, observacoes = $6, parceiro_id = $7 where id = $1`,
+        [id, tipo, cliente, data, desconto, texto(b.observacoes, 2000), parceiro]);
       await db.query('delete from venda_itens where venda_id = $1', [id]);
       await db.query('delete from venda_pagamentos where venda_id = $1', [id]);
     } else {
       id = (await db.query(
         `insert into vendas (loja_id, empresa_id, numero, tipo, situacao, cliente_id, data_venda, categoria_id,
-                             vendedor_id, desconto, observacoes, criado_por)
-         values ($1, $2, 0, $3, 'aberta', $4, $5, $6, $7, $8, $9, $7) returning id`,
-        [loja, empresa, tipo, cliente, data, categoria, req.usuarioId, desconto, texto(b.observacoes, 2000)])).rows[0].id;
+                             vendedor_id, desconto, observacoes, criado_por, parceiro_id)
+         values ($1, $2, 0, $3, 'aberta', $4, $5, $6, $7, $8, $9, $7, $10) returning id`,
+        [loja, empresa, tipo, cliente, data, categoria, req.usuarioId, desconto, texto(b.observacoes, 2000), parceiro])).rows[0].id;
     }
     for (const p of prontos) {
       await db.query(

@@ -910,3 +910,11 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .selo-menu-celular { position: absolute; top: 2px; right: 18%; }
 .barra-inferior button { position: relative; }
 .sugestoes-cliente .sem-cliente { padding: 10px 12px; font-size: 14px; }
+
+/* Parceiro: comissão por serviço no cadastro do cliente */
+.comissoes-parceiro { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--borda); border-radius: 8px; }
+.comissoes-parceiro .botao-texto { align-self: flex-start; }
+.linha-comissao { display: grid; grid-template-columns: minmax(0, 1fr) 72px 110px 32px; gap: 8px; align-items: center; }
+.linha-comissao select, .linha-comissao input { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 14px; min-height: 40px; background: #fff; color: var(--texto); min-width: 0; }
+.campo-parceiro { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; margin-top: 12px; max-width: 360px; }
+.campo-parceiro select { border: 1px solid var(--borda); border-radius: 6px; padding: 8px 10px; font-size: 15px; min-height: 42px; font-weight: 400; color: var(--texto); background: #fff; font-family: inherit; }
