@@ -4,8 +4,10 @@ import { cnpjValido, cpfValido } from './documentos.js';
 import { normalizarPlaca } from './placas.js';
 import { enderecoLoja, rotuloHorario } from './agendaTexto.js';
 
-// Robô do WhatsApp: segue o fluxo de perguntas do grupo (ou conversa com IA, se o master
-// liberou), junta nome, documento, veículo, serviço e data, e abre uma venda FUTURO.
+// Robô do WhatsApp: segue o fluxo de atendimento do grupo, em blocos (mensagem, menu com
+// caminhos, pergunta, conversa com IA, abrir venda, passar para atendente, encerrar). Junta nome,
+// documento, veículo, serviço e horário e abre uma venda FUTURO. A IA (se o master liberou) usa o
+// prompt da loja e a base de conhecimento (textos e PDFs) para responder.
 // A IA usa a API da Anthropic (Claude). A chave fica só no servidor (api/.env):
 //   ANTHROPIC_API_KEY=...
 //   ANTHROPIC_MODELO=claude-opus-5-5   (opcional; claude-haiku-5-5 sai mais barato)
@@ -36,7 +38,65 @@ export const ROBO_PADRAO = {
   mensagem_final: 'Obrigado, {nome}! Registramos o seu pedido nº {numero}. Em instantes um atendente confirma com você.',
   ia_ativa: false,
   ia_instrucoes: '',
+  fluxo: null,
 };
+
+// ------------------------------------------------------------------ fluxo em blocos
+export const BLOCOS = {
+  mensagem: 'Mensagem',
+  menu: 'Menu de opções',
+  pergunta: 'Pergunta',
+  ia: 'Conversa com IA',
+  venda: 'Abrir venda',
+  atendente: 'Passar para atendente',
+  fim: 'Encerrar',
+};
+
+// Fluxo do robô; sem fluxo salvo, monta o antigo: as perguntas em ordem (ou a IA) e abre a venda
+export function fluxoDe(robo) {
+  if (Array.isArray(robo?.fluxo) && robo.fluxo.length) return robo.fluxo;
+  const etapas = (robo?.etapas || []).filter((e) => CAMPOS[e.campo]);
+  const venda = { id: 'venda', tipo: 'venda', nome: 'Abrir venda', texto: robo?.mensagem_final || '' };
+  if (robo?.ia_ativa) {
+    return [{ id: 'ia', tipo: 'ia', nome: 'Conversa com IA', texto: '', campos: etapas.map((e) => ({ campo: e.campo, obrigatorio: e.obrigatorio })) }, venda];
+  }
+  return [...etapas.map((e, i) => ({ id: `p${i + 1}`, tipo: 'pergunta', nome: CAMPOS[e.campo], texto: e.pergunta, campo: e.campo, obrigatorio: e.obrigatorio })), venda];
+}
+
+// Confere o fluxo vindo da tela; devolve { fluxo } ou { erro }
+export function normalizarFluxo(lista) {
+  if (!Array.isArray(lista) || !lista.length) return { erro: 'O fluxo precisa de pelo menos um bloco.' };
+  if (lista.length > 60) return { erro: 'O fluxo pode ter até 60 blocos.' };
+  const txt = (v, n) => String(v ?? '').trim().slice(0, n);
+  const ids = new Set();
+  const fluxo = lista.map((b, i) => {
+    let id = txt(b?.id, 40).replace(/[^\w-]/g, '') || `b${i + 1}`;
+    while (ids.has(id)) id = `${id}x`;
+    ids.add(id);
+    return { ...b, id };
+  }).map((b, i) => {
+    const tipo = BLOCOS[b.tipo] ? b.tipo : 'mensagem';
+    const destino = (v) => (ids.has(txt(v, 40)) ? txt(v, 40) : '');
+    const r = { id: b.id, tipo, nome: txt(b.nome, 60) || `${BLOCOS[tipo]} ${i + 1}`, texto: txt(b.texto, 2000), ir: destino(b.ir) };
+    if (tipo === 'pergunta') { r.campo = CAMPOS[b.campo] ? b.campo : 'livre'; r.obrigatorio = Boolean(b.obrigatorio); }
+    if (tipo === 'menu') {
+      r.opcoes = (Array.isArray(b.opcoes) ? b.opcoes : []).slice(0, 12)
+        .map((o) => ({ rotulo: txt(o?.rotulo, 100), ir: destino(o?.ir) })).filter((o) => o.rotulo);
+    }
+    if (tipo === 'ia') {
+      const vistos = new Set();
+      r.campos = (Array.isArray(b.campos) ? b.campos : []).filter((c) => CAMPOS[c?.campo] && c.campo !== 'livre' && !vistos.has(c.campo) && vistos.add(c.campo))
+        .map((c) => ({ campo: c.campo, obrigatorio: Boolean(c.obrigatorio) }));
+    }
+    return r;
+  });
+  for (const [i, b] of fluxo.entries()) {
+    const nome = `o bloco ${i + 1} (${b.nome})`;
+    if (['mensagem', 'menu', 'pergunta'].includes(b.tipo) && !b.texto) return { erro: `Escreva o texto d${nome}.` };
+    if (b.tipo === 'menu' && !b.opcoes.length) return { erro: `Coloque pelo menos uma opção n${nome}.` };
+  }
+  return { fluxo };
+}
 
 const TIPOS = [['carro', 'CARRO'], ['moto', 'MOTO'], ['caminhao', 'CAMINHÃO'], ['outro', 'OUTRO']];
 const semAcento = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
@@ -179,39 +239,68 @@ const ESQUEMA = {
   },
 };
 
-async function perguntarIA(ctx, dados, livres) {
-  const etapas = ctx.robo.etapas || [];
-  const lista = etapas.map((e) => `- ${e.campo === 'livre' ? e.pergunta : CAMPOS[e.campo]}${e.obrigatorio ? ' (obrigatório)' : ' (opcional)'}`).join('\n');
+// Base de conhecimento do grupo (textos e PDFs), guardada um minuto para não ler a cada mensagem
+const conhecimentos = new Map();
+async function baseDeConhecimento(empresa) {
+  const c = conhecimentos.get(empresa);
+  if (c && Date.now() - c.em < 60000) return c.docs;
+  const docs = (await comoUsuario(null, (db) => db.query('select * from app_robo_conhecimento($1)', [empresa]))).rows;
+  conhecimentos.set(empresa, { em: Date.now(), docs });
+  return docs;
+}
+export const esquecerConhecimento = (empresa) => conhecimentos.delete(empresa);
+
+// Bloco "Conversa com IA": campos = dados a coletar (vazio = só tira dúvidas e segue o fluxo)
+async function perguntarIA(ctx, dados, livres, bloco) {
+  const campos = bloco.campos || [];
+  const lista = campos.map((e) => `- ${CAMPOS[e.campo]}${e.obrigatorio ? ' (obrigatório)' : ' (opcional)'}`).join('\n');
+  // parte fixa (vai para o cache): regras, serviços, prompt da loja e o objetivo do bloco
   const system = [
     'Você é o atendente virtual de uma empresa de vistoria veicular (ECV) no WhatsApp.',
-    'Seu objetivo é coletar os dados abaixo de forma simpática e breve, uma ou duas perguntas por vez, para a loja abrir o pedido.',
-    'Escreva mensagens curtas, sem markdown. Não invente preços, horários nem informações que não estão aqui.',
-    `Hoje é ${hojeSP().split('-').reverse().join('/')}.`,
-    `\nDados para coletar:\n${lista || '- Nome (obrigatório)'}`,
-    `\nServiços oferecidos:\n${ctx.servicos.map((s) => `- ${s.nome}`).join('\n') || '- (nenhum cadastrado)'}`,
-    livres ? `\nHorários livres para a vistoria (ofereça só estes; se o cliente pedir outro dia, diga os mais próximos):\n${
-      livres.length ? livres.map((t) => `- ${localSP(t)} (${rotuloHorario(t)})`).join('\n') : '- nenhum horário livre: diga que um atendente vai combinar o horário'}` : '',
-    ctx.robo.ia_instrucoes ? `\nInstruções da loja:\n${ctx.robo.ia_instrucoes}` : '',
-    `\nDados já confirmados até agora: ${JSON.stringify(dados)}`,
-    '\nEm "dados", devolva tudo o que já sabe (inclusive o que já estava confirmado). Marque "pronto" só quando tiver todos os obrigatórios;',
-    'nessa hora "resposta" é a despedida, dizendo que um atendente vai confirmar o pedido.',
-  ].join('\n');
+    'Escreva mensagens curtas e simpáticas, sem markdown. Não invente preços, horários nem informações:',
+    'use só o que está aqui, nas instruções da loja e nos documentos da base de conhecimento. Se não souber, diga que um atendente confirma.',
+    campos.length
+      ? `\nObjetivo: coletar os dados abaixo, uma ou duas perguntas por vez, para a loja abrir o pedido.\nDados para coletar:\n${lista}`
+      : '\nObjetivo: tirar as dúvidas do cliente. Marque "pronto" quando ele quiser seguir em frente (agendar, contratar) ou quando as dúvidas acabarem.',
+    `\nServiços oferecidos:\n${ctx.servicos.map((x) => `- ${x.nome}`).join('\n') || '- (nenhum cadastrado)'}`,
+    ctx.robo.ia_instrucoes ? `\nInstruções da loja (prompt):\n${ctx.robo.ia_instrucoes}` : '',
+    '\nEm "dados", devolva tudo o que já sabe (inclusive o que já estava confirmado).',
+    'Quando marcar "pronto", "resposta" é uma frase curta de transição (o atendimento continua no próximo passo do fluxo).',
+    'Marque "chamar_atendente" se o cliente pedir uma pessoa ou se o assunto fugir do atendimento da loja.',
+  ].filter(Boolean).join('\n');
 
   // histórico do chamado: entrada = cliente, saída = loja; junta mensagens seguidas do mesmo lado
   const messages = [];
   for (const m of ctx.mensagens) {
     const role = m.direcao === 'entrada' ? 'user' : 'assistant';
     if (!messages.length && role === 'assistant') continue;
-    if (messages.at(-1)?.role === role) messages.at(-1).content += `\n${m.texto}`;
-    else messages.push({ role, content: m.texto });
+    if (messages.at(-1)?.role === role) messages.at(-1).texto += `\n${m.texto}`;
+    else messages.push({ role, texto: m.texto });
   }
   if (!messages.length || messages.at(-1).role !== 'user') return null;
+  const conteudo = messages.map((m) => ({ role: m.role, content: [{ type: 'text', text: m.texto }] }));
+
+  // base de conhecimento no começo da conversa (fica no cache); o momento atual vai no fim
+  const docs = (await baseDeConhecimento(ctx.empresa_id)).map((k) => ({
+    type: 'document',
+    title: k.titulo,
+    source: k.tipo === 'pdf' ? { type: 'base64', media_type: 'application/pdf', data: k.pdf } : { type: 'text', media_type: 'text/plain', data: k.conteudo || '' },
+  }));
+  if (docs.length) {
+    docs.at(-1).cache_control = { type: 'ephemeral' };
+    conteudo[0].content.unshift({ type: 'text', text: 'Base de conhecimento da loja (consulte para responder):' }, ...docs);
+  }
+  conteudo.at(-1).content.push({ type: 'text', text: [
+    `[Agora: ${hojeSP().split('-').reverse().join('/')}. Dados já confirmados: ${JSON.stringify(dados)}.`,
+    livres ? `Horários livres para a vistoria (ofereça só estes; se pedir outro dia, diga os mais próximos): ${
+      livres.length ? livres.map((t) => `${localSP(t)} (${rotuloHorario(t)})`).join('; ') : 'nenhum, diga que um atendente vai combinar o horário'}.` : '',
+    ']'].filter(Boolean).join(' ') });
 
   const r = await anthropic().messages.create({
     model: process.env.ANTHROPIC_MODELO || 'claude-opus-5-5',
     max_tokens: 4000,
-    system,
-    messages,
+    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+    messages: conteudo,
     output_config: { effort: 'low', format: { type: 'json_schema', schema: ESQUEMA } },
   });
   if (r.stop_reason === 'refusal') return { resposta: '', dados: {}, pronto: false, chamar_atendente: true };
@@ -230,13 +319,16 @@ export function atenderComRobo(contatoId, deps) {
   return atual;
 }
 
+const juntar = (falas) => falas.filter(Boolean).join('\n\n');
+const textoMenu = (b) => `${b.texto}\n${b.opcoes.map((o, i) => `${i + 1} - ${o.rotulo}`).join('\n')}`;
+
 async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   const ctx = await comoUsuario(null, async (db) => (await db.query('select app_robo_contexto($1) as c', [contatoId])).rows[0].c);
   if (!ctx) return; // robô desligado ou sem chamado aberto
   const ch = ctx.chamado;
   if (ch.venda_id || ch.robo_estado === 'concluido' || ch.robo_estado === 'humano') return;
-  const usaIA = ctx.robo.ia_ativa && ctx.ia_liberada && iaConfigurada();
-  const etapas = (ctx.robo.etapas || []).filter((e) => CAMPOS[e.campo]);
+  const fluxo = fluxoDe(ctx.robo);
+  const iaPode = ctx.ia_liberada && iaConfigurada();
   const dados = { ...(ch.robo_dados || {}) };
   const ultima = ctx.mensagens.filter((m) => m.direcao === 'entrada').at(-1)?.texto || '';
 
@@ -248,76 +340,79 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
       [ch.id, texto, falha ? 'falhou' : envio.status, falha?.message || null, envio?.id_externo || null]));
   };
   const estado = (e, etapa, d) => comoUsuario(null, (db) => db.query('select app_robo_estado($1, $2, $3, $4)', [ch.id, e, etapa, d]));
-  const passarParaAtendente = async (msg) => {
+  const passarParaAtendente = async (msg, falas = []) => {
     await estado('humano', null, dados);
-    await falar(msg || 'Certo! Um atendente vai continuar a conversa com você em instantes.');
+    await falar(juntar([...falas, msg || 'Certo! Um atendente vai continuar a conversa com você em instantes.']));
   };
-  // Pergunta da etapa; a do horário busca os horários livres e guarda as opções oferecidas
-  const perguntar = async (etapa, depois) => {
-    if (etapa.campo !== 'horario') return pergunta(etapa, ctx.servicos);
-    const opcoes = await horariosLivres(ctx.empresa_id, { de: dados.data, depois });
+  const posicao = (id) => fluxo.findIndex((b) => b.id === id);
+  const depois = (n, ir) => (ir ? posicao(ir) : n + 1);
+  // Pergunta do bloco; a do horário busca os horários livres e guarda as opções oferecidas
+  const perguntar = async (b, aPartirDe) => {
+    const etapa = { campo: b.campo, pergunta: b.texto, obrigatorio: b.obrigatorio };
+    if (b.campo !== 'horario') return pergunta(etapa, ctx.servicos);
+    const opcoes = await horariosLivres(ctx.empresa_id, { de: dados.data, depois: aPartirDe });
     if (!opcoes.length) return null;
     dados.opcoes_horario = opcoes;
-    return `${etapa.pergunta || CAMPOS.horario}\n${listaHorarios(opcoes)}\n(responda com o número; para ver outros horários, escreva MAIS)`;
+    return `${b.texto || CAMPOS.horario}\n${listaHorarios(opcoes)}\n(responda com o número; para ver outros horários, escreva MAIS)`;
   };
-  // Vai para a etapa n (pula a do horário se não houver horário livre) ou fecha o pedido
-  const seguir = async (n, prefixo) => {
-    while (n < etapas.length) {
-      const q = await perguntar(etapas[n]);
-      if (q) {
-        await estado('coletando', n, dados);
-        return falar([prefixo, q].filter(Boolean).join('\n\n'));
-      }
-      dados.sem_horario = true;
-      n += 1;
-    }
-    await estado('coletando', n, dados);
-    return abrirVenda('Recebemos o seu pedido! Em instantes um atendente confirma com você.');
-  };
-  const abrirVenda = async (despedida) => {
+  const abrirVenda = async (b, falas) => {
     let v;
     try {
       v = await comoUsuario(null, async (db) => (await db.query('select * from app_robo_abrir_venda($1, $2)',
         [ch.id, JSON.stringify(paraVenda(dados, ctx.contato, nacional))])).rows[0]);
     } catch (e) {
       console.error('[robô] não abriu a venda:', e.message);
-      return passarParaAtendente('Recebemos os seus dados! Um atendente vai continuar o atendimento em instantes.');
+      return passarParaAtendente('Recebemos os seus dados! Um atendente vai continuar o atendimento em instantes.', falas);
     }
-    let fim = ctx.robo.mensagem_final ? formatar(ctx.robo.mensagem_final, { ...dados, numero: v.numero }) : despedida;
-    if (dados.horario && !/\{horario\}/.test(ctx.robo.mensagem_final || '')) {
+    const modelo = b?.texto || ctx.robo.mensagem_final;
+    let fim = modelo ? formatar(modelo, { ...dados, numero: v.numero }) : 'Recebemos o seu pedido! Em instantes um atendente confirma com você.';
+    if (dados.horario && !/\{horario\}/.test(modelo || '')) {
       const loja = await comoUsuario(null, async (db) => (await db.query('select app_agenda_loja_robo($1) as l', [ctx.empresa_id])).rows[0].l);
       const end = enderecoLoja(loja);
       fim += `\n\nSua vistoria ficou agendada para ${rotuloHorario(dados.horario)}${loja?.nome ? `, na ${loja.nome}` : ''}.${end ? `\nEndereço: ${end}.` : ''}`;
     } else if (dados.sem_horario) {
       fim += '\n\nNo momento não há horário livre na agenda; o atendente vai combinar o horário com você.';
     }
-    await falar(fim);
+    await falar(juntar([...falas, fim]));
   };
 
-  // atendente devolveu a conversa para o robô: repete a pergunta de onde parou
-  if (retomar) {
-    const etapa = etapas[ch.robo_etapa || 0];
-    if (!usaIA && etapa) {
-      const q = await perguntar(etapa);
-      if (etapa.campo === 'horario') await estado('coletando', null, dados); // guarda os horários oferecidos
-      if (q) await falar(q);
+  // Executa o fluxo a partir do bloco n até um bloco que espera resposta (ou que termina)
+  const executar = async (n, falas = []) => {
+    for (let passos = 0; passos < 60; passos += 1) {
+      const b = fluxo[n];
+      if (!b) return passarParaAtendente(null, falas); // fim do fluxo sem desfecho: uma pessoa continua
+      if (b.tipo === 'mensagem') { falas.push(formatar(b.texto, dados)); n = depois(n, b.ir); continue; }
+      if (b.tipo === 'menu') { await estado('coletando', n, dados); return falar(juntar([...falas, formatar(textoMenu(b), dados)])); }
+      if (b.tipo === 'pergunta') {
+        const q = await perguntar(b);
+        if (q) { await estado('coletando', n, dados); return falar(juntar([...falas, q])); }
+        dados.sem_horario = true; n = depois(n, b.ir); continue;
+      }
+      if (b.tipo === 'ia') {
+        await estado('coletando', n, dados);
+        if (!iaPode) return passarParaAtendente(null, falas);
+        return conversarIA(n, b, falas);
+      }
+      if (b.tipo === 'venda') return abrirVenda(b, falas);
+      if (b.tipo === 'atendente') return passarParaAtendente(b.texto ? formatar(b.texto, dados) : null, falas);
+      if (b.tipo === 'fim') { await estado('concluido', null, dados); return falar(juntar([...falas, formatar(b.texto, dados)])); }
+      n += 1;
     }
-    return;
-  }
-  if (ch.robo_estado && QUER_ATENDENTE.test(semAcento(ultima))) return passarParaAtendente();
+    return passarParaAtendente(null, falas); // fluxo em círculo
+  };
 
-  // ---------------- com IA
-  if (usaIA) {
-    if (!ch.robo_estado) await estado('coletando', 0, dados);
-    const querHorario = etapas.some((e) => e.campo === 'horario') && !dados.horario;
+  // Bloco de IA: responde a última mensagem; quando termina, segue o fluxo
+  const conversarIA = async (n, b, falas = []) => {
+    const campos = b.campos || [];
+    const querHorario = campos.some((e) => e.campo === 'horario') && !dados.horario;
     const livres = querHorario ? await horariosLivres(ctx.empresa_id, { de: dados.data, limite: 20 }) : null;
     let r;
-    try { r = await perguntarIA(ctx, dados, livres); } catch (e) {
+    try { r = await perguntarIA(ctx, dados, livres, b); } catch (e) {
       console.error('[robô IA]', e.message);
-      return passarParaAtendente('Recebemos a sua mensagem! Um atendente vai responder em instantes.');
+      return passarParaAtendente('Recebemos a sua mensagem! Um atendente vai responder em instantes.', falas);
     }
-    if (!r) return;
-    if (r.chamar_atendente) return passarParaAtendente(r.resposta || undefined);
+    if (!r) return falas.length ? falar(juntar(falas)) : undefined;
+    if (r.chamar_atendente) return passarParaAtendente(r.resposta || null, falas);
     // só guarda o que passa na conferência
     for (const [campo, valor] of Object.entries(r.dados || {})) {
       if (valor == null || valor === '') continue;
@@ -341,63 +436,88 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
       delete dados.horario_escolhido;
       const id = await reservar(ch, t, dados, ctx.contato);
       if (!id) {
-        await estado('coletando', null, dados);
+        await estado('coletando', n, dados);
         const novos = await horariosLivres(ctx.empresa_id, { de: dados.data });
-        return falar(`Esse horário acabou de ser ocupado. ${novos.length ? `Estes ainda estão livres:\n${listaHorarios(novos)}` : 'Um atendente vai combinar o horário com você.'}`);
+        return falar(juntar([...falas, `Esse horário acabou de ser ocupado. ${novos.length ? `Estes ainda estão livres:\n${listaHorarios(novos)}` : 'Um atendente vai combinar o horário com você.'}`]));
       }
       dados.horario = t; dados.agendamento_id = id; dados.data = localSP(t).slice(0, 10);
     }
     if (querHorario && livres && !livres.length) dados.sem_horario = true;
-    const faltando = etapas.filter((e) => e.obrigatorio && e.campo !== 'livre' && !(e.campo === 'horario' && dados.sem_horario)
+    const faltando = campos.filter((e) => e.obrigatorio && !(e.campo === 'horario' && dados.sem_horario)
       && !dados[e.campo === 'servico' ? 'servico_id' : e.campo]);
-    if (r.pronto && !faltando.length) {
-      await estado('coletando', null, dados);
-      return abrirVenda(r.resposta);
-    }
-    await estado('coletando', null, dados);
-    return falar(r.resposta || (faltando[0] && await perguntar(faltando[0])));
-  }
+    if (r.pronto && !faltando.length) return executar(depois(n, b.ir), [...falas, r.resposta]);
+    await estado('coletando', n, dados);
+    return falar(juntar([...falas, r.resposta || (faltando[0] && await perguntar({ ...faltando[0], texto: CAMPOS[faltando[0].campo] }))]));
+  };
 
-  // ---------------- fluxo fixo
+  // atendente devolveu a conversa para o robô: repete de onde parou
+  if (retomar) {
+    const n = ch.robo_etapa || 0;
+    const b = fluxo[n];
+    if (b?.tipo === 'menu') return falar(textoMenu(b));
+    if (b?.tipo === 'pergunta') {
+      const q = await perguntar(b);
+      if (b.campo === 'horario') await estado('coletando', null, dados); // guarda os horários oferecidos
+      if (q) await falar(q);
+    }
+    return;
+  }
+  if (ch.robo_estado && QUER_ATENDENTE.test(semAcento(ultima))) return passarParaAtendente();
+
+  // primeira mensagem: boas-vindas e o fluxo do começo
   if (!ch.robo_estado) {
     await estado('coletando', 0, dados);
-    if (!etapas.length) { await falar(ctx.robo.saudacao); return abrirVenda('Recebemos o seu pedido!'); }
-    return seguir(0, ctx.robo.saudacao);
+    return executar(0, [ctx.robo.saudacao]);
   }
-  let n = ch.robo_etapa || 0;
-  const etapa = etapas[n];
-  if (!etapa) return abrirVenda('Recebemos o seu pedido!');
-  if (etapa.campo === 'horario') {
+
+  const n = ch.robo_etapa || 0;
+  const b = fluxo[n];
+  if (!b || !['menu', 'pergunta', 'ia'].includes(b.tipo)) return executar(n);
+
+  if (b.tipo === 'ia') return iaPode ? conversarIA(n, b) : passarParaAtendente();
+
+  if (b.tipo === 'menu') {
+    const s = semAcento(ultima);
+    const k = Number(s.replace(/\D/g, '') || NaN);
+    const opcao = (Number.isInteger(k) && b.opcoes[k - 1]) || b.opcoes.find((o) => semAcento(o.rotulo) === s)
+      || b.opcoes.find((o) => s.length >= 3 && semAcento(o.rotulo).includes(s));
+    if (!opcao) return falar(`Responda com o número de uma das opções.\n\n${textoMenu(b)}`);
+    dados.extras = [...(dados.extras || []), { pergunta: b.texto, resposta: opcao.rotulo }];
+    return executar(depois(n, opcao.ir));
+  }
+
+  // pergunta
+  if (b.campo === 'horario') {
     const opcoes = dados.opcoes_horario || [];
     if (['MAIS', 'OUTROS', 'OUTRO'].includes(semAcento(ultima))) {
-      const q = await perguntar(etapa, opcoes.at(-1));
+      const q = await perguntar(b, opcoes.at(-1));
       await estado('coletando', n, dados);
-      return falar(q || `Não há mais horários livres depois desses.\n\n${await perguntar(etapa)}`);
+      return falar(q || `Não há mais horários livres depois desses.\n\n${await perguntar(b)}`);
     }
     const k = Number(semAcento(ultima));
     const escolhido = Number.isInteger(k) ? opcoes[k - 1] : null;
-    if (!escolhido && !(!etapa.obrigatorio && PULAR.includes(semAcento(ultima)))) {
+    if (!escolhido && !(!b.obrigatorio && PULAR.includes(semAcento(ultima)))) {
       return falar(`Responda com o número do horário (ou MAIS para ver outros).\n\n${listaHorarios(opcoes)}`);
     }
     if (escolhido) {
       const id = await reservar(ch, escolhido, dados, ctx.contato);
       if (!id) {
-        const q = await perguntar(etapa);
+        const q = await perguntar(b);
         await estado('coletando', n, dados);
         return falar(q ? `Esse horário acabou de ser ocupado. Escolha outro:\n\n${q}` : 'Esse horário acabou de ser ocupado e não há outro livre agora.');
       }
       dados.horario = escolhido; dados.agendamento_id = id; dados.data = localSP(escolhido).slice(0, 10);
     }
-  } else if (!etapa.obrigatorio && PULAR.includes(semAcento(ultima))) {
+  } else if (!b.obrigatorio && PULAR.includes(semAcento(ultima))) {
     // pulou
   } else {
-    const c = conferir(etapa.campo, ultima, ctx.servicos);
-    if (c.erro) return falar(`${c.erro}\n\n${await perguntar(etapa)}`);
-    if (etapa.campo === 'livre') dados.extras = [...(dados.extras || []), { pergunta: etapa.pergunta, resposta: c.valor }];
-    else if (etapa.campo === 'servico') { dados.servico_id = c.valor; dados.servico_nome = c.nome; }
-    else dados[etapa.campo] = c.valor;
+    const c = conferir(b.campo, ultima, ctx.servicos);
+    if (c.erro) return falar(`${c.erro}\n\n${await perguntar(b)}`);
+    if (b.campo === 'livre') dados.extras = [...(dados.extras || []), { pergunta: b.texto, resposta: c.valor }];
+    else if (b.campo === 'servico') { dados.servico_id = c.valor; dados.servico_nome = c.nome; }
+    else dados[b.campo] = c.valor;
   }
-  return seguir(n + 1);
+  return executar(depois(n, b.ir));
 }
 
 export const iaDisponivel = iaConfigurada;

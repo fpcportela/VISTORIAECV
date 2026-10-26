@@ -920,3 +920,30 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .tabela-precos td { padding: 4px; border-bottom: 1px solid #eef1f6; }
 .tabela-precos .num { text-align: right; white-space: nowrap; }
 .tabela-precos input { width: 110px; text-align: right; border: 1px solid var(--borda); border-radius: 6px; padding: 6px 8px; font: inherit; }
+
+/* Robô: fluxo em blocos e base de conhecimento */
+.robo-fluxo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.robo-bloco { border: 1px solid var(--borda); border-left: 4px solid var(--primaria, #0b6fb6); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+.robo-bloco.bloco-menu { border-left-color: #7c3aed; }
+.robo-bloco.bloco-pergunta { border-left-color: #0891b2; }
+.robo-bloco.bloco-ia { border-left-color: #16a34a; }
+.robo-bloco.bloco-venda { border-left-color: #ca8a04; }
+.robo-bloco.bloco-atendente, .robo-bloco.bloco-fim { border-left-color: #64748b; }
+.robo-bloco-topo, .robo-linha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.robo-bloco-topo input { flex: 1 1 200px; min-width: 0; }
+.robo-bloco-num, .robo-opcao-num { display: inline-grid; place-items: center; min-width: 28px; height: 28px; border-radius: 50%; background: #eef1f6; font-weight: 700; font-size: 13px; }
+.robo-bloco select, .robo-bloco input, .robo-bloco textarea, .robo-linha select { border: 1px solid var(--borda); border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 14px; background: #fff; color: var(--texto); }
+.robo-bloco textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.robo-opcoes { display: flex; flex-direction: column; gap: 6px; padding-left: 10px; }
+.robo-opcoes .robo-linha input { flex: 1 1 180px; min-width: 0; }
+.robo-opcoes .robo-linha select { flex: 0 1 260px; min-width: 0; }
+.robo-campos-ia { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.robo-campo-ia { display: flex; gap: 8px; align-items: center; }
+.robo-config .robo-campo-ia label.linha-check { font-weight: 500; }
+.robo-config .robo-depois { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
+.robo-prompt { font-family: inherit; min-height: 160px; }
+.robo-base { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--borda); padding-top: 14px; }
+.robo-docs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.robo-docs li { display: flex; align-items: center; gap: 10px; border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; }
+.robo-doc-nome { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.robo-config label.botao-contorno, .robo-config label.botao-texto { display: inline-flex; flex-direction: row; cursor: pointer; }

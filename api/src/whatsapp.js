@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
+import express from 'express';
 import { comoUsuario } from './db.js';
 import { Recusa, UUID, criarComRecusa, texto } from './comum.js';
-import { CAMPOS, ROBO_PADRAO, atenderComRobo, iaDisponivel } from './robo.js';
+import { BLOCOS, CAMPOS, ROBO_PADRAO, atenderComRobo, esquecerConhecimento, fluxoDe, iaDisponivel, normalizarFluxo } from './robo.js';
 
 // Módulo WhatsApp: conversas, chamados em kanban e o código de "Esqueci a senha".
 // O envio usa a API oficial da Meta (WhatsApp Cloud API). As chaves ficam só no
@@ -599,8 +600,9 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const g = (await db.query('select ia_liberada, eh_admin_rede() as master from empresas where id = $1', [empresa])).rows[0];
       const lojas = (await db.query('select id, nome from lojas where empresa_id = $1 and ativo order by nome', [empresa])).rows;
       const servicos = (await db.query('select id, nome from servicos where empresa_id = $1 and ativo order by nome', [empresa])).rows;
+      const robo = { ...ROBO_PADRAO, ...(salvo || {}) };
       return {
-        robo: { ...ROBO_PADRAO, ...(salvo || {}) }, campos: CAMPOS, lojas, servicos,
+        robo: { ...robo, fluxo: fluxoDe(robo) }, campos: CAMPOS, blocos: BLOCOS, lojas, servicos,
         ia_liberada: g.ia_liberada, ia_configurada: iaDisponivel(), master: g.master, pode_enviar: await podeEnviar(db, empresa),
       };
     }));
@@ -614,20 +616,133 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       obrigatorio: Boolean(e?.obrigatorio),
     }));
     if (etapas.some((e) => !e.pergunta)) throw new Recusa(400, 'Escreva a pergunta de cada etapa.');
+    // fluxo em blocos (a tela nova sempre manda); as perguntas dele também ficam em "etapas"
+    let fluxo = null;
+    if (b.fluxo !== undefined) {
+      const r = normalizarFluxo(b.fluxo);
+      if (r.erro) throw new Recusa(400, r.erro);
+      fluxo = r.fluxo;
+      etapas.splice(0, etapas.length, ...fluxo.filter((x) => x.tipo === 'pergunta').map((x) => ({ campo: x.campo, pergunta: x.texto, obrigatorio: x.obrigatorio })));
+    }
     await comoUsuario(req.usuarioId, async (db) => {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
       await exigirEnvio(db, empresa);
       const ia = (await db.query('select ia_liberada from empresas where id = $1', [empresa])).rows[0].ia_liberada;
-      if (b.ia_ativa && !ia) throw new Recusa(403, 'A IA ainda não foi liberada para este grupo. Fale com o master (depende do contrato).');
+      const usaIA = fluxo ? fluxo.some((x) => x.tipo === 'ia') : Boolean(b.ia_ativa);
+      if (usaIA && !ia) throw new Recusa(403, 'A IA ainda não foi liberada para este grupo. Tire o bloco "Conversa com IA" ou fale com o master (depende do contrato).');
       const loja = UUID.test(b.loja_id || '') && (await db.query('select 1 from lojas where id = $1 and empresa_id = $2', [b.loja_id, empresa])).rowCount ? b.loja_id : null;
       const servico = UUID.test(b.servico_id || '') && (await db.query('select 1 from servicos where id = $1 and empresa_id = $2', [b.servico_id, empresa])).rowCount ? b.servico_id : null;
       await db.query(
-        `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, atualizado_em)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+        `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, fluxo, atualizado_em)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
          on conflict (empresa_id) do update set ativo = $2, saudacao = $3, etapas = $4, mensagem_final = $5, loja_id = $6,
-                servico_id = $7, ia_ativa = $8, ia_instrucoes = $9, atualizado_em = now()`,
+                servico_id = $7, ia_ativa = $8, ia_instrucoes = $9, fluxo = coalesce($10, whatsapp_robo.fluxo), atualizado_em = now()`,
         [empresa, Boolean(b.ativo), texto(b.saudacao, 1000), JSON.stringify(etapas), texto(b.mensagem_final, 1000),
-         loja, servico, Boolean(b.ia_ativa) && ia, texto(b.ia_instrucoes, 4000)]);
+         loja, servico, usaIA && ia, texto(b.ia_instrucoes, 30000), fluxo && JSON.stringify(fluxo)]);
+    });
+    res.json({ ok: true });
+  }));
+
+  // ------------------------------------------------------------ base de conhecimento da IA
+  // Textos digitados e arquivos (PDF ou TXT) que a IA do robô consulta para responder
+  const MAX_DOC = 10 * 1024 * 1024, MAX_BASE = 30 * 1024 * 1024;
+  const docDoGrupo = async (db, id) => {
+    if (!UUID.test(id || '')) throw new Recusa(404, 'Documento não encontrado.');
+    const k = (await db.query('select id, empresa_id from whatsapp_conhecimento where id = $1', [id])).rows[0];
+    if (!k) throw new Recusa(404, 'Documento não encontrado.');
+    return k;
+  };
+  const caberNaBase = async (db, empresa, mais) => {
+    const usado = Number((await db.query('select coalesce(sum(tamanho), 0) as t from whatsapp_conhecimento where empresa_id = $1', [empresa])).rows[0].t);
+    if (usado + mais > MAX_BASE) throw new Recusa(400, 'A base de conhecimento passou de 30 MB. Tire algum documento antes.');
+  };
+
+  app.get('/api/whatsapp/conhecimento', exigeLogin, comRecusa(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
+      return (await db.query(
+        `select id, titulo, tipo, case when tipo = 'texto' then conteudo end as conteudo, nome_arquivo, tamanho, ativo, criado_em
+           from whatsapp_conhecimento where empresa_id = $1 order by criado_em`, [empresa])).rows;
+    }));
+  }));
+
+  app.post('/api/whatsapp/conhecimento', exigeLogin, comRecusa(async (req, res) => {
+    const titulo = texto(req.body?.titulo, 120);
+    const conteudo = texto(req.body?.conteudo, 200000);
+    if (!titulo || !conteudo) throw new Recusa(400, 'Dê um título e escreva o texto.');
+    const id = await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
+      await exigirEnvio(db, empresa);
+      const tam = Buffer.byteLength(conteudo);
+      await caberNaBase(db, empresa, tam);
+      esquecerConhecimento(empresa);
+      return (await db.query(
+        `insert into whatsapp_conhecimento (empresa_id, titulo, tipo, conteudo, tamanho, criado_por)
+         values ($1, $2, 'texto', $3, $4, $5) returning id`, [empresa, titulo, conteudo, tam, req.usuarioId])).rows[0].id;
+    });
+    res.json({ id });
+  }));
+
+  // O corpo é o próprio arquivo; título e nome do arquivo vão na URL
+  app.post('/api/whatsapp/conhecimento/arquivo', exigeLogin, express.raw({ type: () => true, limit: MAX_DOC }), comRecusa(async (req, res) => {
+    const bytes = req.body;
+    if (!Buffer.isBuffer(bytes) || !bytes.length) throw new Recusa(400, 'Escolha o arquivo.');
+    const arquivo = texto(req.query.arquivo, 150) || 'arquivo';
+    const titulo = texto(req.query.titulo, 120) || arquivo.replace(/\.[^.]+$/, '');
+    const pdf = bytes.subarray(0, 5).toString('latin1') === '%PDF-';
+    const ehTexto = /\.(txt|md|csv)$/i.test(arquivo);
+    if (!pdf && !ehTexto) throw new Recusa(400, 'Envie PDF ou TXT. Documento do Word: salve como PDF antes de enviar.');
+    const id = await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
+      await exigirEnvio(db, empresa);
+      await caberNaBase(db, empresa, bytes.length);
+      esquecerConhecimento(empresa);
+      return (await db.query(
+        `insert into whatsapp_conhecimento (empresa_id, titulo, tipo, conteudo, arquivo, nome_arquivo, tamanho, criado_por)
+         values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
+        [empresa, titulo, pdf ? 'pdf' : 'texto', pdf ? null : bytes.toString('utf8').replace(/\u0000/g, ''), pdf ? bytes : null, arquivo,
+         bytes.length, req.usuarioId])).rows[0].id;
+    });
+    res.json({ id });
+  }));
+
+  app.get('/api/whatsapp/conhecimento/:id/arquivo', exigeLogin, comRecusa(async (req, res) => {
+    const k = await comoUsuario(req.usuarioId, async (db) => {
+      await docDoGrupo(db, req.params.id);
+      return (await db.query('select titulo, tipo, conteudo, arquivo, nome_arquivo from whatsapp_conhecimento where id = $1', [req.params.id])).rows[0];
+    });
+    const nome = k.nome_arquivo || `${k.titulo}.${k.tipo === 'pdf' ? 'pdf' : 'txt'}`;
+    res.set('Content-Type', k.tipo === 'pdf' ? 'application/pdf' : 'text/plain; charset=utf-8');
+    res.set('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(nome)}`);
+    res.send(k.tipo === 'pdf' ? k.arquivo : k.conteudo);
+  }));
+
+  app.put('/api/whatsapp/conhecimento/:id', exigeLogin, comRecusa(async (req, res) => {
+    const b = req.body || {};
+    await comoUsuario(req.usuarioId, async (db) => {
+      const k = await docDoGrupo(db, req.params.id);
+      await exigirEnvio(db, k.empresa_id);
+      const titulo = texto(b.titulo, 120);
+      if ('titulo' in b && !titulo) throw new Recusa(400, 'Dê um título ao documento.');
+      const conteudo = 'conteudo' in b ? texto(b.conteudo, 200000) : null;
+      if ('conteudo' in b && !conteudo) throw new Recusa(400, 'O texto não pode ficar vazio.');
+      await db.query(
+        `update whatsapp_conhecimento set titulo = coalesce($2, titulo), ativo = coalesce($3, ativo),
+                conteudo = case when tipo = 'texto' and $4::text is not null then $4 else conteudo end,
+                tamanho = case when tipo = 'texto' and $4::text is not null then octet_length($4) else tamanho end,
+                atualizado_em = now()
+          where id = $1`, [k.id, titulo, typeof b.ativo === 'boolean' ? b.ativo : null, conteudo]);
+      esquecerConhecimento(k.empresa_id);
+    });
+    res.json({ ok: true });
+  }));
+
+  app.delete('/api/whatsapp/conhecimento/:id', exigeLogin, comRecusa(async (req, res) => {
+    await comoUsuario(req.usuarioId, async (db) => {
+      const k = await docDoGrupo(db, req.params.id);
+      await exigirEnvio(db, k.empresa_id);
+      await db.query('delete from whatsapp_conhecimento where id = $1', [k.id]);
+      esquecerConhecimento(k.empresa_id);
     });
     res.json({ ok: true });
   }));

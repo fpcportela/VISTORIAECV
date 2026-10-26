@@ -121,12 +121,25 @@ Se a API não estiver no mesmo computador do Docker, ajuste `EVOLUTION_WEBHOOK_U
 
 ### Robô de atendimento
 
-Em WhatsApp > Robô de atendimento cada grupo monta as perguntas (nome, CPF/CNPJ, placa, tipo de
-veículo, serviço, data ou pergunta livre), a mensagem de boas-vindas e a final. Com o robô ligado,
-quem manda mensagem responde as perguntas e, no fim, o sistema abre uma venda **FUTURO** na tela de
-vendas, com o cliente e o veículo. Na venda, o botão **Confirmar venda** passa ela para Aberta.
-Se um atendente responder na conversa, o robô para naquele atendimento. O cliente também pode
-escrever ATENDENTE a qualquer momento.
+Em WhatsApp > Robô de atendimento cada grupo monta o **fluxo de atendimento** em blocos, que o robô
+segue a partir do bloco 1:
+
+- **Mensagem**: manda um texto e segue.
+- **Menu de opções**: manda a pergunta com as opções numeradas; cada opção leva para um bloco.
+- **Pergunta**: pede um dado (nome, CPF/CNPJ, placa, tipo de veículo, serviço, data, horário da agenda,
+  e-mail ou pergunta livre) e confere a resposta.
+- **Conversa com IA**: a IA conversa usando o prompt e a base de conhecimento; com dados marcados, junta
+  esses dados; sem nenhum, só tira as dúvidas. Quando termina, segue o fluxo.
+- **Abrir venda**: abre a venda **FUTURO** com o cliente e o veículo e manda a mensagem final.
+- **Passar para atendente** e **Encerrar**.
+
+Cada bloco diz para onde vai depois ("Próximo bloco" ou "Ir para" outro bloco). Na venda, o botão
+**Confirmar venda** passa ela para Aberta. Se um atendente responder na conversa, o robô para naquele
+atendimento. O cliente também pode escrever ATENDENTE a qualquer momento.
+
+**Prompt da IA**: o texto com quem é a loja, como falar, regras e preços (pode carregar de um .txt).
+**Base de conhecimento**: textos e arquivos PDF ou TXT (até 10 MB cada, 30 MB no total) que a IA
+consulta para responder. Documento do Word: salve como PDF.
 
 A conversa com **IA** só aparece no grupo em que o master marcar "IA liberada" (depende do contrato).
 Ela usa a API da Anthropic (Claude). Coloque no `api/.env`:

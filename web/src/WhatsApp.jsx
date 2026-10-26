@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from './api.js';
+import { api, grupoEscolhido, sessao } from './api.js';
 import { criarTem } from './modulos.js';
 import { mascaraTelefone } from './documentos.js';
 import { EditorCliente } from './Clientes.jsx';
@@ -581,12 +581,32 @@ function ConfigurarMeta({ situacao, aoFechar, aoSalvar }) {
 // ------------------------------------------------------------ robô de atendimento
 // Fluxo de perguntas que o robô faz a quem manda mensagem; no fim abre uma venda FUTURO.
 // Com IA (só se o master liberar para o grupo), o robô conversa livre e junta os mesmos dados.
+let seq = 0;
+const novoId = () => `b${Date.now().toString(36)}${(seq += 1)}`;
+const blocoVazio = (tipo) => ({
+  id: novoId(), tipo, nome: '', texto: '', ir: '',
+  ...(tipo === 'menu' && { opcoes: [{ rotulo: '', ir: '' }, { rotulo: '', ir: '' }] }),
+  ...(tipo === 'pergunta' && { campo: 'nome', obrigatorio: true }),
+  ...(tipo === 'ia' && { campos: [] }),
+});
+const DICA_BLOCO = {
+  mensagem: 'Manda o texto e segue sem esperar resposta.',
+  menu: 'Manda a pergunta com as opções numeradas; cada opção leva para um bloco.',
+  pergunta: 'Pergunta um dado do cliente e confere a resposta.',
+  ia: 'A IA conversa usando o prompt e a base de conhecimento. Com dados marcados, ela junta esses dados; sem nenhum, só tira as dúvidas. Quando termina, segue o fluxo.',
+  venda: 'Abre a venda FUTURO com os dados juntados e manda a mensagem final. Termina o robô.',
+  atendente: 'Manda o texto e passa a conversa para uma pessoa.',
+  fim: 'Manda o texto e encerra o robô nesta conversa, sem abrir venda.',
+};
+
 function Robo() {
   const [d, setD] = useState(null);
   const [f, setF] = useState(null);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [novoTipo, setNovoTipo] = useState('mensagem');
+  const promptArquivo = useRef(null);
 
   const carregar = () => api('/whatsapp/robo').then((r) => { setD(r); setF(r.robo); }).catch((x) => setErro(x.message));
   useEffect(() => { carregar(); }, []);
@@ -594,10 +614,21 @@ function Robo() {
 
   const pode = d.pode_enviar;
   const mudar = (campos) => { setF({ ...f, ...campos }); setOk(''); };
-  const mudarEtapa = (n, campos) => mudar({ etapas: f.etapas.map((e, i) => (i === n ? { ...e, ...campos } : e)) });
-  const moverEtapa = (n, para) => {
-    const l = [...f.etapas]; const [e] = l.splice(n, 1); l.splice(para, 0, e); mudar({ etapas: l });
+  const mudarBloco = (n, campos) => mudar({ fluxo: f.fluxo.map((b, i) => (i === n ? { ...b, ...campos } : b)) });
+  const moverBloco = (n, para) => { const l = [...f.fluxo]; const [b] = l.splice(n, 1); l.splice(para, 0, b); mudar({ fluxo: l }); };
+  const tirarBloco = (n) => {
+    const id = f.fluxo[n].id;
+    // quem apontava para o bloco removido passa a seguir para o próximo
+    mudar({ fluxo: f.fluxo.filter((_, i) => i !== n).map((b) => ({ ...b, ir: b.ir === id ? '' : b.ir,
+      ...(b.opcoes && { opcoes: b.opcoes.map((o) => ({ ...o, ir: o.ir === id ? '' : o.ir })) }) })) });
   };
+  const rotulo = (b, i) => `${i + 1} - ${b.nome || d.blocos[b.tipo]}`;
+  const destinos = (n) => (
+    <>
+      <option value="">{n === f.fluxo.length - 1 ? 'Fim do fluxo (passa para atendente)' : `Próximo bloco (${n + 2})`}</option>
+      {f.fluxo.map((b, i) => i !== n && <option key={b.id} value={b.id}>Ir para {rotulo(b, i)}</option>)}
+    </>
+  );
 
   async function salvar(e) {
     e.preventDefault(); setErro(''); setOk(''); setSalvando(true);
@@ -608,13 +639,20 @@ function Robo() {
     setErro('');
     try { await api('/whatsapp/robo/ia', { metodo: 'PUT', corpo: { liberada } }); carregar(); } catch (x) { setErro(x.message); }
   }
+  async function lerPrompt(arquivo) {
+    if (!arquivo) return;
+    if (arquivo.size > 200000) { setErro('Arquivo de prompt grande demais (até 200 KB de texto).'); return; }
+    mudar({ ia_instrucoes: await arquivo.text() });
+    if (promptArquivo.current) promptArquivo.current.value = '';
+  }
+  const temIA = f.fluxo.some((b) => b.tipo === 'ia');
 
   return (
     <form className="cartao painel formulario robo-config" onSubmit={salvar}>
       <fieldset className="sem-borda" disabled={!pode}>
         <label className="linha-check robo-ligar">
           <input type="checkbox" checked={f.ativo} onChange={(e) => mudar({ ativo: e.target.checked })} />
-          <span><strong>Robô ligado</strong><br /><small className="cinza">Responde quem manda mensagem e abre uma venda FUTURO com os dados do cliente e do veículo. Se um atendente responder, o robô para naquela conversa.</small></span>
+          <span><strong>Robô ligado</strong><br /><small className="cinza">Responde quem manda mensagem seguindo o fluxo abaixo. Se um atendente responder, o robô para naquela conversa. O cliente pode escrever ATENDENTE a qualquer momento.</small></span>
         </label>
 
         <div className="grade-2">
@@ -636,61 +674,224 @@ function Robo() {
           <textarea rows={2} data-livre value={f.saudacao || ''} onChange={(e) => mudar({ saudacao: e.target.value })} />
         </label>
 
-        <h3>Perguntas, na ordem</h3>
-        <ol className="robo-etapas">
-          {f.etapas.map((e, n) => (
-            <li key={n}>
-              <select value={e.campo} aria-label={`Dado da pergunta ${n + 1}`} onChange={(x) => mudarEtapa(n, { campo: x.target.value })}>
-                {Object.entries(d.campos).map(([v, nome]) => <option key={v} value={v}>{nome}</option>)}
-              </select>
-              <input data-livre value={e.pergunta} aria-label={`Pergunta ${n + 1}`} placeholder="O que o robô pergunta" onChange={(x) => mudarEtapa(n, { pergunta: x.target.value })} />
-              <label className="linha-check"><input type="checkbox" checked={e.obrigatorio} onChange={(x) => mudarEtapa(n, { obrigatorio: x.target.checked })} /> Obrigatório</label>
-              <span className="robo-etapa-acoes">
-                <button type="button" className="botao-texto" disabled={n === 0} aria-label="Subir" onClick={() => moverEtapa(n, n - 1)}>↑</button>
-                <button type="button" className="botao-texto" disabled={n === f.etapas.length - 1} aria-label="Descer" onClick={() => moverEtapa(n, n + 1)}>↓</button>
-                <button type="button" className="fechar" aria-label={`Remover pergunta ${n + 1}`} onClick={() => mudar({ etapas: f.etapas.filter((_, i) => i !== n) })}>×</button>
-              </span>
+        <h3>Fluxo de atendimento</h3>
+        <p className="cinza ajuda">O robô começa no bloco 1 e segue a seta de cada bloco. Use {'{nome}'} para o primeiro nome, {'{numero}'} para o nº da venda, {'{placa}'} e {'{horario}'}.</p>
+        <ol className="robo-fluxo">
+          {f.fluxo.map((b, n) => (
+            <li key={b.id} className={`robo-bloco bloco-${b.tipo}`}>
+              <div className="robo-bloco-topo">
+                <span className="robo-bloco-num">{n + 1}</span>
+                <select value={b.tipo} aria-label={`Tipo do bloco ${n + 1}`} onChange={(e) => mudarBloco(n, { ...blocoVazio(e.target.value), id: b.id, nome: b.nome, texto: b.texto, ir: b.ir })}>
+                  {Object.entries(d.blocos).map(([v, nome]) => <option key={v} value={v}>{nome}</option>)}
+                </select>
+                <input data-livre value={b.nome} aria-label={`Nome do bloco ${n + 1}`} placeholder="Nome do bloco (para as setas)" onChange={(e) => mudarBloco(n, { nome: e.target.value })} />
+                <span className="robo-etapa-acoes">
+                  <button type="button" className="botao-texto" disabled={n === 0} aria-label="Subir" onClick={() => moverBloco(n, n - 1)}>↑</button>
+                  <button type="button" className="botao-texto" disabled={n === f.fluxo.length - 1} aria-label="Descer" onClick={() => moverBloco(n, n + 1)}>↓</button>
+                  <button type="button" className="fechar" aria-label={`Remover bloco ${n + 1}`} onClick={() => tirarBloco(n)}>×</button>
+                </span>
+              </div>
+              <small className="cinza">{DICA_BLOCO[b.tipo]}</small>
+
+              {b.tipo === 'pergunta' && (
+                <div className="robo-linha">
+                  <select value={b.campo} aria-label="Dado perguntado" onChange={(e) => mudarBloco(n, { campo: e.target.value })}>
+                    {Object.entries(d.campos).map(([v, nome]) => <option key={v} value={v}>{nome}</option>)}
+                  </select>
+                  <label className="linha-check"><input type="checkbox" checked={b.obrigatorio} onChange={(e) => mudarBloco(n, { obrigatorio: e.target.checked })} /> Obrigatório</label>
+                </div>
+              )}
+              {b.tipo !== 'ia' && (
+                <textarea rows={b.tipo === 'pergunta' ? 1 : 2} data-livre value={b.texto} aria-label={`Texto do bloco ${n + 1}`}
+                  placeholder={b.tipo === 'venda' ? 'Mensagem final (em branco: a mensagem final padrão, abaixo)' : b.tipo === 'menu' ? 'Pergunta do menu. Ex.: Como posso ajudar?' : 'Texto que o robô manda'}
+                  onChange={(e) => mudarBloco(n, { texto: e.target.value })} />
+              )}
+              {b.tipo === 'menu' && (
+                <div className="robo-opcoes">
+                  {b.opcoes.map((o, k) => (
+                    <div key={k} className="robo-linha">
+                      <span className="robo-opcao-num">{k + 1}</span>
+                      <input data-livre value={o.rotulo} placeholder="Texto da opção" aria-label={`Opção ${k + 1}`}
+                        onChange={(e) => mudarBloco(n, { opcoes: b.opcoes.map((x, j) => (j === k ? { ...x, rotulo: e.target.value } : x)) })} />
+                      <select value={o.ir} aria-label={`Destino da opção ${k + 1}`}
+                        onChange={(e) => mudarBloco(n, { opcoes: b.opcoes.map((x, j) => (j === k ? { ...x, ir: e.target.value } : x)) })}>
+                        {destinos(n)}
+                      </select>
+                      <button type="button" className="fechar" aria-label={`Tirar opção ${k + 1}`} onClick={() => mudarBloco(n, { opcoes: b.opcoes.filter((_, j) => j !== k) })}>×</button>
+                    </div>
+                  ))}
+                  <button type="button" className="botao-texto" onClick={() => mudarBloco(n, { opcoes: [...b.opcoes, { rotulo: '', ir: '' }] })}>+ Opção</button>
+                </div>
+              )}
+              {b.tipo === 'ia' && (
+                <div className="robo-campos-ia">
+                  {Object.entries(d.campos).filter(([v]) => v !== 'livre').map(([v, nome]) => {
+                    const c = b.campos.find((x) => x.campo === v);
+                    return (
+                      <span key={v} className="robo-campo-ia">
+                        <label className="linha-check"><input type="checkbox" checked={Boolean(c)}
+                          onChange={(e) => mudarBloco(n, { campos: e.target.checked ? [...b.campos, { campo: v, obrigatorio: true }] : b.campos.filter((x) => x.campo !== v) })} /> {nome}</label>
+                        {c && <label className="linha-check"><input type="checkbox" checked={c.obrigatorio}
+                          onChange={(e) => mudarBloco(n, { campos: b.campos.map((x) => (x.campo === v ? { ...x, obrigatorio: e.target.checked } : x)) })} /> obrigatório</label>}
+                      </span>
+                    );
+                  })}
+                  {!d.ia_liberada && <p className="aviso-zap">A IA não está liberada para este grupo: este bloco passa a conversa para um atendente.</p>}
+                </div>
+              )}
+              {['mensagem', 'pergunta', 'ia'].includes(b.tipo) && (
+                <label className="robo-depois">{b.tipo === 'ia' ? 'Quando a IA terminar' : 'Depois'}
+                  <select value={b.ir} onChange={(e) => mudarBloco(n, { ir: e.target.value })}>{destinos(n)}</select>
+                </label>
+              )}
             </li>
           ))}
         </ol>
-        <button type="button" className="botao-texto" onClick={() => mudar({ etapas: [...f.etapas, { campo: 'livre', pergunta: '', obrigatorio: false }] })}>+ Pergunta</button>
-        <p className="cinza ajuda">Tipo de veículo e Serviço mostram as opções numeradas. O cliente pode escrever ATENDENTE a qualquer momento para falar com uma pessoa.</p>
+        <div className="robo-linha">
+          <select value={novoTipo} aria-label="Tipo do novo bloco" onChange={(e) => setNovoTipo(e.target.value)}>
+            {Object.entries(d.blocos).map(([v, nome]) => <option key={v} value={v}>{nome}</option>)}
+          </select>
+          <button type="button" className="botao-contorno" onClick={() => mudar({ fluxo: [...f.fluxo, blocoVazio(novoTipo)] })}>+ Adicionar bloco</button>
+        </div>
 
-        <label>Mensagem final
+        <label>Mensagem final padrão (ao abrir a venda)
           <textarea rows={2} data-livre value={f.mensagem_final || ''} onChange={(e) => mudar({ mensagem_final: e.target.value })} />
         </label>
-        <p className="cinza ajuda">Use {'{nome}'} para o primeiro nome, {'{numero}'} para o número da venda e {'{placa}'} para a placa.</p>
 
-        <h3>Atendimento com IA</h3>
+        <h3>IA: prompt e base de conhecimento</h3>
         {d.master && (
           <label className="linha-check">
             <input type="checkbox" checked={d.ia_liberada} onChange={(e) => liberarIA(e.target.checked)} />
             <span>IA liberada para este grupo <small className="cinza">(só o master vê; depende do contrato de prestação)</small></span>
           </label>
         )}
-        {!d.ia_liberada ? (
-          <p className="cinza ajuda">A IA não está liberada para este grupo. O robô segue as perguntas acima.</p>
-        ) : (
-          <>
-            {!d.ia_configurada && <p className="aviso-zap">Falta a chave da IA no servidor (ANTHROPIC_API_KEY no api/.env). Enquanto isso o robô segue as perguntas acima.</p>}
-            <label className="linha-check">
-              <input type="checkbox" checked={f.ia_ativa} onChange={(e) => mudar({ ia_ativa: e.target.checked })} />
-              <span>Usar IA na conversa <small className="cinza">(o robô conversa livre e junta os mesmos dados das perguntas acima)</small></span>
-            </label>
-            {f.ia_ativa && (
-              <label>Instruções para a IA
-                <textarea rows={4} data-livre value={f.ia_instrucoes || ''} placeholder="Ex.: horário de atendimento, endereço da loja, como falar com o cliente…"
-                  onChange={(e) => mudar({ ia_instrucoes: e.target.value })} />
-              </label>
-            )}
-          </>
-        )}
+        {!d.ia_liberada && <p className="cinza ajuda">A IA não está liberada para este grupo. Dá para deixar o prompt e a base prontos; o bloco "Conversa com IA" só funciona depois de liberada.</p>}
+        {d.ia_liberada && !d.ia_configurada && <p className="aviso-zap">Falta a chave da IA no servidor (ANTHROPIC_API_KEY no api/.env). Enquanto isso, o bloco de IA passa a conversa para um atendente.</p>}
+        {d.ia_liberada && !temIA && <p className="cinza ajuda">Para usar a IA, coloque um bloco "Conversa com IA" no fluxo.</p>}
+        <label>Prompt da IA
+          <textarea rows={8} data-livre value={f.ia_instrucoes || ''} className="robo-prompt"
+            placeholder="Quem é a loja, como falar com o cliente, regras, preços, horário de atendimento, endereço, o que fazer e o que não fazer…"
+            onChange={(e) => mudar({ ia_instrucoes: e.target.value })} />
+        </label>
+        <div className="robo-linha">
+          <small className="cinza">{(f.ia_instrucoes || '').length.toLocaleString('pt-BR')} caracteres</small>
+          <label className="botao-texto">Carregar de um arquivo .txt
+            <input ref={promptArquivo} type="file" accept=".txt,.md,text/plain" hidden onChange={(e) => lerPrompt(e.target.files[0])} />
+          </label>
+        </div>
       </fieldset>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {ok && <p className="sucesso" role="status">{ok}</p>}
       {pode && <div className="acoes-modal"><button className="botao-primario" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar robô'}</button></div>}
+      <BaseConhecimento pode={pode} />
     </form>
   );
+}
+
+// Base de conhecimento da IA: textos e arquivos (PDF ou TXT) que a IA consulta para responder
+function BaseConhecimento({ pode }) {
+  const [lista, setLista] = useState(null);
+  const [novo, setNovo] = useState(null); // { titulo, conteudo } enquanto escreve um texto
+  const [editando, setEditando] = useState(null);
+  const [erro, setErro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const arquivo = useRef(null);
+  const carregar = () => api('/whatsapp/conhecimento').then(setLista).catch((x) => setErro(x.message));
+  useEffect(() => { carregar(); }, []);
+  const acao = async (fn) => { setErro(''); try { await fn(); carregar(); } catch (x) { setErro(x.message); } };
+
+  async function enviar(arqs) {
+    setErro(''); setEnviando(true);
+    try {
+      for (const a of arqs) {
+        const q = new URLSearchParams({ arquivo: a.name, titulo: a.name.replace(/\.[^.]+$/, '') });
+        const r = await fetch(`/api/whatsapp/conhecimento/arquivo?${q}`, {
+          method: 'POST', body: a,
+          headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}`, ...(grupoEscolhido.ler() ? { 'X-Grupo': grupoEscolhido.ler() } : {}) },
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || (r.status === 413 ? `"${a.name}" passa de 10 MB.` : `Não foi possível enviar "${a.name}".`));
+      }
+    } catch (x) { setErro(x.message); }
+    setEnviando(false);
+    if (arquivo.current) arquivo.current.value = '';
+    carregar();
+  }
+  const tamanho = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+  const total = (lista || []).reduce((t, k) => t + k.tamanho, 0);
+
+  return (
+    <section className="robo-base">
+      <h3>Base de conhecimento</h3>
+      <p className="cinza ajuda">Documentos que a IA consulta para responder: tabela de preços, perguntas frequentes, regras do Detran, endereço e horários.
+        Envie PDF ou TXT (documento do Word: salve como PDF) ou escreva um texto. Desmarque para a IA deixar de usar sem apagar.</p>
+      {lista === null ? <p className="cinza">Carregando…</p> : lista.length === 0 ? <p className="cinza">Nenhum documento ainda.</p> : (
+        <ul className="robo-docs">
+          {lista.map((k) => (
+            <li key={k.id}>
+              <label className="linha-check"><input type="checkbox" checked={k.ativo} disabled={!pode} aria-label={`Usar ${k.titulo}`}
+                onChange={(e) => acao(() => api(`/whatsapp/conhecimento/${k.id}`, { metodo: 'PUT', corpo: { ativo: e.target.checked } }))} /></label>
+              <span className="robo-doc-nome">
+                <strong>{k.titulo}</strong>
+                <small className="cinza">{k.tipo === 'pdf' ? 'PDF' : 'Texto'} · {tamanho(k.tamanho)}{k.nome_arquivo ? ` · ${k.nome_arquivo}` : ''}</small>
+              </span>
+              <span className="robo-etapa-acoes">
+                {k.tipo === 'texto' && pode && <button type="button" className="botao-texto" onClick={() => setEditando({ ...k })}>Editar</button>}
+                <button type="button" className="botao-texto" onClick={() => abrirArquivo(k.id).catch((x) => setErro(x.message))}>Abrir</button>
+                {pode && <button type="button" className="fechar" aria-label={`Apagar ${k.titulo}`}
+                  onClick={() => window.confirm(`Apagar "${k.titulo}" da base de conhecimento?`) && acao(() => api(`/whatsapp/conhecimento/${k.id}`, { metodo: 'DELETE' }))}>×</button>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {lista?.length > 0 && <small className="cinza">Total {tamanho(total)} de 30 MB.</small>}
+      {pode && (
+        <div className="robo-linha">
+          <button type="button" className="botao-contorno" onClick={() => setNovo({ titulo: '', conteudo: '' })}>+ Escrever texto</button>
+          <label className="botao-contorno">{enviando ? 'Enviando…' : '+ Enviar arquivo (PDF ou TXT)'}
+            <input ref={arquivo} type="file" multiple accept=".pdf,.txt,.md,.csv,application/pdf,text/plain" hidden disabled={enviando}
+              onChange={(e) => e.target.files.length && enviar([...e.target.files])} />
+          </label>
+        </div>
+      )}
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      {(novo || editando) && (
+        <Janela titulo={novo ? 'Novo texto da base' : 'Editar texto'} aoFechar={() => { setNovo(null); setEditando(null); }}>
+          <TextoBase inicial={novo || editando} aoFechar={() => { setNovo(null); setEditando(null); }}
+            aoSalvar={(x) => acao(async () => {
+              if (novo) await api('/whatsapp/conhecimento', { metodo: 'POST', corpo: x });
+              else await api(`/whatsapp/conhecimento/${editando.id}`, { metodo: 'PUT', corpo: x });
+              setNovo(null); setEditando(null);
+            })} />
+        </Janela>
+      )}
+    </section>
+  );
+}
+
+function TextoBase({ inicial, aoFechar, aoSalvar }) {
+  const [x, setX] = useState({ titulo: inicial.titulo || '', conteudo: inicial.conteudo || '' });
+  return (
+    <div className="formulario">
+      <label>Título<input value={x.titulo} maxLength={120} placeholder="Ex.: Perguntas frequentes" onChange={(e) => setX({ ...x, titulo: e.target.value })} /></label>
+      <label>Texto<textarea rows={12} data-livre value={x.conteudo} onChange={(e) => setX({ ...x, conteudo: e.target.value })} /></label>
+      <div className="acoes-modal">
+        <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
+        <button type="button" className="botao-primario" disabled={!x.titulo.trim() || !x.conteudo.trim()} onClick={() => aoSalvar(x)}>Salvar</button>
+      </div>
+    </div>
+  );
+}
+
+// Abre o documento numa aba nova (a rota pede o login, então baixa com o token)
+async function abrirArquivo(id) {
+  const aba = window.open('', '_blank');
+  const r = await fetch(`/api/whatsapp/conhecimento/${id}/arquivo`, {
+    headers: { Authorization: `Bearer ${sessao.token()}`, ...(grupoEscolhido.ler() ? { 'X-Grupo': grupoEscolhido.ler() } : {}) },
+  });
+  if (!r.ok) { aba?.close(); throw new Error('Não foi possível abrir o documento.'); }
+  const url = URL.createObjectURL(await r.blob());
+  if (aba) aba.location.href = url; else window.location.href = url;
 }
 
 function Janela({ titulo, aoFechar, children }) {
