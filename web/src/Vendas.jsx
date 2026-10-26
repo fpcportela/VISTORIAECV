@@ -539,8 +539,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
                   disabled={!podeLoja('placa.consultar')} onClick={() => setConsulta({ indice: n, placa: v.placa })}><Icone nome="busca" tamanho={18} /></button>
               </div>
               <SeletorVeiculo tipo={v.tipo_veiculo} marca={v.marca} modelo={v.modelo} disabled={!editavel} aoMudar={(campos) => mudarVeiculo(n, campos)} />
-              <button type="button" className="fechar" aria-label={`Remover veículo ${n + 1}`} title="Remover este veículo e os itens dele"
-                disabled={veiculos.length === 1} onClick={() => setVeiculos((l) => l.filter((_, k) => k !== n))}>×</button>
+              <button type="button" className="fechar" aria-label={`Remover veículo ${n + 1}`} title="Remover este veículo e os itens dele (o único fica em branco)"
+                onClick={() => setVeiculos((l) => (l.length === 1 ? [veiculoVazio()] : l.filter((_, k) => k !== n)))}>×</button>
             </div>
             {v.consulta && <RelatorioConsulta dados={v.consulta} />}
             <div className="itens-venda">
@@ -565,8 +565,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
                       onChange={(e) => mudarItem(n, m, { valor_unit: e.target.value })} aria-label={`Valor unitário do item ${m + 1} do veículo ${n + 1}`} />
                   </label>
                   <strong className="total-item">R$ {moeda(numero(i.quantidade) * numero(i.valor_unit))}</strong>
-                  <button type="button" className="fechar" aria-label={`Remover item ${m + 1} do veículo ${n + 1}`} disabled={v.itens.length === 1}
-                    onClick={() => mudarItens(n, (itens) => itens.filter((_, k) => k !== m))}>×</button>
+                  <button type="button" className="fechar" aria-label={`Remover item ${m + 1} do veículo ${n + 1}`}
+                    onClick={() => mudarItens(n, (itens) => (itens.length === 1 ? [itemVazio()] : itens.filter((_, k) => k !== m)))}>×</button>
                 </div>
               ))}
               <button type="button" className="botao-texto" onClick={() => mudarItens(n, (itens) => [...itens, itemVazio()])}><Icone nome="mais" tamanho={18} /> Adicionar item</button>
@@ -621,8 +621,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
               <label><span className="rotulo-campo">Detalhe</span>
                 <input value={pg.detalhe}  placeholder={ehCartao(pg.forma) ? 'EX.: MAQUININHA' : 'EX.: BANCO DO PIX'} onChange={(e) => mudarPagamento(n, { detalhe: e.target.value })} aria-label={`Detalhe do pagamento ${n + 1}`} />
               </label>
-              <button type="button" className="fechar" aria-label={`Remover pagamento ${n + 1}`} disabled={pagamentos.length === 1}
-                onClick={() => setPagamentos((l) => l.filter((_, k) => k !== n))}>×</button>
+              <button type="button" className="fechar" aria-label={`Remover pagamento ${n + 1}`}
+                onClick={() => setPagamentos((l) => (l.length === 1 ? [pagamentoVazio()] : l.filter((_, k) => k !== n)))}>×</button>
             </div>
           ))}
           <div className="rodape-pagamentos">
