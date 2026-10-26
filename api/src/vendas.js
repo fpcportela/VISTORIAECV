@@ -1,7 +1,7 @@
 import { comoUsuario } from './db.js';
 import { normalizarPlaca } from './placas.js';
 import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './comum.js';
-import { cnpjValido, consultarCnpj } from './documentos.js';
+import { cnpjValido, consultarCep, consultarCnpj } from './documentos.js';
 
 const TIPOS_VEICULO = ['carro', 'moto', 'caminhao', 'outro'];
 // Situações em que a venda ainda pode ser alterada (futuro = aberta pelo robô, aguardando a loja confirmar)
@@ -190,7 +190,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
 
     const itens = Array.isArray(b.itens) ? b.itens : [];
     // Sem serviço a venda também é salva (fica aberta para ajustar); veículo sem serviço guarda só a placa
-    const prontos = [];
+    const prontos = [], conferir = [];
     for (const [n, i] of itens.entries()) {
       const linha = `Item ${n + 1}:`;
       const soPlaca = !i?.servico_id;
@@ -203,7 +203,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       if (!(qtd > 0)) throw new Recusa(400, `${linha} quantidade inválida.`);
       const unit = soPlaca ? 0 : dinheiro(i.valor_unit);
       if (unit === null) throw new Recusa(400, `${linha} valor unitário inválido.`);
-      let veiculo = null, descricao = servico.nome;
+      let veiculo = null, descricao = servico.nome, tipoVeiculo = null;
       if (texto(i.placa)) {
         const placa = normalizarPlaca(i.placa);
         if (!placa) throw new Recusa(400, `${linha} placa inválida.`);
@@ -213,10 +213,11 @@ export function rotasVendas(app, { exigeLogin, rota }) {
            on conflict (placa) do update set tipo = coalesce($2::tipo_veiculo, veiculos.tipo),
                   marca = coalesce($3, veiculos.marca), modelo = coalesce($4, veiculos.modelo)
            returning id, placa, marca, modelo`, [placa, tv, texto(i.marca, 60)?.toUpperCase() ?? null, texto(i.modelo, 120)?.toUpperCase() ?? null])).rows[0];
-        veiculo = ve.id;
+        veiculo = ve.id; tipoVeiculo = tv;
         descricao = [[ve.marca, ve.modelo].filter(Boolean).join(' '), ve.placa].filter(Boolean).join(' // ');
       }
       prontos.push([soPlaca ? null : i.servico_id, veiculo, descricao, qtd, unit]);
+      if (!soPlaca) conferir.push({ servico: servico.nome, servico_id: i.servico_id, tipo: tipoVeiculo, unit });
     }
     const bruto = prontos.reduce((t, [, , , q, u]) => t + q * u, 0);
     if (desconto > bruto) throw new Recusa(400, 'O desconto não pode ser maior que o total dos itens.');
@@ -242,6 +243,30 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const cliente = existente && !b.cliente_id && !b.cliente_novo?.nome && !b.cliente_avulso
       ? existente.cliente_id
       : await resolverCliente(db, { empresa, loja, cliente_id: b.cliente_id, cliente_novo: b.cliente_novo });
+    // Preço travado: vale o preço especial do cliente ou o da tabela (ou o que já estava salvo na venda).
+    // Outro valor só com a senha de quem pode autorizar.
+    const alterados = [];
+    const salvos = existente ? (await db.query('select servico_id, valor_unit from venda_itens where venda_id = $1', [existente.id])).rows : [];
+    for (const it of conferir) {
+      const tabela = Number((await db.query(
+        `select coalesce(
+           (select cp.valor from clientes c join cliente_precos cp on cp.cliente_id in (c.id, c.grupo_cliente_id)
+             where c.id = $1 and cp.servico_id = $2 order by cp.cliente_id = c.id desc limit 1),
+           (select p.valor from servico_precos p where p.servico_id = $2 and p.tipo_veiculo = coalesce($4::tipo_veiculo, 'carro')
+              and (p.loja_id is null or p.loja_id = $3) order by p.loja_id nulls last limit 1),
+           (select valor_padrao from servicos where id = $2), 0) as v`, [cliente, it.servico_id, loja, it.tipo])).rows[0].v);
+      const igual = (a, b) => Math.round(Number(a) * 100) === Math.round(Number(b) * 100);
+      if (!igual(it.unit, tabela) && !salvos.some((x) => x.servico_id === it.servico_id && igual(x.valor_unit, it.unit))) {
+        alterados.push(`${it.servico}: ${reais(tabela)} para ${reais(it.unit)}`);
+      }
+    }
+    let autorizadorPreco = null;
+    if (alterados.length) {
+      const a = b.autorizacao_preco || {};
+      if (!a.email || !a.senha) throw new Recusa(400, `Preço alterado precisa da senha de quem autoriza (${alterados.join('; ')}).`);
+      autorizadorPreco = (await db.query('select app_autorizar_preco($1, $2, $3) as id', [loja, a.email, a.senha])).rows[0].id;
+    }
+
     const categoria = (await db.query(
       "select id from categorias_financeiras where empresa_id = $1 and tipo = 'receber' and ativo order by nome = 'Receitas de Serviços' desc, nome limit 1",
       [empresa])).rows[0]?.id || null;
@@ -275,8 +300,23 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe, autorizado_por) values ($1, $2, 'desconto', $3, $4)",
         [id, req.usuarioId, `Desconto de ${reais(desconto)}`, autorizadorDesconto]);
     }
+    if (autorizadorPreco) {
+      await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe, autorizado_por) values ($1, $2, 'preco', $3, $4)",
+        [id, req.usuarioId, `Preço alterado: ${alterados.join('; ')}`, autorizadorPreco]);
+    }
     return id;
   }
+
+  // Confere a senha antes de destravar os preços na tela (o salvar confere de novo)
+  app.post('/api/vendas/autorizar-preco', exigeLogin, comRecusa(async (req, res) => {
+    const b = req.body || {};
+    const r = await comoUsuario(req.usuarioId, async (db) => {
+      await empresaDaLoja(db, b.loja_id);
+      const id = (await db.query('select app_autorizar_preco($1, $2, $3) as id', [b.loja_id, b.email, b.senha])).rows[0].id;
+      return (await db.query('select nome from usuarios where id = $1', [id])).rows[0];
+    });
+    res.json({ ok: true, nome: r?.nome || null });
+  }));
 
   app.post('/api/vendas', exigeLogin, comRecusa(async (req, res) => {
     const id = await comoUsuario(req.usuarioId, (db) => gravarVenda(db, req, null));
@@ -423,6 +463,15 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const cnpj = String(req.params.cnpj).replace(/\D/g, '');
     if (!cnpjValido(cnpj)) throw new Recusa(400, 'CNPJ inválido. Confira os números.');
     const r = await consultarCnpj(cnpj);
+    if (r.erro) throw new Recusa(r.status, r.erro);
+    res.json(r);
+  }));
+
+  // Endereço pelo CEP
+  app.get('/api/cep/:cep', exigeLogin, comRecusa(async (req, res) => {
+    const cep = String(req.params.cep).replace(/\D/g, '');
+    if (cep.length !== 8) throw new Recusa(400, 'CEP precisa ter 8 números.');
+    const r = await consultarCep(cep);
     if (r.erro) throw new Recusa(r.status, r.erro);
     res.json(r);
   }));

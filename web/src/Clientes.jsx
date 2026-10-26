@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { semAcento } from './entrada.js';
 import { api, moeda } from './api.js';
 import { criarTem } from './modulos.js';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
@@ -145,6 +146,19 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
     } catch (falha) { setAviso(falha.message); }
   }
 
+  // CEP completo: preenche endereço, cidade e UF (o número fica para completar)
+  async function mudarCep(valor) {
+    const cep = mascaraCep(valor);
+    setC((x) => ({ ...x, cep }));
+    if (cep.replace(/\D/g, '').length !== 8) return;
+    setAviso('Buscando o CEP…');
+    try {
+      const r = await api(`/cep/${cep.replace(/\D/g, '')}`);
+      setC((x) => ({ ...x, endereco: semAcento([r.logradouro, r.bairro].filter(Boolean).join(', ')) || x.endereco, cidade: semAcento(r.cidade) || x.cidade, uf: semAcento(r.uf) || x.uf }));
+      setAviso(r.logradouro ? 'Endereço encontrado pelo CEP. Complete o número.' : 'CEP encontrado. Complete o endereço.');
+    } catch (falha) { setAviso(falha.message); }
+  }
+
   async function salvar(e) {
     e.preventDefault();
     if (c.tipo === 'pf' && !cpfValido(c.cpf_cnpj)) return setErro('CPF inválido. Confira os números.');
@@ -210,7 +224,7 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
           {c.tipo !== 'grupo' && (
             <>
               <div className="linha-campos cep">
-                <label>CEP<input value={c.cep} inputMode="numeric" onChange={(e) => setC({ ...c, cep: mascaraCep(e.target.value) })} /></label>
+                <label>CEP<input value={c.cep} inputMode="numeric" placeholder="00000-000" onChange={(e) => mudarCep(e.target.value)} /></label>
                 <label>Endereço<input value={c.endereco} onChange={muda('endereco')} /></label>
               </div>
               <div className="linha-campos">
@@ -236,7 +250,7 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
                         <tr key={sv.id}>
                           <td>{sv.nome}</td>
                           <td className="num cinza">{valorBR(sv.precos?.carro ?? sv.valor_padrao)}</td>
-                          <td className="num"><input value={c.precos?.[sv.id] || ''} inputMode="decimal" placeholder="—" aria-label={`Preço de ${sv.nome} para o cliente`}
+                          <td className="num"><input value={c.precos?.[sv.id] || ''} inputMode="numeric" data-moeda placeholder="—" aria-label={`Preço de ${sv.nome} para o cliente`}
                             onChange={(e) => setC({ ...c, precos: { ...c.precos, [sv.id]: e.target.value.replace(/[^\d,.]/g, '') } })} /></td>
                         </tr>
                       ))}

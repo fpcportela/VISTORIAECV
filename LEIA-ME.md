@@ -67,6 +67,18 @@ aberta pelo robô do WhatsApp para um cliente cadastrado também usa o preço de
 O **Novo cadastro** na venda e na agenda abre a mesma tela do cadastro de clientes, já com a tabela de
 preços especiais. Se o CPF/CNPJ digitado já tem cadastro, a tela avisa e oferece **Usar este cadastro**.
 
+## Preço travado na venda
+
+O valor unitário de cada item vem travado: preço especial do cliente ou, sem ele, o da tabela do serviço.
+Para alterar, clique no valor e informe o e-mail e a senha de quem pode autorizar (a mesma permissão do
+desconto, "Dar desconto"). Os preços ficam liberados até salvar a venda, e a alteração fica no histórico.
+Um preço já salvo na venda continua valendo ao reabrir.
+
+## CEP no cadastro de cliente
+
+Ao digitar o CEP completo, o endereço (rua e bairro), a cidade e a UF são preenchidos pela ViaCEP (ou
+BrasilAPI, se a ViaCEP falhar). O número fica para completar. Os preços especiais têm a vírgula automática.
+
 ## Venda sem serviço
 
 **Salvar** grava a venda mesmo sem serviço (por exemplo, só com o cliente e a placa). Ela fica aberta e

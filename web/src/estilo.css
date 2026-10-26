@@ -951,3 +951,6 @@ span.agenda-livre { cursor: default; color: #64748b; }
 /* Venda salva sem serviço: linha amarela até alguém completar */
 .linha-venda.sem-servico { background: #fef9c3; box-shadow: inset 4px 0 0 #eab308; }
 .linha-venda .lv-pendente { color: #92400e; font-weight: 700; font-size: 12px; }
+
+/* Preço do item travado na venda: destrava com a senha de quem autoriza */
+.item-venda input.preco-travado { background: #f3f4f6; color: var(--texto); cursor: pointer; }

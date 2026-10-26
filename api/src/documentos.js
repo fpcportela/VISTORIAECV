@@ -88,3 +88,35 @@ export async function consultarCnpj(cnpj) {
   if (naoAchou) return { erro: 'CNPJ não encontrado na Receita.', status: 404 };
   return { erro: 'Não foi possível consultar a Receita agora. Preencha a razão social manualmente.', status: 502 };
 }
+
+// Endereço pelo CEP (dados públicos dos Correios): ViaCEP e, se falhar, BrasilAPI
+const FONTES_CEP = [
+  { nome: 'ViaCEP', url: (c) => `${process.env.VIACEP_URL || 'https://viacep.com.br/ws'}/${c}/json/`,
+    ler: (d) => (d.erro ? null : { logradouro: d.logradouro, bairro: d.bairro, cidade: d.localidade, uf: d.uf }) },
+  { nome: 'BrasilAPI', url: (c) => `${BRASILAPI}/cep/v1/${c}`,
+    ler: (d) => ({ logradouro: d.street, bairro: d.neighborhood, cidade: d.city, uf: d.state }) },
+];
+
+export async function consultarCep(cep) {
+  let naoAchou = 0;
+  for (const fonte of FONTES_CEP) {
+    let resposta;
+    try {
+      resposta = await fetch(fonte.url(cep), {
+        headers: { Accept: 'application/json', 'User-Agent': 'VistoriaECV/1.0' },
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch (e) {
+      console.error(`[cep] ${fonte.nome}: ${e.cause?.code || e.message}`);
+      continue;
+    }
+    if (resposta.status === 404 || resposta.status === 400) { naoAchou++; continue; }
+    if (!resposta.ok) { console.error(`[cep] ${fonte.nome}: HTTP ${resposta.status}`); continue; }
+    const d = fonte.ler(await resposta.json().catch(() => ({})));
+    if (!d) { naoAchou++; continue; }
+    if (!d.cidade) continue;
+    return { cep, logradouro: d.logradouro || null, bairro: d.bairro || null, cidade: d.cidade, uf: d.uf || null };
+  }
+  if (naoAchou) return { erro: 'CEP não encontrado.', status: 404 };
+  return { erro: 'Não foi possível buscar o CEP agora. Preencha o endereço manualmente.', status: 502 };
+}

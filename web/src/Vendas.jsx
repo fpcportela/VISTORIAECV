@@ -10,7 +10,7 @@ import { CampoData } from './Data.jsx';
 import { EditorCliente } from './Clientes.jsx';
 
 export const SITUACOES = { aberta: 'Aberta', futuro: 'Futuro', finalizada: 'Finalizada', cancelada: 'Cancelada' };
-const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda FUTURO', cancelada: 'Cancelou', desconto: 'Deu desconto' };
+const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda FUTURO', cancelada: 'Cancelou', desconto: 'Deu desconto', preco: 'Alterou preço' };
 const BANDEIRAS = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD', 'AMERICAN EXPRESS', 'CABAL', 'OUTRA'];
 const ehCartao = (forma) => forma === 'cartao_credito' || forma === 'cartao_debito';
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -262,6 +262,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const [consulta, setConsulta] = useState(null); // { indice, placa }
   const [liberando, setLiberando] = useState(false);
   const [autorizando, setAutorizando] = useState(null); // { finalizar } enquanto pede a senha do desconto
+  // preços vêm travados; destrava com a senha de quem autoriza (vale até salvar)
+  const [precoLiberado, setPrecoLiberado] = useState(null); // { email, senha, nome }
+  const [pedindoPreco, setPedindoPreco] = useState(false);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -385,6 +388,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
       const corpo = {
         loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
         ...(autorizacao && { autorizacao_desconto: autorizacao }),
+        ...(precoLiberado && { autorizacao_preco: { email: precoLiberado.email, senha: precoLiberado.senha } }),
         // veículo ainda sem serviço vai só com a placa: a venda fica aberta para ajustar depois
         itens: veiculos.flatMap(({ placa, tipo_veiculo, marca, modelo, itens }) => (itens.some((i) => i.servico_id)
           ? itens.filter((i) => i.servico_id)
@@ -398,6 +402,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
       let vid = venda?.id;
       if (vid) await api(`/vendas/${vid}`, { metodo: 'PUT', corpo });
       else vid = (await api('/vendas', { metodo: 'POST', corpo })).id;
+      setPrecoLiberado(null);
       if (finalizar) await api(`/vendas/${vid}/finalizar`, { metodo: 'POST' });
       if (!venda) return aoSalvo(vid);
       await carregar();
@@ -522,6 +527,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
 
       <fieldset className="cartao secao-venda" disabled={!editavel}>
         <legend>Veículos e itens</legend>
+        {editavel && (precoLiberado
+          ? <small className="aviso-receita">Preços liberados{precoLiberado.nome ? ` por ${precoLiberado.nome}` : ''} até salvar a venda.</small>
+          : <small className="cinza ajuda">Os preços vêm travados. Para alterar, clique no valor e informe a senha de quem autoriza.</small>)}
         {veiculos.map((v, n) => (
           <div key={v.chave} className="grupo-veiculo">
             <div className="bloco-veiculo">
@@ -551,7 +559,10 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
                     <input value={i.quantidade} inputMode="numeric" onChange={(e) => mudarItem(n, m, { quantidade: e.target.value.replace(/\D/g, '') })} aria-label={`Quantidade do item ${m + 1} do veículo ${n + 1}`} />
                   </label>
                   <label><span className="so-celular rotulo-campo">Valor unitário (R$)</span>
-                    <input value={i.valor_unit} inputMode="numeric" data-moeda placeholder="0,00" onChange={(e) => mudarItem(n, m, { valor_unit: e.target.value })} aria-label={`Valor unitário do item ${m + 1} do veículo ${n + 1}`} />
+                    <input value={i.valor_unit} inputMode="numeric" data-moeda placeholder="0,00" readOnly={!precoLiberado}
+                      className={precoLiberado ? undefined : 'preco-travado'} title={precoLiberado ? undefined : 'Preço travado: clique para alterar com a senha de quem autoriza'}
+                      onClick={() => { if (!precoLiberado && editavel) setPedindoPreco(true); }}
+                      onChange={(e) => mudarItem(n, m, { valor_unit: e.target.value })} aria-label={`Valor unitário do item ${m + 1} do veículo ${n + 1}`} />
                   </label>
                   <strong className="total-item">R$ {moeda(numero(i.quantidade) * numero(i.valor_unit))}</strong>
                   <button type="button" className="fechar" aria-label={`Remover item ${m + 1} do veículo ${n + 1}`} disabled={v.itens.length === 1}
@@ -665,6 +676,14 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
           .map((l) => perfil.lojas.find((x) => x.id === l))} emailSugerido={pode.autorizar ? perfil.usuario.email : ''}
           aoFechar={() => setTrocandoUnidade(false)} aoTrocar={() => { setTrocandoUnidade(false); carregar(); }} />
       )}
+      {pedindoPreco && (
+        <AutorizarDesconto titulo="Alterar preço dos itens" texto="O preço vem da tabela do serviço ou do preço especial do cliente. Para alterar, precisa da senha de um sênior ou administrador. Fica registrado no histórico da venda."
+          emailSugerido={pode.desconto ? perfil.usuario.email : ''} aoFechar={() => setPedindoPreco(false)}
+          aoAutorizar={async (a) => {
+            const r = await api('/vendas/autorizar-preco', { metodo: 'POST', corpo: { loja_id: loja, ...a } });
+            setPrecoLiberado({ ...a, nome: r.nome }); setPedindoPreco(false);
+          }} />
+      )}
       {autorizando && (
         <AutorizarDesconto desconto={numero(desconto)} emailSugerido={pode.desconto ? perfil.usuario.email : ''}
           aoFechar={() => setAutorizando(null)}
@@ -721,7 +740,7 @@ function TrocarUnidade({ venda, lojas, emailSugerido, aoFechar, aoTrocar }) {
 }
 
 // Desconto: e-mail e senha de quem pode autorizar (master ou perfil com "Dar desconto")
-function AutorizarDesconto({ desconto, emailSugerido, aoFechar, aoAutorizar }) {
+function AutorizarDesconto({ desconto, titulo, texto, emailSugerido, aoFechar, aoAutorizar }) {
   const [email, setEmail] = useState(emailSugerido);
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
@@ -734,13 +753,13 @@ function AutorizarDesconto({ desconto, emailSugerido, aoFechar, aoAutorizar }) {
   }
   return (
     <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
-      <section className="modal" role="dialog" aria-modal="true" aria-label="Autorizar desconto">
+      <section className="modal" role="dialog" aria-modal="true" aria-label={titulo || 'Autorizar desconto'}>
         <div className="modal-topo">
-          <h2>Autorizar desconto de R$ {moeda(desconto)}</h2>
+          <h2>{titulo || `Autorizar desconto de R$ ${moeda(desconto)}`}</h2>
           <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
         </div>
         <form className="formulario" onSubmit={enviar}>
-          <p className="cinza ajuda">O desconto só vale com a senha de um sênior ou administrador. Fica registrado no histórico da venda.</p>
+          <p className="cinza ajuda">{texto || 'O desconto só vale com a senha de um sênior ou administrador. Fica registrado no histórico da venda.'}</p>
           <label>E-mail de quem autoriza<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" autoFocus={!emailSugerido} /></label>
           <label>Senha de quem autoriza<input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} required autoComplete="new-password" autoFocus={Boolean(emailSugerido)} /></label>
           {erro && <p className="erro" role="alert">{erro}</p>}
