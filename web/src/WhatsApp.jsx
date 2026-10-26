@@ -656,7 +656,7 @@ function Robo() {
         </label>
 
         <div className="grade-2">
-          <label>Loja em que a venda abre
+          <label>Unidade padrão da venda
             <select value={f.loja_id || ''} onChange={(e) => mudar({ loja_id: e.target.value || null })}>
               <option value="">A primeira loja do grupo</option>
               {d.lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
@@ -668,6 +668,34 @@ function Robo() {
               {d.servicos.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
             </select>
           </label>
+        </div>
+
+        <h3>Unidades e responsável pelo atendimento</h3>
+        <p className="cinza ajuda">
+          {d.lojas.length > 1
+            ? 'O grupo tem mais de uma unidade: depois das boas-vindas, o robô pergunta em qual unidade o cliente quer atendimento, mostrando o endereço de cada uma (cadastrado em Grupos e unidades). A venda e o agendamento vão para a unidade escolhida.'
+            : 'Com mais de uma unidade ativa, o robô pergunta primeiro em qual unidade o cliente quer atendimento, mostrando o endereço de cada uma.'}
+          {' '}Quando o robô agenda ou passa a conversa para uma pessoa, o chamado vai para o responsável abaixo.
+        </p>
+        <div className="grade-2">
+          <label>Responsável padrão
+            <select value={f.responsavel_id || ''} onChange={(e) => mudar({ responsavel_id: e.target.value || null })}>
+              <option value="">Ninguém (fica sem responsável)</option>
+              {d.usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          </label>
+          {d.lojas.length > 1 && d.lojas.map((l) => (
+            <label key={l.id}>Responsável · {l.nome}
+              <select value={f.responsaveis?.[l.id] || ''} onChange={(e) => {
+                const r = { ...(f.responsaveis || {}) };
+                if (e.target.value) r[l.id] = e.target.value; else delete r[l.id];
+                mudar({ responsaveis: r });
+              }}>
+                <option value="">O responsável padrão</option>
+                {d.usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+              </select>
+            </label>
+          ))}
         </div>
 
         <label>Mensagem de boas-vindas

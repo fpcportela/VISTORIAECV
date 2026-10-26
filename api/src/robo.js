@@ -178,9 +178,9 @@ const POR_VEZ = 6;
 const localSP = (ts) => new Date(ts).toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 16).replace(' ', 'T');
 
 // Próximos horários livres (a partir da data pedida, ou depois do último já oferecido)
-async function horariosLivres(empresa, { de, depois, limite = POR_VEZ }) {
+async function horariosLivres(empresa, loja, { de, depois, limite = POR_VEZ }) {
   const dia = de || hojeSP();
-  const r = await comoUsuario(null, (db) => db.query('select inicio from app_agenda_livres_robo($1, $2::date, $3)', [empresa, dia, 200]));
+  const r = await comoUsuario(null, (db) => db.query('select inicio from app_agenda_livres_unidade($1, $2, $3::date, $4)', [empresa, loja || null, dia, 200]));
   return r.rows.map((x) => new Date(x.inicio).toISOString()).filter((t) => !depois || t > depois).slice(0, limite);
 }
 
@@ -189,7 +189,7 @@ const listaHorarios = (opcoes) => opcoes.map((t, i) => `${i + 1} - ${rotuloHorar
 // Reserva o horário na agenda; devolve o id do agendamento ou null se alguém pegou antes
 async function reservar(ch, horario, dados, contato) {
   const r = await comoUsuario(null, (db) => db.query('select app_agenda_robo($1, $2, $3) as id', [ch.id, horario,
-    JSON.stringify({ nome: dados.nome, telefone: contato.telefone, placa: dados.placa, servico_id: dados.servico_id, observacao: 'Agendado pelo robô do WhatsApp.' })]));
+    JSON.stringify({ loja_id: dados.loja_id, nome: dados.nome, telefone: contato.telefone, placa: dados.placa, servico_id: dados.servico_id, observacao: 'Agendado pelo robô do WhatsApp.' })]));
   return r.rows[0].id;
 }
 
@@ -200,7 +200,7 @@ function paraVenda(dados, contato, nacional) {
   if (dados.servico_nome && !dados.servico_id) extras.push(`Serviço pedido: ${dados.servico_nome}`);
   if (dados.observacoes) extras.push(dados.observacoes);
   return {
-    nome: dados.nome, cpf_cnpj: dados.cpf_cnpj, email: dados.email, placa: dados.placa, tipo_veiculo: dados.tipo_veiculo,
+    loja_id: dados.loja_id, nome: dados.nome, cpf_cnpj: dados.cpf_cnpj, email: dados.email, placa: dados.placa, tipo_veiculo: dados.tipo_veiculo,
     servico_id: dados.servico_id, data: dados.data, whatsapp: nacional(contato.telefone),
     observacoes: ['Pedido feito pelo WhatsApp (robô).', ...extras].join('\n'),
   };
@@ -292,6 +292,7 @@ async function perguntarIA(ctx, dados, livres, bloco) {
   }
   conteudo.at(-1).content.push({ type: 'text', text: [
     `[Agora: ${hojeSP().split('-').reverse().join('/')}. Dados já confirmados: ${JSON.stringify(dados)}.`,
+    unidadeDe(ctx, dados) ? `Unidade do atendimento: ${unidadeDe(ctx, dados)}.` : '',
     dados.cliente_id ? 'Cliente já cadastrado na loja: trate pelo nome e não peça de novo os dados já confirmados.' : '',
     livres ? `Horários livres para a vistoria (ofereça só estes; se pedir outro dia, diga os mais próximos): ${
       livres.length ? livres.map((t) => `${localSP(t)} (${rotuloHorario(t)})`).join('; ') : 'nenhum, diga que um atendente vai combinar o horário'}.` : '',
@@ -320,6 +321,12 @@ export function atenderComRobo(contatoId, deps) {
   return atual;
 }
 
+// Unidade escolhida (nome e endereço), para a IA falar da unidade certa
+const unidadeDe = (ctx, dados) => {
+  const l = (ctx.lojas || []).find((x) => x.id === dados.loja_id);
+  return l ? [l.nome, enderecoLoja(l)].filter(Boolean).join(' - ') : '';
+};
+
 // Campos que vêm do cadastro do cliente reconhecido
 const DO_CADASTRO = ['nome', 'cpf_cnpj', 'email'];
 const primeiroNome = (nome) => {
@@ -336,6 +343,9 @@ function saudarPeloNome(saudacao, nome) {
   return m ? `${m[1]}, ${p}!${texto.slice(m[0].length)}` : `Olá, ${p}! Que bom falar com você de novo.\n\n${texto}`;
 }
 
+const textoUnidades = (lojas) => `Em qual unidade você deseja atendimento?\n${lojas
+  .map((l, i) => { const end = enderecoLoja(l); return `${i + 1} - ${l.nome}${end ? `\n    ${end}` : ''}`; }).join('\n')}\n(responda com o número)`;
+
 const juntar = (falas) => falas.filter(Boolean).join('\n\n');
 const textoMenu = (b) => `${b.texto}\n${b.opcoes.map((o, i) => `${i + 1} - ${o.rotulo}`).join('\n')}`;
 
@@ -347,6 +357,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   const fluxo = fluxoDe(ctx.robo);
   const iaPode = ctx.ia_liberada && iaConfigurada();
   const dados = { ...(ch.robo_dados || {}) };
+  const lojas = ctx.lojas || [];
   const ultima = ctx.mensagens.filter((m) => m.direcao === 'entrada').at(-1)?.texto || '';
 
   const falar = async (texto) => {
@@ -357,8 +368,12 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
       [ch.id, texto, falha ? 'falhou' : envio.status, falha?.message || null, envio?.id_externo || null]));
   };
   const estado = (e, etapa, d) => comoUsuario(null, (db) => db.query('select app_robo_estado($1, $2, $3, $4)', [ch.id, e, etapa, d]));
+  // chamado vai para o responsável configurado no robô (o da unidade escolhida, senão o padrão)
+  const atribuir = () => comoUsuario(null, (db) => db.query('select app_robo_atribuir($1, $2)', [ch.id, dados.loja_id || null]))
+    .catch((e) => console.error('[robô] responsável:', e.message));
   const passarParaAtendente = async (msg, falas = []) => {
     await estado('humano', null, dados);
+    await atribuir();
     await falar(juntar([...falas, msg || 'Certo! Um atendente vai continuar a conversa com você em instantes.']));
   };
   const posicao = (id) => fluxo.findIndex((b) => b.id === id);
@@ -367,7 +382,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   const perguntar = async (b, aPartirDe) => {
     const etapa = { campo: b.campo, pergunta: b.texto, obrigatorio: b.obrigatorio };
     if (b.campo !== 'horario') return pergunta(etapa, ctx.servicos);
-    const opcoes = await horariosLivres(ctx.empresa_id, { de: dados.data, depois: aPartirDe });
+    const opcoes = await horariosLivres(ctx.empresa_id, dados.loja_id, { de: dados.data, depois: aPartirDe });
     if (!opcoes.length) return null;
     dados.opcoes_horario = opcoes;
     return `${b.texto || CAMPOS.horario}\n${listaHorarios(opcoes)}\n(responda com o número; para ver outros horários, escreva MAIS)`;
@@ -384,12 +399,13 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     const modelo = b?.texto || ctx.robo.mensagem_final;
     let fim = modelo ? formatar(modelo, { ...dados, numero: v.numero }) : 'Recebemos o seu pedido! Em instantes um atendente confirma com você.';
     if (dados.horario && !/\{horario\}/.test(modelo || '')) {
-      const loja = await comoUsuario(null, async (db) => (await db.query('select app_agenda_loja_robo($1) as l', [ctx.empresa_id])).rows[0].l);
+      const loja = await comoUsuario(null, async (db) => (await db.query('select app_agenda_unidade_robo($1, $2) as l', [ctx.empresa_id, dados.loja_id || null])).rows[0].l);
       const end = enderecoLoja(loja);
       fim += `\n\nSua vistoria ficou agendada para ${rotuloHorario(dados.horario)}${loja?.nome ? `, na ${loja.nome}` : ''}.${end ? `\nEndereço: ${end}.` : ''}`;
     } else if (dados.sem_horario) {
       fim += '\n\nNo momento não há horário livre na agenda; o atendente vai combinar o horário com você.';
     }
+    await atribuir();
     await falar(juntar([...falas, fim]));
   };
 
@@ -424,7 +440,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   const conversarIA = async (n, b, falas = []) => {
     const campos = b.campos || [];
     const querHorario = campos.some((e) => e.campo === 'horario') && !dados.horario;
-    const livres = querHorario ? await horariosLivres(ctx.empresa_id, { de: dados.data, limite: 20 }) : null;
+    const livres = querHorario ? await horariosLivres(ctx.empresa_id, dados.loja_id, { de: dados.data, limite: 20 }) : null;
     let r;
     try { r = await perguntarIA(ctx, dados, livres, b); } catch (e) {
       console.error('[robô IA]', e.message);
@@ -456,7 +472,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
       const id = await reservar(ch, t, dados, ctx.contato);
       if (!id) {
         await estado('coletando', n, dados);
-        const novos = await horariosLivres(ctx.empresa_id, { de: dados.data });
+        const novos = await horariosLivres(ctx.empresa_id, dados.loja_id, { de: dados.data });
         return falar(juntar([...falas, `Esse horário acabou de ser ocupado. ${novos.length ? `Estes ainda estão livres:\n${listaHorarios(novos)}` : 'Um atendente vai combinar o horário com você.'}`]));
       }
       dados.horario = t; dados.agendamento_id = id; dados.data = localSP(t).slice(0, 10);
@@ -470,6 +486,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   };
 
   // atendente devolveu a conversa para o robô: repete de onde parou
+  if (retomar && dados.escolhendo_loja) return falar(textoUnidades(lojas));
   if (retomar) {
     const n = ch.robo_etapa || 0;
     const b = fluxo[n];
@@ -491,8 +508,26 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
       dados.cliente_id = cli.id;
       for (const campo of DO_CADASTRO) if (cli[campo] && !dados[campo]) dados[campo] = cli[campo];
     }
+    const ola = cli ? saudarPeloNome(ctx.robo.saudacao, cli.nome) : ctx.robo.saudacao;
+    // grupo com mais de uma unidade: primeiro o cliente escolhe a unidade (com o endereço de cada uma)
+    if (lojas.length > 1) {
+      dados.escolhendo_loja = true;
+      await estado('coletando', 0, dados);
+      return falar(juntar([ola, textoUnidades(lojas)]));
+    }
+    if (lojas[0]) dados.loja_id = lojas[0].id;
     await estado('coletando', 0, dados);
-    return executar(0, [cli ? saudarPeloNome(ctx.robo.saudacao, cli.nome) : ctx.robo.saudacao]);
+    return executar(0, [ola]);
+  }
+
+  if (dados.escolhendo_loja) {
+    const s = semAcento(ultima);
+    const k = Number(s.replace(/\D/g, '') || NaN);
+    const loja = (Number.isInteger(k) && lojas[k - 1]) || lojas.find((l) => s.length >= 3 && semAcento(l.nome).includes(s));
+    if (!loja) return falar(`Responda com o número da unidade.\n\n${textoUnidades(lojas)}`);
+    delete dados.escolhendo_loja;
+    dados.loja_id = loja.id; dados.loja_nome = loja.nome;
+    return executar(0, [`Certo, unidade ${loja.nome}.`]);
   }
 
   const n = ch.robo_etapa || 0;

@@ -127,6 +127,8 @@ begin
   select * into v_r from whatsapp_robo where empresa_id = v_ch.empresa_id;
   v_loja := coalesce(
     (select l.id from vendas v join lojas l on l.id = v.loja_id where v.id = v_ch.venda_id),
+    -- unidade que o cliente escolheu na conversa
+    (select l.id from lojas l where l.id::text = p_dados->>'loja_id' and l.ativo and l.empresa_id = v_ch.empresa_id),
     (select l.id from lojas l where l.id = v_r.loja_id and l.ativo and l.empresa_id = v_ch.empresa_id),
     (select l.id from lojas l where l.empresa_id = v_ch.empresa_id and l.ativo order by l.nome limit 1));
   perform pg_advisory_xact_lock(hashtext('agenda:' || v_loja));

@@ -87,6 +87,14 @@ liga o contato ao cliente, cumprimenta pelo primeiro nome e não pergunta de nov
 A venda sai no nome dele, com os preços especiais. Vendas abertas pelo robô aparecem como **Agendado**,
 com a linha azul clara na lista, até alguém confirmar.
 
+## Unidades no robô e responsável
+
+Em **Grupos e unidades**, o grupo e cada unidade têm endereço (o CEP preenche rua, bairro, cidade e UF).
+Se o grupo tem mais de uma unidade ativa, o robô pergunta logo depois das boas-vindas em qual unidade o
+cliente quer atendimento, mostrando o endereço de cada uma; os horários, o agendamento e a venda são da
+unidade escolhida. Em **WhatsApp > Robô**, escolha o responsável padrão e, se quiser, um por unidade:
+quando o robô agenda (abre a venda) ou passa a conversa para uma pessoa, o chamado vai para ele.
+
 ## Venda sem serviço
 
 **Salvar** grava a venda mesmo sem serviço (por exemplo, só com o cliente e a placa). Ela fica aberta e

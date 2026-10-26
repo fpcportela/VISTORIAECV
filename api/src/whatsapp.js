@@ -600,9 +600,10 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const g = (await db.query('select ia_liberada, eh_admin_rede() as master from empresas where id = $1', [empresa])).rows[0];
       const lojas = (await db.query('select id, nome from lojas where empresa_id = $1 and ativo order by nome', [empresa])).rows;
       const servicos = (await db.query('select id, nome from servicos where empresa_id = $1 and ativo order by nome', [empresa])).rows;
+      const usuarios = (await db.query('select * from app_responsaveis($1)', [empresa])).rows;
       const robo = { ...ROBO_PADRAO, ...(salvo || {}) };
       return {
-        robo: { ...robo, fluxo: fluxoDe(robo) }, campos: CAMPOS, blocos: BLOCOS, lojas, servicos,
+        robo: { ...robo, fluxo: fluxoDe(robo) }, campos: CAMPOS, blocos: BLOCOS, lojas, servicos, usuarios,
         ia_liberada: g.ia_liberada, ia_configurada: iaDisponivel(), master: g.master, pode_enviar: await podeEnviar(db, empresa),
       };
     }));
@@ -632,13 +633,21 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       if (usaIA && !ia) throw new Recusa(403, 'A IA ainda não foi liberada para este grupo. Tire o bloco "Conversa com IA" ou fale com o master (depende do contrato).');
       const loja = UUID.test(b.loja_id || '') && (await db.query('select 1 from lojas where id = $1 and empresa_id = $2', [b.loja_id, empresa])).rowCount ? b.loja_id : null;
       const servico = UUID.test(b.servico_id || '') && (await db.query('select 1 from servicos where id = $1 and empresa_id = $2', [b.servico_id, empresa])).rowCount ? b.servico_id : null;
+      // responsável pelos chamados do robô: padrão e por unidade (só usuários do grupo)
+      const doGrupo = new Set((await db.query('select id from app_responsaveis($1)', [empresa])).rows.map((u) => u.id));
+      const lojasGrupo = new Set((await db.query('select id from lojas where empresa_id = $1', [empresa])).rows.map((l) => l.id));
+      const responsavel = doGrupo.has(b.responsavel_id) ? b.responsavel_id : null;
+      const responsaveis = Object.fromEntries(Object.entries(b.responsaveis && typeof b.responsaveis === 'object' ? b.responsaveis : {})
+        .filter(([l, u]) => lojasGrupo.has(l) && doGrupo.has(u)));
       await db.query(
-        `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, fluxo, atualizado_em)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+        `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, fluxo,
+                                    responsavel_id, responsaveis, atualizado_em)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
          on conflict (empresa_id) do update set ativo = $2, saudacao = $3, etapas = $4, mensagem_final = $5, loja_id = $6,
-                servico_id = $7, ia_ativa = $8, ia_instrucoes = $9, fluxo = coalesce($10, whatsapp_robo.fluxo), atualizado_em = now()`,
+                servico_id = $7, ia_ativa = $8, ia_instrucoes = $9, fluxo = coalesce($10, whatsapp_robo.fluxo),
+                responsavel_id = $11, responsaveis = $12, atualizado_em = now()`,
         [empresa, Boolean(b.ativo), texto(b.saudacao, 1000), JSON.stringify(etapas), texto(b.mensagem_final, 1000),
-         loja, servico, usaIA && ia, texto(b.ia_instrucoes, 30000), fluxo && JSON.stringify(fluxo)]);
+         loja, servico, usaIA && ia, texto(b.ia_instrucoes, 30000), fluxo && JSON.stringify(fluxo), responsavel, JSON.stringify(responsaveis)]);
     });
     res.json({ ok: true });
   }));

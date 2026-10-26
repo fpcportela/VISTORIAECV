@@ -70,6 +70,8 @@ begin
   select * into v_k from whatsapp_contatos where id = v_ch.contato_id;
   select * into v_r from whatsapp_robo where empresa_id = v_ch.empresa_id;
   v_loja := coalesce(
+    -- unidade que o cliente escolheu na conversa
+    (select l.id from lojas l where l.id::text = p_dados->>'loja_id' and l.ativo and l.empresa_id = v_ch.empresa_id),
     (select l.id from lojas l where l.id = v_r.loja_id and l.ativo and l.empresa_id = v_ch.empresa_id),
     (select l.id from lojas l where l.empresa_id = v_ch.empresa_id and l.ativo order by l.nome limit 1));
   if v_loja is null then raise exception 'O grupo não tem loja ativa para abrir a venda.' using errcode = '22023'; end if;
@@ -195,6 +197,10 @@ begin
   end if;
 
   return jsonb_build_object(
+    -- unidades ativas do grupo, com endereço: com mais de uma, o robô pergunta qual
+    'lojas', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'nome', l.nome, 'logradouro', l.logradouro, 'numero', l.numero,
+                         'bairro', l.bairro, 'cidade', l.cidade, 'uf', l.uf) order by l.nome)
+                         from lojas l where l.empresa_id = v_k.empresa_id and l.ativo), '[]'),
     'cliente', case when v_cli.id is not null then jsonb_build_object('id', v_cli.id, 'nome', v_cli.nome,
                  'cpf_cnpj', v_cli.cpf_cnpj, 'email', v_cli.email) end,
     'empresa_id', v_k.empresa_id,

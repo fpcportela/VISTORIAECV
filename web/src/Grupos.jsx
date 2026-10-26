@@ -1,6 +1,45 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { cnpjValido, mascaraCnpj, mascaraTelefone } from './documentos.js';
+import { semAcento } from './entrada.js';
+
+const mascaraCep = (v) => String(v || '').replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
+const enderecoVazio = (x) => ({ cep: mascaraCep(x?.cep), logradouro: x?.logradouro || '', numero: x?.numero || '', bairro: x?.bairro || '', cidade: x?.cidade || '', uf: x?.uf || '' });
+
+// Endereço com CEP: ao completar o CEP, preenche rua, bairro, cidade e UF (o número fica para completar)
+function CamposEndereco({ f, setF }) {
+  const [aviso, setAviso] = useState('');
+  async function mudarCep(valor) {
+    const cep = mascaraCep(valor);
+    setF((x) => ({ ...x, cep })); setAviso('');
+    if (cep.length !== 9) return;
+    setAviso('Buscando o CEP…');
+    try {
+      const r = await api(`/cep/${cep.replace(/\D/g, '')}`);
+      setF((x) => ({ ...x, logradouro: semAcento(r.logradouro) || x.logradouro, bairro: semAcento(r.bairro) || x.bairro,
+        cidade: semAcento(r.cidade) || x.cidade, uf: semAcento(r.uf) || x.uf }));
+      setAviso(r.logradouro ? 'Endereço encontrado pelo CEP. Complete o número.' : 'CEP encontrado. Complete o endereço.');
+    } catch (falha) { setAviso(falha.message); }
+  }
+  const muda = (campo) => (e) => setF((x) => ({ ...x, [campo]: e.target.value }));
+  return (
+    <>
+      <div className="linha-campos cep">
+        <label>CEP<input value={f.cep} inputMode="numeric" placeholder="00000-000" onChange={(e) => mudarCep(e.target.value)} /></label>
+        <label>Rua<input value={f.logradouro} onChange={muda('logradouro')} /></label>
+      </div>
+      {aviso && <small className="aviso-receita">{aviso}</small>}
+      <div className="linha-campos">
+        <label>Bairro<input value={f.bairro} onChange={muda('bairro')} /></label>
+        <label className="campo-uf">Número<input value={f.numero} onChange={muda('numero')} /></label>
+      </div>
+      <div className="linha-campos">
+        <label>Cidade<input value={f.cidade} onChange={muda('cidade')} /></label>
+        <label className="campo-uf">UF<input value={f.uf} maxLength={2} onChange={(e) => setF((x) => ({ ...x, uf: e.target.value.replace(/[^A-Za-z]/g, '') }))} /></label>
+      </div>
+    </>
+  );
+}
 
 // Grupos (ex.: VISÃO TOTAL) e as unidades de cada grupo, com ou sem CNPJ próprio.
 // O master cadastra tudo; os demais só veem as unidades do próprio grupo.
@@ -96,7 +135,7 @@ async function reduzirLogo(arquivo) {
 }
 
 function EditorGrupo({ item, aoFechar, aoSalvar }) {
-  const [f, setF] = useState({ razao_social: item?.razao_social || '', nome_fantasia: item?.nome_fantasia || '', cnpj: item?.cnpj ? mascaraCnpj(item.cnpj) : '', ativo: item?.ativo ?? true, logo: item?.logo || '' });
+  const [f, setF] = useState({ razao_social: item?.razao_social || '', nome_fantasia: item?.nome_fantasia || '', cnpj: item?.cnpj ? mascaraCnpj(item.cnpj) : '', ativo: item?.ativo ?? true, logo: item?.logo || '', ...enderecoVazio(item) });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -131,6 +170,8 @@ function EditorGrupo({ item, aoFechar, aoSalvar }) {
           <small className="cinza">Aparece no menu, abaixo de Vistoria ECV, e no cabeçalho dos relatórios em PDF.</small>
         </div>
         <label>CNPJ do grupo<input value={f.cnpj} inputMode="numeric" placeholder="Opcional" onChange={(e) => setF({ ...f, cnpj: mascaraCnpj(e.target.value) })} /></label>
+        <span className="rotulo-campo">Endereço do grupo</span>
+        <CamposEndereco f={f} setF={setF} />
         {item && <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={(e) => setF({ ...f, ativo: e.target.checked })} /> Grupo ativo</label>}
         {!item && <p className="cinza ajuda">O grupo já nasce com o perfil Administrador, o plano de contas e os tipos de arquivo. Depois cadastre as unidades e os usuários dele.</p>}
         {erro && <p className="erro" role="alert">{erro}</p>}
@@ -145,7 +186,7 @@ function EditorGrupo({ item, aoFechar, aoSalvar }) {
 
 function EditorUnidade({ item, grupo, aoFechar, aoSalvar }) {
   const [f, setF] = useState({ nome: item?.nome || '', cnpj: item?.cnpj ? mascaraCnpj(item.cnpj) : '', telefone: item?.telefone ? mascaraTelefone(item.telefone) : '',
-    cidade: item?.cidade || '', uf: item?.uf || '', ativo: item?.ativo ?? true });
+    ...enderecoVazio(item), ativo: item?.ativo ?? true });
   const [proprio, setProprio] = useState(Boolean(item?.cnpj));
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -167,10 +208,9 @@ function EditorUnidade({ item, grupo, aoFechar, aoSalvar }) {
         <label className="linha-check"><input type="checkbox" checked={proprio} onChange={(e) => setProprio(e.target.checked)} /> Esta unidade tem CNPJ próprio</label>
         {proprio && <label>CNPJ da unidade<input value={f.cnpj} inputMode="numeric" required onChange={(e) => setF({ ...f, cnpj: mascaraCnpj(e.target.value) })} /></label>}
         <label>Telefone<input value={f.telefone} inputMode="tel" placeholder="Opcional" onChange={(e) => setF({ ...f, telefone: mascaraTelefone(e.target.value) })} /></label>
-        <div className="linha-campos">
-          <label>Cidade<input value={f.cidade} onChange={(e) => setF({ ...f, cidade: e.target.value })} /></label>
-          <label className="campo-uf">UF<input value={f.uf} maxLength={2} onChange={(e) => setF({ ...f, uf: e.target.value.replace(/[^A-Za-z]/g, '') })} /></label>
-        </div>
+        <span className="rotulo-campo">Endereço da unidade</span>
+        <CamposEndereco f={f} setF={setF} />
+        <small className="cinza">O robô do WhatsApp mostra este endereço quando o cliente escolhe a unidade e na confirmação do agendamento.</small>
         {item && <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={(e) => setF({ ...f, ativo: e.target.checked })} /> Unidade ativa</label>}
         {!item && <p className="cinza ajuda">A unidade ganha um código (0001, 0002…) e um centro de custo próprio.</p>}
         {erro && <p className="erro" role="alert">{erro}</p>}
