@@ -4,6 +4,7 @@ import { criarTem } from './modulos.js';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
 import { Placa } from './Placa.jsx';
+import { EditorCliente } from './Clientes.jsx';
 
 // Agenda de vistorias por loja: dia ou semana, com os horários livres, os agendamentos
 // (feitos na tela ou pelo robô do WhatsApp) e a configuração do horário de atendimento.
@@ -106,9 +107,9 @@ export default function Agenda({ perfil, loja, aoVenda }) {
         ) : (
           <Semana de={de} d={d} aoDia={(x) => { setDia(x); setModo('dia'); }} />
         )}
-      {janela?.tipo === 'novo' && <Editor loja={lojaUsada} servicos={d?.servicos || []} inicial={{ dia: janela.dia, hora: janela.hora }}
+      {janela?.tipo === 'novo' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} inicial={{ dia: janela.dia, hora: janela.hora }}
         aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
-      {janela?.tipo === 'editar' && <Editor loja={lojaUsada} servicos={d?.servicos || []} agendamento={janela.a}
+      {janela?.tipo === 'editar' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} agendamento={janela.a}
         aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
       {janela?.tipo === 'config' && d && <Configurar loja={lojaUsada} config={d.config} aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
     </>
@@ -197,7 +198,7 @@ function Semana({ de, d, aoDia }) {
 }
 
 // ------------------------------------------------------------ novo / editar
-function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
+function Editor({ perfil, loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
   const a = agendamento;
   const [f, setF] = useState({
     nome: a?.nome || '', telefone: a?.telefone ? mascaraTelefone(String(a.telefone).replace(/^55/, '')) : '', placa: a?.placa || '',
@@ -209,6 +210,9 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
   const [cliente, setCliente] = useState(a?.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : null);
   const [docAviso, setDocAviso] = useState('');
   const [sugestoes, setSugestoes] = useState([]);
+  const [cadastrando, setCadastrando] = useState(false); // tela completa de cadastro de cliente (com preços especiais)
+  const empresa = perfil.lojas.find((l) => l.id === loja)?.empresa_id;
+  const lojasCadastro = perfil.lojas.filter((l) => l.empresa_id === empresa && criarTem(perfil, l.id)('clientes.editar'));
   const [livres, setLivres] = useState(null);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -236,7 +240,7 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
     if (!(d.length === 11 ? cpfValido(d) : cnpjValido(d))) { setDocAviso(`${d.length === 11 ? 'CPF' : 'CNPJ'} inválido. Confira os números.`); return; }
     try {
       const achado = (await api(`/clientes?loja=${loja}&busca=${d}`)).find((c) => c.cpf_cnpj === d);
-      if (achado) usar(achado); else setDocAviso('Cliente novo: será cadastrado com este documento ao agendar.');
+      if (achado) usar(achado); else setDocAviso('Cliente novo, ainda sem cadastro.');
     } catch { /* sem busca: o servidor confere de novo ao salvar */ }
   }
 
@@ -266,6 +270,7 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
   }
 
   return (
+    <>
     <Janela titulo={a ? 'Editar agendamento' : 'Agendar vistoria'} aoFechar={aoFechar}>
       <form className="formulario" onSubmit={salvar}>
         <label>CPF ou CNPJ
@@ -274,7 +279,11 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
         {cliente
           ? <small className="aviso-receita">Cliente cadastrado: <strong>{cliente.nome}</strong>{' '}
               <button type="button" className="botao-link" onClick={() => { setCliente(null); mudar({ cpf_cnpj: '' }); }}>trocar</button></small>
-          : docAviso && <small className="aviso-receita">{docAviso}</small>}
+          : (docAviso || lojasCadastro.length > 0) && (
+            <small className="aviso-receita">{docAviso}{' '}
+              {lojasCadastro.length > 0 && <button type="button" className="botao-link" onClick={() => setCadastrando(true)}>Novo cadastro</button>}
+            </small>
+          )}
         <label>Nome do cliente
           <span className="campo-cliente">
             <input value={f.nome} required readOnly={Boolean(cliente)} onChange={(e) => mudar({ nome: e.target.value.toUpperCase() })}
@@ -326,6 +335,15 @@ function Editor({ loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
         </div>
       </form>
     </Janela>
+    {cadastrando && (
+      <EditorCliente lojas={lojasCadastro} lojaInicial={loja} tipoInicial={f.cpf_cnpj.replace(/\D/g, '').length > 11 ? 'pj' : 'pf'}
+        inicial={{ cpf_cnpj: f.cpf_cnpj, nome: f.nome, whatsapp: f.telefone }} aoAbrir={() => {}} aoFechar={() => setCadastrando(false)}
+        aoSalvar={async (cid) => {
+          setCadastrando(false);
+          try { usar(await api(`/clientes/${cid}`)); } catch (falha) { setErro(falha.message); }
+        }} />
+    )}
+    </>
   );
 }
 

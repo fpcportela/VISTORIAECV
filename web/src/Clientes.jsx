@@ -86,7 +86,7 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
   const [extra, setExtra] = useState(null); // empresas do grupo, vendas, pode_editar
   const [grupos, setGrupos] = useState([]);
   const [servicos, setServicos] = useState(null);
-  const [verPrecos, setVerPrecos] = useState(false);
+  const [verPrecos, setVerPrecos] = useState(!id); // cadastro novo já mostra a tabela de preços
   const [loja, setLoja] = useState(lojas.some((l) => l.id === lojaInicial) ? lojaInicial : lojas[0]?.id || '');
   const gruposLojas = [...lojas.reduce((m, l) => {
     const g = m.get(l.empresa_id) || { id: l.empresa_id, nome: l.empresa, loja: l.id, lojas: [] };
@@ -94,6 +94,7 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
   }, new Map()).values()];
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
+  const [existente, setExistente] = useState(null); // CPF/CNPJ digitado que já tem cadastro (nunca duplica)
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -126,8 +127,13 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
   // CNPJ completo: busca razão social, fantasia e endereço nos dados públicos da Receita
   async function mudarDoc(valor) {
     const doc = c.tipo === 'pj' ? mascaraCnpj(valor) : mascaraCpf(valor);
-    setC((x) => ({ ...x, cpf_cnpj: doc })); setAviso('');
-    if (c.tipo !== 'pj' || doc.replace(/\D/g, '').length < 14) return;
+    setC((x) => ({ ...x, cpf_cnpj: doc })); setAviso(''); setExistente(null);
+    const digitos = doc.replace(/\D/g, '');
+    if (!id && digitos.length === (c.tipo === 'pj' ? 14 : 11)) {
+      const achado = (await api(`/clientes?loja=${loja}&busca=${digitos}`).catch(() => [])).find((x) => String(x.cpf_cnpj || '').replace(/\D/g, '') === digitos);
+      if (achado) return setExistente(achado);
+    }
+    if (c.tipo !== 'pj' || digitos.length < 14) return;
     if (!cnpjValido(doc)) return setAviso('CNPJ inválido. Confira os números.');
     setAviso('Buscando na Receita…');
     try {
@@ -181,6 +187,11 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
             </label>
           )}
           {aviso && <small className="aviso-receita">{aviso}</small>}
+          {existente && (
+            <small className="aviso-receita">Este {c.tipo === 'pj' ? 'CNPJ' : 'CPF'} já está cadastrado: <strong>{existente.nome}</strong>.{' '}
+              <button type="button" className="botao-texto" onClick={() => (aoSalvar ? aoSalvar(existente.id) : aoAbrir({ id: existente.id }))}>Usar este cadastro</button>
+            </small>
+          )}
           <label>{c.tipo === 'pj' ? 'Razão social' : c.tipo === 'grupo' ? 'Nome do grupo' : 'Nome completo'}<input value={c.nome} onChange={muda('nome')} required /></label>
           {c.tipo === 'pj' && <label>Nome fantasia<input value={c.nome_fantasia} onChange={muda('nome_fantasia')} placeholder="Opcional" /></label>}
           {c.tipo === 'pj' && !grupoInicial && (

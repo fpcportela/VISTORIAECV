@@ -64,6 +64,15 @@ o preço do grupo vale para as empresas dele que não tiverem preço próprio. N
 cliente cadastrado, os itens já vêm com o preço dele (e acompanham se o cliente for trocado); a venda
 aberta pelo robô do WhatsApp para um cliente cadastrado também usa o preço dele.
 
+O **Novo cadastro** na venda e na agenda abre a mesma tela do cadastro de clientes, já com a tabela de
+preços especiais. Se o CPF/CNPJ digitado já tem cadastro, a tela avisa e oferece **Usar este cadastro**.
+
+## Venda sem serviço
+
+**Salvar** grava a venda mesmo sem serviço (por exemplo, só com o cliente e a placa). Ela fica aberta e
+aparece em amarelo na lista de vendas, com "Falta o serviço", até alguém completar. Finalizar continua
+exigindo o serviço de cada veículo.
+
 ## WhatsApp (API oficial da Meta)
 
 Sem configuração, o módulo WhatsApp fica em **modo teste**. Nesse modo as mensagens ficam só no

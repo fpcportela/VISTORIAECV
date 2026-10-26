@@ -5,8 +5,9 @@ import { Placa, PlacaInput, PlacasDiversas, placaValida } from './Placa.jsx';
 import { lerMoeda, paraMoeda, semAcento } from './entrada.js';
 import { SeletorVeiculo } from './Veiculo.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
-import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
+import { formatarDoc, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
+import { EditorCliente } from './Clientes.jsx';
 
 export const SITUACOES = { aberta: 'Aberta', futuro: 'Futuro', finalizada: 'Finalizada', cancelada: 'Cancelada' };
 const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda FUTURO', cancelada: 'Cancelou', desconto: 'Deu desconto' };
@@ -143,7 +144,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
           )}
           <div className="tabela-vendas" role="table">
             {lista.map((v) => (
-              <button key={v.id} className={`cartao linha-venda${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
+              <button key={v.id} className={`cartao linha-venda${v.sem_servico && ['aberta', 'futuro'].includes(v.situacao) ? ' sem-servico' : ''}${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
                 onClick={() => (lote ? setLote((l) => { const n = new Set(l); if (n.has(v.id)) n.delete(v.id); else n.add(v.id); return n; }) : aoAbrir(v.id))}>
                 <span className="lv-num">{lote && <span className="marca-lote" aria-hidden="true">{lote.has(v.id) ? '✓' : ''}</span>}{v.tipo_veiculo && ['carro', 'moto', 'caminhao'].includes(v.tipo_veiculo) && (
                   <span className="lv-tipo" title={TIPOS_VEICULO[v.tipo_veiculo]} aria-label={TIPOS_VEICULO[v.tipo_veiculo]}><Icone nome={v.tipo_veiculo} tamanho={20} /></span>
@@ -154,6 +155,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
                   <span className="lv-nome">
                     <strong>{v.cliente}</strong>
                     <small className="cinza">{v.cpf_cnpj && `${formatarDoc(v.cpf_cnpj)}`}{v.cpf_cnpj && !loja && ' · '}{!loja && v.loja}</small>
+                    {v.sem_servico && ['aberta', 'futuro'].includes(v.situacao) && <small className="lv-pendente">Falta o serviço</small>}
                   </span>
                 </span>
                 <span className="lv-data">{dataBR(v.data_venda)}</span>
@@ -248,8 +250,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const [cliente, setCliente] = useState(null);
   const [busca, setBusca] = useState('');
   const [clientes, setClientes] = useState([]);
-  const [novo, setNovo] = useState({ tipo: 'pf', nome: '', cpf_cnpj: '', whatsapp: '', email: '' });
-  const [receita, setReceita] = useState(''); // situação da busca do CNPJ
+  const [cadastrando, setCadastrando] = useState(false); // tela de cadastro de cliente aberta
   const [precosCliente, setPrecosCliente] = useState({}); // preços especiais do cliente escolhido
   const clienteCarregado = useRef(undefined); // cliente da venda salva: abrir a venda não muda os preços
   // venda aberta direto de uma consulta de placa: já vem com o veículo e o relatório da consulta
@@ -283,7 +284,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
       for (const i of v.itens) {
         let g = grupos.find((x) => x.placa === (i.placa || ''));
         if (!g) grupos.push(g = { ...veiculoVazio(), placa: i.placa || '', tipo_veiculo: i.tipo_veiculo || null, marca: i.marca || '', modelo: i.modelo || '', consulta: i.consulta || null, itens: [] });
-        g.itens.push({ servico_id: i.servico_id, quantidade: String(Number(i.quantidade)), valor_unit: paraMoeda(i.valor_unit) });
+        g.itens.push(i.servico_id ? { servico_id: i.servico_id, quantidade: String(Number(i.quantidade)), valor_unit: paraMoeda(i.valor_unit) } : itemVazio());
       }
       setVeiculos(grupos.length ? grupos : [veiculoVazio()]);
       setPagamentos(v.pagamentos?.length
@@ -307,27 +308,6 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     const t = setTimeout(() => api(`/clientes?loja=${loja}&venda=1&busca=${encodeURIComponent(busca)}`).then(setClientes).catch((f) => setErro(f.message)), 300);
     return () => clearTimeout(t);
   }, [busca, modoCliente, loja]);
-
-  // CNPJ completo e válido: busca razão social e contato nos dados públicos da Receita
-  async function mudarDocumento(valor) {
-    const doc = novo.tipo === 'pj' ? mascaraCnpj(valor) : mascaraCpf(valor);
-    setNovo((n) => ({ ...n, cpf_cnpj: doc }));
-    setReceita('');
-    if (novo.tipo !== 'pj' || doc.replace(/\D/g, '').length < 14) return;
-    if (!cnpjValido(doc)) return setReceita('CNPJ inválido. Confira os números.');
-    setReceita('Buscando na Receita…');
-    try {
-      const r = await api(`/cnpj/${doc.replace(/\D/g, '')}`);
-      setNovo((n) => ({
-        ...n, nome: r.razao_social || n.nome,
-        whatsapp: n.whatsapp || (r.telefone ? mascaraTelefone(r.telefone) : ''), email: n.email || r.email || '',
-        cep: r.cep, endereco: r.endereco, cidade: r.cidade, uf: r.uf,
-      }));
-      setReceita(`Encontrado na Receita${r.situacao ? ` · situação: ${r.situacao}` : ''}${r.cidade ? ` · ${r.cidade}/${r.uf}` : ''}`);
-    } catch (falha) {
-      setReceita(falha.message);
-    }
-  }
 
   const precoDe = (servicoId, tipoVeiculo, especiais = precosCliente) => {
     const s = servicos.find((x) => x.id === servicoId);
@@ -386,11 +366,11 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   async function salvar(finalizar = false, autorizacao = null) {
     setErro('');
     if (modoCliente === 'buscar' && !cliente) return setErro('Escolha o cliente na lista.');
-    if (modoCliente === 'novo' && !novo.nome.trim()) return setErro('Informe o nome do cliente.');
-    if (modoCliente === 'novo' && novo.tipo === 'pf' && !cpfValido(novo.cpf_cnpj)) return setErro('CPF inválido. Confira os números.');
-    if (modoCliente === 'novo' && novo.tipo === 'pj' && !cnpjValido(novo.cpf_cnpj)) return setErro('CNPJ inválido. Confira os números.');
     const placaRuim = veiculos.findIndex((v) => v.placa && !placaValida(v.placa));
     if (placaRuim >= 0) return setErro(`Veículo ${placaRuim + 1}: placa incompleta.`);
+    if (finalizar && (!todosItens.some((i) => i.servico_id) || veiculos.some((v) => v.placa && !v.itens.some((i) => i.servico_id)))) {
+      return setErro('Para finalizar, inclua o serviço de cada veículo. Para deixar para depois, use Salvar.');
+    }
     if (finalizar && Math.abs(falta) > 0.005) {
       return setErro(`Para finalizar, os pagamentos precisam fechar o total: ${falta > 0 ? `faltam R$ ${moeda(falta)}` : `sobram R$ ${moeda(-falta)}`}.`);
     }
@@ -405,13 +385,15 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
       const corpo = {
         loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
         ...(autorizacao && { autorizacao_desconto: autorizacao }),
-        itens: veiculos.flatMap(({ placa, tipo_veiculo, marca, modelo, itens }) => itens.filter((i) => i.servico_id)
-          .map(({ servico_id, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) }))),
+        // veículo ainda sem serviço vai só com a placa: a venda fica aberta para ajustar depois
+        itens: veiculos.flatMap(({ placa, tipo_veiculo, marca, modelo, itens }) => (itens.some((i) => i.servico_id)
+          ? itens.filter((i) => i.servico_id)
+            .map(({ servico_id, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) }))
+          : placa ? [{ servico_id: null, placa, tipo_veiculo, marca, modelo }] : [])),
         pagamentos: pagamentos.filter((pg) => numero(pg.valor) > 0)
           .map(({ data_pagamento, forma, valor, detalhe, cv, bandeira }) => ({ data_pagamento, forma, valor: numero(valor), detalhe, cv, bandeira })),
         ...(modoCliente === 'avulso' && { cliente_avulso: true }),
         ...((modoCliente === 'buscar' || modoCliente === 'atual') && cliente && { cliente_id: cliente.id }),
-        ...(modoCliente === 'novo' && { cliente_novo: novo }),
       };
       let vid = venda?.id;
       if (vid) await api(`/vendas/${vid}`, { metodo: 'PUT', corpo });
@@ -455,6 +437,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   if (id && !venda) return <p className="erro" role="alert">{erro}</p>;
 
   const nomeLoja = perfil.lojas.find((l) => l.id === loja)?.nome;
+  // Novo cadastro abre a tela completa de cliente (com os preços especiais), nas unidades do grupo da venda
+  const empresaVenda = perfil.lojas.find((l) => l.id === loja)?.empresa_id;
+  const lojasCadastro = perfil.lojas.filter((l) => l.empresa_id === empresaVenda && (perfil.master || perfil.acessos[l.id]?.includes('clientes.editar')));
   return (
     <>
       <div className="cabecalho">
@@ -506,7 +491,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
             ['novo', 'Novo cadastro', podeLoja('clientes.editar')],
           ].filter(([, , ok]) => ok).map(([v, n]) => (
             <label key={v} className={modoCliente === v ? 'opcao marcada' : 'opcao'}>
-              <input type="radio" name={`${grupo}-modo-cliente`} checked={modoCliente === v} onChange={() => setModoCliente(v)} /><strong>{n}</strong>
+              <input type="radio" name={`${grupo}-modo-cliente`} checked={modoCliente === v} onChange={() => (v === 'novo' ? setCadastrando(true) : setModoCliente(v))} /><strong>{n}</strong>
             </label>
           ))}
         </div>
@@ -531,23 +516,6 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
                 </li>
               ))}
             </ul>
-          </div>
-        )}
-        {modoCliente === 'novo' && (
-          <div className="dados-veiculo">
-            <label>Tipo
-              <select value={novo.tipo} onChange={(e) => { setNovo({ ...novo, tipo: e.target.value, cpf_cnpj: '' }); setReceita(''); }}>
-                <option value="pf">Pessoa física</option><option value="pj">Empresa</option>
-              </select>
-            </label>
-            <label>{novo.tipo === 'pj' ? 'CNPJ' : 'CPF'}
-              <input value={novo.cpf_cnpj} inputMode="numeric" placeholder={novo.tipo === 'pj' ? '12.345.678/0001-90' : '123.456.789-10'}
-                onChange={(e) => mudarDocumento(e.target.value)} />
-            </label>
-            <label>{novo.tipo === 'pj' ? 'Razão social' : 'Nome'}<input value={novo.nome} onChange={(e) => setNovo({ ...novo, nome: e.target.value })} /></label>
-            <label>WhatsApp<input value={novo.whatsapp} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => setNovo({ ...novo, whatsapp: mascaraTelefone(e.target.value) })} /></label>
-            <label>E-mail<input value={novo.email} type="email" placeholder="Opcional" onChange={(e) => setNovo({ ...novo, email: e.target.value })} /></label>
-            {receita && <small className="aviso-receita">{receita}</small>}
           </div>
         )}
       </fieldset>
@@ -684,6 +652,13 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
 
       {consulta && (
         <ConsultaPlaca loja={loja} placaInicial={consulta.placa} aoUsar={editavel ? usarVeiculo : undefined} aoFechar={() => setConsulta(null)} />
+      )}
+      {cadastrando && (
+        <EditorCliente lojas={lojasCadastro} lojaInicial={loja} aoAbrir={() => {}} aoFechar={() => setCadastrando(false)}
+          aoSalvar={async (cid) => {
+            setCadastrando(false);
+            try { setCliente(await api(`/clientes/${cid}`)); setModoCliente('atual'); } catch (falha) { setErro(falha.message); }
+          }} />
       )}
       {trocandoUnidade && (
         <TrocarUnidade venda={venda} lojas={lojasPermitidas.filter((l) => l !== venda.loja_id && perfil.lojas.find((x) => x.id === l)?.empresa_id === perfil.lojas.find((x) => x.id === venda.loja_id)?.empresa_id)

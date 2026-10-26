@@ -107,7 +107,9 @@ export function rotasVendas(app, { exigeLogin, rota }) {
                 where i.venda_id = v.id) as placas,
               (select ve.tipo from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id order by i.ctid limit 1) as tipo_veiculo,
               (select json_agg(x order by x.placa) from (select distinct ve.placa, nullif(concat_ws(' ', ve.marca, ve.modelo), '') as modelo
-                 from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id) x) as veiculos
+                 from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id) x) as veiculos,
+              (not exists (select 1 from venda_itens i where i.venda_id = v.id and i.servico_id is not null)
+               or exists (select 1 from venda_itens i where i.venda_id = v.id and i.servico_id is null)) as sem_servico
          from vendas v
          join lojas l on l.id = v.loja_id
          join clientes c on c.id = v.cliente_id
@@ -150,7 +152,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
                 ve.placa, ve.tipo as tipo_veiculo, ve.marca, ve.modelo,
                 -- dados da consulta de placa, que aparecem como relatório anexado na venda
                 case when ve.consultado_em is not null then to_jsonb(ve) - 'dados_consulta' - 'id' end as consulta
-           from venda_itens i join servicos s on s.id = i.servico_id
+           from venda_itens i left join servicos s on s.id = i.servico_id
            left join veiculos ve on ve.id = i.veiculo_id
           where i.venda_id = $1 order by i.ctid`, [v.id])).rows;
       const historico = (await db.query(
@@ -187,16 +189,19 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     }
 
     const itens = Array.isArray(b.itens) ? b.itens : [];
-    if (!itens.length) throw new Recusa(400, 'Inclua pelo menos um item.');
+    // Sem serviço a venda também é salva (fica aberta para ajustar); veículo sem serviço guarda só a placa
     const prontos = [];
     for (const [n, i] of itens.entries()) {
       const linha = `Item ${n + 1}:`;
-      if (!UUID.test(i?.servico_id || '')) throw new Recusa(400, `${linha} escolha o serviço ou produto.`);
-      const servico = (await db.query('select id, nome from servicos where id = $1 and empresa_id = $2', [i.servico_id, empresa])).rows[0];
+      const soPlaca = !i?.servico_id;
+      if (soPlaca && !texto(i?.placa)) continue;
+      if (!soPlaca && !UUID.test(i.servico_id)) throw new Recusa(400, `${linha} escolha o serviço ou produto.`);
+      const servico = soPlaca ? { nome: null }
+        : (await db.query('select id, nome from servicos where id = $1 and empresa_id = $2', [i.servico_id, empresa])).rows[0];
       if (!servico) throw new Recusa(400, `${linha} serviço não encontrado.`);
-      const qtd = Number(String(i.quantidade ?? 1).replace(',', '.'));
+      const qtd = soPlaca ? 1 : Number(String(i.quantidade ?? 1).replace(',', '.'));
       if (!(qtd > 0)) throw new Recusa(400, `${linha} quantidade inválida.`);
-      const unit = dinheiro(i.valor_unit);
+      const unit = soPlaca ? 0 : dinheiro(i.valor_unit);
       if (unit === null) throw new Recusa(400, `${linha} valor unitário inválido.`);
       let veiculo = null, descricao = servico.nome;
       if (texto(i.placa)) {
@@ -211,7 +216,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         veiculo = ve.id;
         descricao = [[ve.marca, ve.modelo].filter(Boolean).join(' '), ve.placa].filter(Boolean).join(' // ');
       }
-      prontos.push([i.servico_id, veiculo, descricao, qtd, unit]);
+      prontos.push([soPlaca ? null : i.servico_id, veiculo, descricao, qtd, unit]);
     }
     const bruto = prontos.reduce((t, [, , , q, u]) => t + q * u, 0);
     if (desconto > bruto) throw new Recusa(400, 'O desconto não pode ser maior que o total dos itens.');
