@@ -158,6 +158,8 @@ language plpgsql security definer as $$
 declare v_k whatsapp_contatos;
         v_ch whatsapp_chamados;
         v_r whatsapp_robo;
+        v_cli clientes;
+        v_nac text;
 begin
   select * into v_k from whatsapp_contatos where id = p_contato;
   if v_k.id is null then return null; end if;
@@ -165,7 +167,36 @@ begin
   if v_r.empresa_id is null then return null; end if;
   select * into v_ch from whatsapp_chamados where contato_id = v_k.id and aberto order by criado_em desc limit 1;
   if v_ch.id is null then return null; end if;
+
+  -- Cliente do cadastro: o já ligado ao contato ou, se não houver, o único cliente com esse
+  -- WhatsApp/telefone (mesmo DDD e mesmos 8 últimos dígitos, com ou sem o 9). Achou: fica ligado.
+  select * into v_cli from clientes c where c.id = v_k.cliente_id and c.empresa_id = v_k.empresa_id and c.ativo;
+  if v_cli.id is null then
+    v_nac := regexp_replace(regexp_replace(v_k.telefone, '\D', '', 'g'), '^55(?=\d{10,11}$)', '');
+    if length(v_nac) in (10, 11) then
+      select * into v_cli from clientes c
+       where c.empresa_id = v_k.empresa_id and c.ativo and c.tipo in ('pf', 'pj') and c.cpf_cnpj is not null
+         and exists (select 1 from unnest(array[c.whatsapp, c.telefone]) t(n)
+                      where length(regexp_replace(n, '\D', '', 'g')) in (10, 11)
+                        and left(regexp_replace(n, '\D', '', 'g'), 2) = left(v_nac, 2)
+                        and right(regexp_replace(n, '\D', '', 'g'), 8) = right(v_nac, 8))
+       order by c.criado_em limit 2;
+      if found and (select count(*) from clientes c
+                     where c.empresa_id = v_k.empresa_id and c.ativo and c.tipo in ('pf', 'pj') and c.cpf_cnpj is not null
+                       and exists (select 1 from unnest(array[c.whatsapp, c.telefone]) t(n)
+                                    where length(regexp_replace(n, '\D', '', 'g')) in (10, 11)
+                                      and left(regexp_replace(n, '\D', '', 'g'), 2) = left(v_nac, 2)
+                                      and right(regexp_replace(n, '\D', '', 'g'), 8) = right(v_nac, 8))) = 1 then
+        update whatsapp_contatos set cliente_id = v_cli.id where id = v_k.id;
+      else
+        v_cli := null;
+      end if;
+    end if;
+  end if;
+
   return jsonb_build_object(
+    'cliente', case when v_cli.id is not null then jsonb_build_object('id', v_cli.id, 'nome', v_cli.nome,
+                 'cpf_cnpj', v_cli.cpf_cnpj, 'email', v_cli.email) end,
     'empresa_id', v_k.empresa_id,
     'contato', jsonb_build_object('id', v_k.id, 'telefone', v_k.telefone, 'nome', v_k.nome, 'cliente_id', v_k.cliente_id),
     'chamado', jsonb_build_object('id', v_ch.id, 'robo_estado', v_ch.robo_estado, 'robo_etapa', v_ch.robo_etapa,

@@ -9,8 +9,8 @@ import { formatarDoc, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
 import { EditorCliente } from './Clientes.jsx';
 
-export const SITUACOES = { aberta: 'Aberta', futuro: 'Futuro', finalizada: 'Finalizada', cancelada: 'Cancelada' };
-const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda FUTURO', cancelada: 'Cancelou', desconto: 'Deu desconto', preco: 'Alterou preço' };
+export const SITUACOES = { aberta: 'Aberta', futuro: 'Agendado', finalizada: 'Finalizada', cancelada: 'Cancelada' };
+const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda agendada', cancelada: 'Cancelou', desconto: 'Deu desconto', preco: 'Alterou preço' };
 const BANDEIRAS = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD', 'AMERICAN EXPRESS', 'CABAL', 'OUTRA'];
 const ehCartao = (forma) => forma === 'cartao_credito' || forma === 'cartao_debito';
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -144,7 +144,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
           )}
           <div className="tabela-vendas" role="table">
             {lista.map((v) => (
-              <button key={v.id} className={`cartao linha-venda${v.sem_servico && ['aberta', 'futuro'].includes(v.situacao) ? ' sem-servico' : ''}${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
+              <button key={v.id} className={`cartao linha-venda${v.situacao === 'futuro' ? ' agendada' : v.sem_servico && v.situacao === 'aberta' ? ' sem-servico' : ''}${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
                 onClick={() => (lote ? setLote((l) => { const n = new Set(l); if (n.has(v.id)) n.delete(v.id); else n.add(v.id); return n; }) : aoAbrir(v.id))}>
                 <span className="lv-num">{lote && <span className="marca-lote" aria-hidden="true">{lote.has(v.id) ? '✓' : ''}</span>}{v.tipo_veiculo && ['carro', 'moto', 'caminhao'].includes(v.tipo_veiculo) && (
                   <span className="lv-tipo" title={TIPOS_VEICULO[v.tipo_veiculo]} aria-label={TIPOS_VEICULO[v.tipo_veiculo]}><Icone nome={v.tipo_veiculo} tamanho={20} /></span>

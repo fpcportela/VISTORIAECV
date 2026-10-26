@@ -48,7 +48,7 @@ horários livres) e pode mandar a confirmação pelo WhatsApp.
 
 No robô do WhatsApp, a pergunta **Horário da vistoria (agenda)** mostra os próximos horários livres
 da loja do robô (o cliente responde com o número, ou MAIS para ver outros). O horário fica reservado
-na hora da escolha, a venda FUTURO abre com a data do agendamento e a mensagem final diz o dia, a hora
+na hora da escolha, a venda AGENDADO abre com a data do agendamento e a mensagem final diz o dia, a hora
 e o endereço. Com IA, o robô oferece os mesmos horários livres na conversa.
 
 Cadastro de cliente sempre pelo CPF/CNPJ, sem duplicar: no **+ Agendar**, o CPF/CNPJ acha o cliente
@@ -78,6 +78,14 @@ Um preço já salvo na venda continua valendo ao reabrir.
 
 Ao digitar o CEP completo, o endereço (rua e bairro), a cidade e a UF são preenchidos pela ViaCEP (ou
 BrasilAPI, se a ViaCEP falhar). O número fica para completar. Os preços especiais têm a vírgula automática.
+
+## Robô reconhece o cliente
+
+Quando alguém manda mensagem, o robô procura o cliente no cadastro: o já ligado ao contato ou, se não
+houver, o único cliente com aquele WhatsApp/telefone (mesmo DDD e mesmos 8 últimos dígitos). Achando,
+liga o contato ao cliente, cumprimenta pelo primeiro nome e não pergunta de novo nome, CPF/CNPJ e e-mail.
+A venda sai no nome dele, com os preços especiais. Vendas abertas pelo robô aparecem como **Agendado**,
+com a linha azul clara na lista, até alguém confirmar.
 
 ## Venda sem serviço
 
@@ -151,7 +159,7 @@ segue a partir do bloco 1:
   e-mail ou pergunta livre) e confere a resposta.
 - **Conversa com IA**: a IA conversa usando o prompt e a base de conhecimento; com dados marcados, junta
   esses dados; sem nenhum, só tira as dúvidas. Quando termina, segue o fluxo.
-- **Abrir venda**: abre a venda **FUTURO** com o cliente e o veículo e manda a mensagem final.
+- **Abrir venda**: abre a venda **AGENDADO** com o cliente e o veículo e manda a mensagem final.
 - **Passar para atendente** e **Encerrar**.
 
 Cada bloco diz para onde vai depois ("Próximo bloco" ou "Ir para" outro bloco). Na venda, o botão

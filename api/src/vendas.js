@@ -438,7 +438,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
       await exigir(db, v.loja_id, 'vendas.criar', 'Seu perfil não pode alterar vendas.');
-      if (v.situacao !== 'futuro') throw new Recusa(400, 'Esta venda não está como FUTURO.');
+      if (v.situacao !== 'futuro') throw new Recusa(400, 'Esta venda não está como agendada.');
       await db.query("update vendas set situacao = 'aberta' where id = $1", [v.id]);
       await db.query("insert into venda_historico (venda_id, usuario_id, acao) values ($1, $2, 'confirmada')", [v.id, req.usuarioId]);
     });

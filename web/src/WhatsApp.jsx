@@ -367,7 +367,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
       )}
       {k.chamado?.venda_id ? (
         <p className="aviso-robo">
-          🤖 O robô abriu a <strong>venda nº {k.chamado.venda_numero}</strong>{k.chamado.venda_situacao === 'futuro' ? ' (FUTURO, falta confirmar)' : ''}.
+          🤖 O robô abriu a <strong>venda nº {k.chamado.venda_numero}</strong>{k.chamado.venda_situacao === 'futuro' ? ' (AGENDADO, falta confirmar)' : ''}.
           {aoVenda && <button type="button" className="botao-texto" onClick={() => { aoFechar(); aoVenda(k.chamado.venda_id); }}>Abrir a venda</button>}
         </p>
       ) : k.robo && k.chamado?.aberto && (
@@ -594,7 +594,7 @@ const DICA_BLOCO = {
   menu: 'Manda a pergunta com as opções numeradas; cada opção leva para um bloco.',
   pergunta: 'Pergunta um dado do cliente e confere a resposta.',
   ia: 'A IA conversa usando o prompt e a base de conhecimento. Com dados marcados, ela junta esses dados; sem nenhum, só tira as dúvidas. Quando termina, segue o fluxo.',
-  venda: 'Abre a venda FUTURO com os dados juntados e manda a mensagem final. Termina o robô.',
+  venda: 'Abre a venda AGENDADO com os dados juntados e manda a mensagem final. Termina o robô.',
   atendente: 'Manda o texto e passa a conversa para uma pessoa.',
   fim: 'Manda o texto e encerra o robô nesta conversa, sem abrir venda.',
 };

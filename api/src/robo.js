@@ -168,7 +168,7 @@ function pergunta(etapa, servicos) {
 }
 
 const formatar = (modelo, dados) => String(modelo || '')
-  .replace(/\{nome\}/g, String(dados.nome || '').split(' ')[0] || '')
+  .replace(/\{nome\}/g, primeiroNome(dados.nome))
   .replace(/\{numero\}/g, dados.numero ?? '')
   .replace(/\{placa\}/g, dados.placa || '')
   .replace(/\{horario\}/g, dados.horario ? rotuloHorario(dados.horario) : '');
@@ -292,6 +292,7 @@ async function perguntarIA(ctx, dados, livres, bloco) {
   }
   conteudo.at(-1).content.push({ type: 'text', text: [
     `[Agora: ${hojeSP().split('-').reverse().join('/')}. Dados já confirmados: ${JSON.stringify(dados)}.`,
+    dados.cliente_id ? 'Cliente já cadastrado na loja: trate pelo nome e não peça de novo os dados já confirmados.' : '',
     livres ? `Horários livres para a vistoria (ofereça só estes; se pedir outro dia, diga os mais próximos): ${
       livres.length ? livres.map((t) => `${localSP(t)} (${rotuloHorario(t)})`).join('; ') : 'nenhum, diga que um atendente vai combinar o horário'}.` : '',
     ']'].filter(Boolean).join(' ') });
@@ -317,6 +318,22 @@ export function atenderComRobo(contatoId, deps) {
   filas.set(contatoId, atual);
   atual.finally(() => { if (filas.get(contatoId) === atual) filas.delete(contatoId); });
   return atual;
+}
+
+// Campos que vêm do cadastro do cliente reconhecido
+const DO_CADASTRO = ['nome', 'cpf_cnpj', 'email'];
+const primeiroNome = (nome) => {
+  const p = String(nome || '').trim().split(/\s+/)[0] || '';
+  return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+};
+// "Olá! ..." vira "Olá, Maria! ..."; sem cumprimento no começo, põe um antes
+function saudarPeloNome(saudacao, nome) {
+  const p = primeiroNome(nome);
+  const texto = String(saudacao || '');
+  if (!p) return texto;
+  if (texto.includes('{nome}')) return texto.replace(/\{nome\}/g, p);
+  const m = texto.match(/^(ol[aá]|oi|bom dia|boa tarde|boa noite)(?=[\s!,.]|$)[!,.]?/i);
+  return m ? `${m[1]}, ${p}!${texto.slice(m[0].length)}` : `Olá, ${p}! Que bom falar com você de novo.\n\n${texto}`;
 }
 
 const juntar = (falas) => falas.filter(Boolean).join('\n\n');
@@ -384,6 +401,8 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
       if (b.tipo === 'mensagem') { falas.push(formatar(b.texto, dados)); n = depois(n, b.ir); continue; }
       if (b.tipo === 'menu') { await estado('coletando', n, dados); return falar(juntar([...falas, formatar(textoMenu(b), dados)])); }
       if (b.tipo === 'pergunta') {
+        // cliente já cadastrado: não pergunta de novo o que já está no cadastro
+        if (DO_CADASTRO.includes(b.campo) && dados[b.campo]) { n = depois(n, b.ir); continue; }
         const q = await perguntar(b);
         if (q) { await estado('coletando', n, dados); return falar(juntar([...falas, q])); }
         dados.sem_horario = true; n = depois(n, b.ir); continue;
@@ -464,10 +483,16 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   }
   if (ch.robo_estado && QUER_ATENDENTE.test(semAcento(ultima))) return passarParaAtendente();
 
-  // primeira mensagem: boas-vindas e o fluxo do começo
+  // primeira mensagem: boas-vindas e o fluxo do começo. Cliente reconhecido pelo cadastro
+  // (ligado ao contato ou achado pelo número): cumprimenta pelo nome e já traz os dados dele.
   if (!ch.robo_estado) {
+    const cli = ctx.cliente;
+    if (cli) {
+      dados.cliente_id = cli.id;
+      for (const campo of DO_CADASTRO) if (cli[campo] && !dados[campo]) dados[campo] = cli[campo];
+    }
     await estado('coletando', 0, dados);
-    return executar(0, [ctx.robo.saudacao]);
+    return executar(0, [cli ? saudarPeloNome(ctx.robo.saudacao, cli.nome) : ctx.robo.saudacao]);
   }
 
   const n = ch.robo_etapa || 0;

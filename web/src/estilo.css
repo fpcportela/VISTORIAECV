@@ -340,7 +340,7 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 
 /* ---------- Vendas ---------- */
 .venda-aberta { background: #fef3c7; color: #92400e; }
-.venda-futuro { background: #e0e7ff; color: #3730a3; }
+.venda-futuro { background: #e0f2fe; color: #075985; }
 .venda-finalizada { background: #dcfce7; color: var(--positivo); }
 .venda-cancelada { background: #fde8e8; color: var(--negativo); }
 .tabela-vendas { display: flex; flex-direction: column; gap: 8px; }
@@ -438,7 +438,7 @@ div.linha-loja { display: flex; align-items: center; gap: 8px; }
 .abas-vendas .nova-aba { padding: 6px 12px; font-size: 20px; line-height: 1; color: var(--forte); background: transparent; border: none; }
 /* Cor da aba = situação da venda (amarelo aberta, verde finalizada, vermelho cancelada) */
 .abas-vendas .aba-venda.st-aberta { background: #fef3c7; color: #92400e; border-color: #f5d27a; }
-.abas-vendas .aba-venda.st-futuro { background: #e0e7ff; color: #3730a3; border-color: #a5b4fc; }
+.abas-vendas .aba-venda.st-futuro { background: #e0f2fe; color: #075985; border-color: #7dd3fc; }
 .abas-vendas .aba-venda.st-finalizada { background: #dcfce7; color: var(--positivo); border-color: #94d9ad; }
 .abas-vendas .aba-venda.st-cancelada { background: #fde8e8; color: var(--negativo); border-color: #f2a5a5; }
 .abas-vendas .aba-venda[class*=st-] { opacity: .8; }
@@ -948,6 +948,9 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .robo-doc-nome { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .robo-config label.botao-contorno, .robo-config label.botao-texto { display: inline-flex; flex-direction: row; cursor: pointer; }
 
+/* Venda agendada pelo robô do WhatsApp (situação futuro): linha azul clara até confirmar */
+.linha-venda.agendada { background: #e0f2fe; box-shadow: inset 4px 0 0 #0ea5e9; }
+.linha-venda.agendada .venda-futuro { background: #fff; }
 /* Venda salva sem serviço: linha amarela até alguém completar */
 .linha-venda.sem-servico { background: #fef9c3; box-shadow: inset 4px 0 0 #eab308; }
 .linha-venda .lv-pendente { color: #92400e; font-weight: 700; font-size: 12px; }
