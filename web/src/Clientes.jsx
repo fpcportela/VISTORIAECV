@@ -78,14 +78,15 @@ export default function Clientes({ perfil, loja }) {
 }
 
 const vazio = (tipo, grupo) => ({ tipo, nome: '', nome_fantasia: '', cpf_cnpj: '', telefone: '', whatsapp: '', email: '', cep: '', endereco: '',
-  cidade: '', uf: '', observacoes: '', ativo: true, grupo_cliente_id: grupo?.id || '', parceiro: false, comissoes: [] });
+  cidade: '', uf: '', observacoes: '', ativo: true, grupo_cliente_id: grupo?.id || '', precos: {} });
 const valorBR = (v) => (v === null || v === undefined || v === '' ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, lojaInicial, inicial, aoAbrir, aoFechar, aoSalvar }) {
   const [c, setC] = useState(id ? null : { ...vazio(tipoInicial, grupoInicial), ...inicial });
   const [extra, setExtra] = useState(null); // empresas do grupo, vendas, pode_editar
   const [grupos, setGrupos] = useState([]);
-  const [servicos, setServicos] = useState([]);
+  const [servicos, setServicos] = useState(null);
+  const [verPrecos, setVerPrecos] = useState(false);
   const [loja, setLoja] = useState(lojas.some((l) => l.id === lojaInicial) ? lojaInicial : lojas[0]?.id || '');
   const gruposLojas = [...lojas.reduce((m, l) => {
     const g = m.get(l.empresa_id) || { id: l.empresa_id, nome: l.empresa, loja: l.id, lojas: [] };
@@ -101,9 +102,8 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
       setC({ ...vazio(d.tipo), ...Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v ?? ''])),
         cpf_cnpj: d.cpf_cnpj ? formatarDoc(d.cpf_cnpj) : '', telefone: d.telefone ? mascaraTelefone(d.telefone) : '',
         whatsapp: d.whatsapp ? mascaraTelefone(d.whatsapp) : '', cep: mascaraCep(d.cep), ativo: d.ativo,
-        parceiro: d.parceiro, comissoes: d.comissoes.map((r) => ({ servico_id: r.servico_id || '', tipo: r.tipo, valor: valorBR(r.valor) })) });
-      setExtra({ empresas: d.empresas, vendas: d.vendas, pode_editar: d.pode_editar, grupo_nome: d.grupo_nome, indicadas: d.indicadas,
-        empresa: d.empresa_id });
+        precos: Object.fromEntries(d.precos.map((p) => [p.servico_id, valorBR(p.valor)])) });
+      setExtra({ empresas: d.empresas, vendas: d.vendas, pode_editar: d.pode_editar, grupo_nome: d.grupo_nome, empresa: d.empresa_id });
     }).catch((f) => setErro(f.message));
   }, [id]);
 
@@ -112,11 +112,11 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
     if (c?.tipo === 'pj') api(`/clientes?tipo=grupo${lojaInicial ? `&loja=${lojaInicial}` : ''}`).then(setGrupos).catch(() => {});
   }, [c?.tipo]);
 
-  // serviços do grupo do cliente, para a comissão do parceiro
+  // serviços e produtos do grupo do cliente, para os preços especiais
   const lojaServicos = (extra?.empresa && lojas.find((l) => l.empresa_id === extra.empresa)?.id) || loja;
   useEffect(() => {
-    if (c?.parceiro && lojaServicos) api(`/servicos?loja=${lojaServicos}&uso=venda`).then(setServicos).catch(() => {});
-  }, [c?.parceiro, lojaServicos]);
+    if (lojaServicos && (!id || extra)) api(`/servicos?loja=${lojaServicos}&uso=venda`).then(setServicos).catch(() => setServicos([]));
+  }, [lojaServicos, Boolean(extra)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!c) return <Janela titulo="Cliente" aoFechar={aoFechar}>{erro ? <p className="erro">{erro}</p> : <p className="cinza">Carregando…</p>}</Janela>;
 
@@ -145,7 +145,8 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
     if (c.tipo === 'pj' && !cnpjValido(c.cpf_cnpj)) return setErro('CNPJ inválido. Confira os números.');
     setSalvando(true); setErro('');
     try {
-      const r = await api(id ? `/clientes/${id}` : '/clientes', { metodo: id ? 'PUT' : 'POST', corpo: { ...c, loja_id: loja } });
+      const precos = Object.entries(c.precos || {}).filter(([, v]) => String(v).trim()).map(([servico_id, valor]) => ({ servico_id, valor }));
+      const r = await api(id ? `/clientes/${id}` : '/clientes', { metodo: id ? 'PUT' : 'POST', corpo: { ...c, loja_id: loja, precos } });
       // grupo novo: já abre para adicionar as empresas
       if (aoSalvar) aoSalvar(r.id);
       else if (!id && c.tipo === 'grupo') aoAbrir({ id: r.id }); else aoFechar();
@@ -207,36 +208,33 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
               </div>
             </>
           )}
-          {c.tipo !== 'grupo' && (
-            <label className="linha-check"><input type="checkbox" checked={c.parceiro}
-              onChange={(e) => setC({ ...c, parceiro: e.target.checked, comissoes: e.target.checked && !c.comissoes.length ? [{ servico_id: '', tipo: 'fixo', valor: '' }] : c.comissoes })} />
-              Parceiro (indica clientes e recebe comissão por vistoria)</label>
-          )}
-          {c.parceiro && c.tipo !== 'grupo' && (
-            <section className="comissoes-parceiro">
-              <strong>Comissão do parceiro por serviço</strong>
-              <small className="cinza">Valor fixo (R$) por serviço ou porcentagem (%) do valor do serviço. "Demais serviços" vale para os que não estão na lista.</small>
-              {c.comissoes.map((r, n) => {
-                const muda = (x) => setC({ ...c, comissoes: c.comissoes.map((y, m) => (m === n ? { ...y, ...x } : y)) });
-                return (
-                  <div key={n} className="linha-comissao">
-                    <select value={r.servico_id} aria-label="Serviço" onChange={(e) => muda({ servico_id: e.target.value })}>
-                      <option value="">Demais serviços</option>
-                      {servicos.map((sv) => <option key={sv.id} value={sv.id}>{sv.nome}</option>)}
-                    </select>
-                    <select value={r.tipo} aria-label="Tipo da comissão" onChange={(e) => muda({ tipo: e.target.value })}>
-                      <option value="fixo">R$</option><option value="percentual">%</option>
-                    </select>
-                    <input value={r.valor} inputMode="decimal" aria-label="Valor da comissão" placeholder={r.tipo === 'fixo' ? '0,00' : '10'}
-                      onChange={(e) => muda({ valor: e.target.value.replace(/[^\d,.]/g, '') })} />
-                    <button type="button" className="fechar" aria-label="Tirar" onClick={() => setC({ ...c, comissoes: c.comissoes.filter((_, m) => m !== n) })}>×</button>
-                  </div>
-                );
-              })}
-              <button type="button" className="botao-texto" onClick={() => setC({ ...c, comissoes: [...c.comissoes, { servico_id: '', tipo: 'fixo', valor: '' }] })}>+ Adicionar serviço</button>
-              {extra?.indicadas && <small className="cinza">{extra.indicadas.qtd} venda(s) indicada(s), total R$ {valorBR(extra.indicadas.total)}.</small>}
-            </section>
-          )}
+          <section className="precos-cliente">
+            <div className="titulo-secao">
+              <strong>Preços especiais{Object.values(c.precos || {}).filter((v) => String(v).trim()).length ? ` (${Object.values(c.precos).filter((v) => String(v).trim()).length})` : ''}</strong>
+              <button type="button" className="botao-texto" onClick={() => setVerPrecos(!verPrecos)}>{verPrecos ? 'Esconder' : 'Ver e alterar'}</button>
+            </div>
+            {verPrecos && (
+              <>
+                <small className="cinza">Na venda para este cliente, o item vem com o preço daqui. Em branco: o preço normal do serviço.
+                  {c.tipo === 'grupo' && ' Vale para as empresas do grupo que não tiverem preço próprio.'}</small>
+                {servicos === null ? <p className="cinza">Carregando…</p> : servicos.length === 0 ? <p className="cinza">Nenhum serviço cadastrado.</p> : (
+                  <table className="tabela-precos">
+                    <thead><tr><th>Serviço / produto</th><th className="num">Preço normal</th><th className="num">Preço do cliente</th></tr></thead>
+                    <tbody>
+                      {servicos.map((sv) => (
+                        <tr key={sv.id}>
+                          <td>{sv.nome}</td>
+                          <td className="num cinza">{valorBR(sv.precos?.carro ?? sv.valor_padrao)}</td>
+                          <td className="num"><input value={c.precos?.[sv.id] || ''} inputMode="decimal" placeholder="—" aria-label={`Preço de ${sv.nome} para o cliente`}
+                            onChange={(e) => setC({ ...c, precos: { ...c.precos, [sv.id]: e.target.value.replace(/[^\d,.]/g, '') } })} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+          </section>
           <label>Observações<textarea rows={2} value={c.observacoes} onChange={muda('observacoes')} /></label>
           {id && <label className="linha-check"><input type="checkbox" checked={c.ativo} onChange={(e) => setC({ ...c, ativo: e.target.checked })} /> Cliente ativo</label>}
         </fieldset>

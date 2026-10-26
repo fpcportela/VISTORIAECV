@@ -117,7 +117,9 @@ begin
     select * into v_servico from servicos s where s.empresa_id = v_ch.empresa_id and s.ativo order by s.nome limit 1;
   end if;
   if v_servico.id is null then raise exception 'O grupo não tem serviço ativo para a venda.' using errcode = '22023'; end if;
+  -- preço: o especial do cliente (db/26), senão o do serviço para o tipo de veículo
   v_valor := coalesce(
+    (select cp.valor from cliente_precos cp where cp.cliente_id = v_cliente and cp.servico_id = v_servico.id),
     (select p.valor from servico_precos p where p.servico_id = v_servico.id and p.tipo_veiculo = v_tipo
                                              and (p.loja_id is null or p.loja_id = v_loja)
       order by p.loja_id nulls last limit 1),

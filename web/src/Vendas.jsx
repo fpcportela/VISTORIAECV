@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { api, moeda } from './api.js';
 import { Icone } from './icones.jsx';
 import { Placa, PlacaInput, PlacasDiversas, placaValida } from './Placa.jsx';
@@ -250,8 +250,8 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const [clientes, setClientes] = useState([]);
   const [novo, setNovo] = useState({ tipo: 'pf', nome: '', cpf_cnpj: '', whatsapp: '', email: '' });
   const [receita, setReceita] = useState(''); // situação da busca do CNPJ
-  const [parceiro, setParceiro] = useState(''); // parceiro que indicou a venda
-  const [parceiros, setParceiros] = useState([]);
+  const [precosCliente, setPrecosCliente] = useState({}); // preços especiais do cliente escolhido
+  const clienteCarregado = useRef(undefined); // cliente da venda salva: abrir a venda não muda os preços
   // venda aberta direto de uma consulta de placa: já vem com o veículo e o relatório da consulta
   const [veiculos, setVeiculos] = useState(() => [veiculoInicial ? { ...veiculoVazio(), ...doConsultado(veiculoInicial) } : veiculoVazio()]);
   const [pagamentos, setPagamentos] = useState(() => [pagamentoVazio()]);
@@ -275,9 +275,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     try {
       const v = await api(`/vendas/${id}`);
       setVenda(v); setLoja(v.loja_id); setData(String(v.data_venda).slice(0, 10));
-      setParceiro(v.parceiro_id || '');
-      if (v.parceiro_id) setParceiros((l) => (l.some((x) => x.id === v.parceiro_id) ? l : [...l, { id: v.parceiro_id, nome: v.parceiro_nome }]));
-      setCliente(v.cliente); setModoCliente(v.cliente.tipo === 'avulso' && v.cliente.nome === 'CLIENTE PARTICULAR / AVULSO' ? 'avulso' : 'atual');
+      const avulso = v.cliente.tipo === 'avulso' && v.cliente.nome === 'CLIENTE PARTICULAR / AVULSO';
+      clienteCarregado.current = avulso ? null : v.cliente.id;
+      setCliente(v.cliente); setModoCliente(avulso ? 'avulso' : 'atual');
       // agrupa os itens por placa, na ordem em que foram lançados
       const grupos = [];
       for (const i of v.itens) {
@@ -300,7 +300,6 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
 
   useEffect(() => {
     if (loja) api(`/servicos?loja=${loja}&uso=venda`).then(setServicos).catch((f) => setErro(f.message));
-    if (loja) api(`/clientes?loja=${loja}&parceiro=1`).then((l) => setParceiros((atual) => [...l, ...atual.filter((x) => !l.some((y) => y.id === x.id))])).catch(() => {});
   }, [loja]);
 
   useEffect(() => {
@@ -330,11 +329,26 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     }
   }
 
-  const precoDe = (servicoId, tipoVeiculo) => {
+  const precoDe = (servicoId, tipoVeiculo, especiais = precosCliente) => {
     const s = servicos.find((x) => x.id === servicoId);
     if (!s) return '';
-    return paraMoeda(s.precos?.[tipoVeiculo || 'carro'] ?? s.valor_padrao);
+    return paraMoeda(especiais[servicoId] ?? s.precos?.[tipoVeiculo || 'carro'] ?? s.valor_padrao);
   };
+
+  // cliente cadastrado com preços especiais: os itens usam o preço dele; trocando o cliente, os preços acompanham
+  const clienteId = (modoCliente === 'atual' || modoCliente === 'buscar') && cliente?.id ? cliente.id : null;
+  useEffect(() => {
+    let vale = true;
+    (clienteId ? api(`/clientes/${clienteId}/precos`) : Promise.resolve([])).then((l) => {
+      if (!vale) return;
+      const especiais = Object.fromEntries(l.map((p) => [p.servico_id, Number(p.valor)]));
+      setPrecosCliente(especiais);
+      if (clienteCarregado.current !== undefined && clienteCarregado.current === clienteId) return;
+      clienteCarregado.current = undefined;
+      if (editavel) setVeiculos((lista) => lista.map((v) => ({ ...v, itens: v.itens.map((i) => (i.servico_id ? { ...i, valor_unit: precoDe(i.servico_id, v.tipo_veiculo, especiais) } : i)) })));
+    }).catch(() => {});
+    return () => { vale = false; };
+  }, [clienteId, servicos.length]); // eslint-disable-line react-hooks/exhaustive-deps
   // Veículos e os seus itens. Se o tipo do veículo muda, o preço dos itens acompanha.
   const mudarVeiculo = (n, campos) => setVeiculos((lista) => lista.map((v, k) => {
     if (k !== n) return v;
@@ -389,7 +403,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     setOcupado(true);
     try {
       const corpo = {
-        loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes, parceiro_id: parceiro || null,
+        loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
         ...(autorizacao && { autorizacao_desconto: autorizacao }),
         itens: veiculos.flatMap(({ placa, tipo_veiculo, marca, modelo, itens }) => itens.filter((i) => i.servico_id)
           .map(({ servico_id, quantidade, valor_unit }) => ({ servico_id, placa, tipo_veiculo, marca, modelo, quantidade: numero(quantidade), valor_unit: numero(valor_unit) }))),
@@ -535,14 +549,6 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
             <label>E-mail<input value={novo.email} type="email" placeholder="Opcional" onChange={(e) => setNovo({ ...novo, email: e.target.value })} /></label>
             {receita && <small className="aviso-receita">{receita}</small>}
           </div>
-        )}
-        {parceiros.length > 0 && (
-          <label className="campo-parceiro">Parceiro que indicou
-            <select value={parceiro} onChange={(e) => setParceiro(e.target.value)}>
-              <option value="">Nenhum</option>
-              {parceiros.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-            </select>
-          </label>
         )}
       </fieldset>
 

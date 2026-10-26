@@ -3,8 +3,7 @@ import { Recusa, UUID, criarComRecusa, exigir, texto } from './comum.js';
 
 // Relatórios: dados das vendas e do financeiro para o relatório que a pessoa monta
 // (colunas, filtros e agrupamento ficam na tela), modelos salvos e o faturamento:
-// vendas de um cliente que ainda não foram pagas viram uma conta a receber (previsão), e a comissão
-// das vendas indicadas por um parceiro vira uma conta a pagar a ele.
+// vendas de um cliente que ainda não foram pagas viram uma conta a receber (previsão).
 
 const FUSO = 'America/Sao_Paulo';
 const dataValida = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') && !Number.isNaN(Date.parse(v)) ? v : null);
@@ -22,9 +21,7 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
     const q = req.query;
     const situacao = ['aberta', 'futuro', 'finalizada', 'cancelada'].includes(q.situacao) ? q.situacao : null;
     const faturar = q.faturar === '1';  // só as que ainda têm valor a faturar e não foram faturadas
-    const comissao = q.comissao === '1';  // só as com comissão do parceiro ainda não lançada
-    const params = [uuid(q.loja), uuid(q.cliente), dataValida(q.de), dataValida(q.ate), situacao, faturar, uuid(q.vendedor),
-      uuid(q.parceiro), comissao];
+    const params = [uuid(q.loja), uuid(q.cliente), dataValida(q.de), dataValida(q.ate), situacao, faturar, uuid(q.vendedor)];
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
       `select v.id, v.numero, v.data_venda, v.situacao, v.valor_bruto, v.desconto, v.valor_total, v.loja_id, l.nome as loja,
               v.empresa_id, c.id as cliente_id, c.nome as cliente, c.cpf_cnpj, g.nome as grupo_cliente, u.nome as vendedor,
@@ -35,16 +32,13 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
                 where i.venda_id = v.id) as servicos,
               (select string_agg(distinct p.forma::text, ',') from venda_pagamentos p where p.venda_id = v.id) as formas,
               ${A_FATURAR} as a_faturar,
-              lv.lancamento_id as faturada_em,
-              pa.nome as parceiro, comissao_parceiro(v.id) as comissao_parceiro, pv.lancamento_id as comissao_lancada_em
+              lv.lancamento_id as faturada_em
          from vendas v
          join lojas l on l.id = v.loja_id
          join clientes c on c.id = v.cliente_id
          left join clientes g on g.id = c.grupo_cliente_id
          left join usuarios u on u.id = v.vendedor_id
          left join lancamento_vendas lv on lv.venda_id = v.id
-         left join clientes pa on pa.id = v.parceiro_id
-         left join parceiro_comissao_vendas pv on pv.venda_id = v.id
         where pode(v.loja_id, 'relatorios.ver')
           and ($1::uuid is null or v.loja_id = $1)
           and ($2::uuid is null or c.id = $2 or c.grupo_cliente_id = $2)
@@ -53,8 +47,6 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
           and ($5::situacao_venda is null or v.situacao = $5)
           and (not $6 or (v.situacao not in ('cancelada', 'futuro') and lv.venda_id is null and ${A_FATURAR} > 0))
           and ($7::uuid is null or v.vendedor_id = $7)
-          and ($8::uuid is null or v.parceiro_id = $8)
-          and (not $9 or (v.situacao not in ('cancelada', 'futuro') and pv.venda_id is null and comissao_parceiro(v.id) > 0))
         order by v.data_venda, v.numero
         limit 5000`, params)).rows));
   }));
@@ -172,59 +164,6 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
       }
       return novos;
     }).catch((e) => { if (e.code === '23505') throw new Recusa(400, 'Alguma venda já foi faturada agora há pouco. Atualize a lista.'); throw e; });
-    res.json({ lancamentos: criados });
-  }));
-
-  // ------------------------------------------------------------ comissão do parceiro
-  // A comissão das vendas que o parceiro indicou vira uma conta a pagar a ele, por loja. Cada venda só entra uma vez.
-  app.post('/api/relatorios/comissao', exigeLogin, comRecusa(async (req, res) => {
-    const b = req.body || {};
-    const ids = [...new Set((Array.isArray(b.vendas) ? b.vendas : []).filter((i) => UUID.test(String(i))))].slice(0, 1000);
-    if (!ids.length) throw new Recusa(400, 'Marque as vendas da comissão.');
-    const vencimento = dataValida(b.vencimento);
-    if (!vencimento) throw new Recusa(400, 'Informe a data prevista do pagamento.');
-    const criados = await comoUsuario(req.usuarioId, async (db) => {
-      const vendas = (await db.query(
-        `select v.id, v.numero, v.loja_id, v.empresa_id, v.parceiro_id, v.situacao, comissao_parceiro(v.id) as comissao,
-                pv.venda_id is not null as lancada
-           from vendas v left join parceiro_comissao_vendas pv on pv.venda_id = v.id
-          where v.id = any($1)`, [ids])).rows;
-      if (vendas.length !== ids.length) throw new Recusa(400, 'Alguma venda não foi encontrada.');
-      const ruins = vendas.filter((v) => v.lancada || v.situacao === 'cancelada' || v.situacao === 'futuro' || !(Number(v.comissao) > 0));
-      if (ruins.length) throw new Recusa(400, `Estas vendas já tiveram a comissão lançada, foram canceladas ou não têm comissão: ${ruins.map((v) => `nº ${v.numero}`).join(', ')}. Atualize a lista.`);
-      if (new Set(vendas.map((v) => v.parceiro_id)).size > 1) throw new Recusa(400, 'Marque vendas de um parceiro só.');
-      const empresa = vendas[0].empresa_id;
-      const parceiro = vendas[0].parceiro_id;
-      const nome = (await db.query('select nome from clientes where id = $1', [parceiro])).rows[0]?.nome;
-
-      const cat = (await db.query("select id from categorias_financeiras where id = $1 and empresa_id = $2 and tipo = 'pagar' and not grupo and ativo",
-        [uuid(b.categoria_id), empresa])).rows[0];
-      if (!cat) throw new Recusa(400, 'Escolha a categoria de despesa.');
-      const descricao = texto(b.descricao, 200)?.toUpperCase() || `COMISSÃO ${nome}`;
-
-      const porLoja = new Map();
-      for (const v of vendas) (porLoja.get(v.loja_id) || porLoja.set(v.loja_id, []).get(v.loja_id)).push(v);
-      const novos = [];
-      for (const [loja, lista] of porLoja) {
-        await exigir(db, loja, 'financeiro.lancar', 'Seu perfil não pode lançar contas a pagar numa das lojas destas vendas.');
-        const centro = (await db.query('select id from centros_custo where empresa_id = $1 and loja_id = $2 and ativo order by criado_em limit 1', [empresa, loja])).rows[0]?.id || null;
-        const total = Math.round(lista.reduce((t, v) => t + Number(v.comissao), 0) * 100) / 100;
-        const numeros = lista.map((v) => v.numero).sort((a, b2) => a - b2);
-        const lid = (await db.query(
-          `insert into lancamentos (loja_id, tipo, categoria_id, centro_custo_id, cliente_id, descricao, competencia, vencimento, valor,
-                                    documento, observacoes, criado_por)
-           values ($1, 'pagar', $2, $3, $4, $5, (now() at time zone '${FUSO}')::date, $6, $7, $8, $9, $10) returning id`,
-          [loja, cat.id, centro, parceiro, descricao, vencimento, total, texto(b.documento, 60),
-           `Comissão das vendas nº ${numeros.join(', ')}`, req.usuarioId])).rows[0].id;
-        for (const v of lista) {
-          await db.query('insert into parceiro_comissao_vendas (lancamento_id, venda_id, valor) values ($1, $2, $3)', [lid, v.id, v.comissao]);
-          await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, 'alterada', $3)",
-            [v.id, req.usuarioId, `Comissão do parceiro (R$ ${Number(v.comissao).toFixed(2).replace('.', ',')}): conta a pagar de ${vencimento.split('-').reverse().join('/')}`]);
-        }
-        novos.push(lid);
-      }
-      return novos;
-    }).catch((e) => { if (e.code === '23505') throw new Recusa(400, 'A comissão de alguma venda acabou de ser lançada. Atualize a lista.'); throw e; });
     res.json({ lancamentos: criados });
   }));
 }

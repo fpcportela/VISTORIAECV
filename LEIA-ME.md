@@ -56,18 +56,13 @@ já cadastrado (ou cadastra um novo ao agendar) e, ao digitar o nome, aparecem o
 Sem documento, o agendamento fica só com o nome. O robô faz igual: com CPF/CNPJ usa o cadastro
 existente; sem documento, a venda vai para o particular/avulso e ninguém é cadastrado.
 
-## Parceiros e comissão
+## Preço especial por cliente
 
-Um cliente (pessoa física ou empresa) pode ser **parceiro**: indica clientes para a loja (uma revenda
-de carros, por exemplo) e recebe uma comissão por vistoria. No cadastro do cliente, marque
-**Parceiro** e informe a comissão por serviço: valor fixo (R$) ou porcentagem (%) do valor do serviço;
-"Demais serviços" vale para os que não estão na lista. Na venda, escolha o **Parceiro que indicou**.
-
-Em **Relatórios > Comissão de parceiros**, filtre por parceiro, período e situação: aparecem as vendas
-que ele indicou com a comissão de cada uma. **Gerar pagamento** cria a conta a pagar ao parceiro no
-Financeiro (categoria "Comissões de parceiros"). Cada venda entra uma vez; se a conta for cancelada, as
-vendas voltam para o relatório. **Faturar cliente** continua gerando a conta a receber com o que falta
-receber das vendas de um cliente.
+No cadastro do cliente, **Preços especiais > Ver e alterar** mostra todos os serviços e produtos com o
+preço normal e um campo para o preço daquele cliente (em branco = preço normal). Num grupo de empresas,
+o preço do grupo vale para as empresas dele que não tiverem preço próprio. Na venda, ao escolher o
+cliente cadastrado, os itens já vêm com o preço dele (e acompanham se o cliente for trocado); a venda
+aberta pelo robô do WhatsApp para um cliente cadastrado também usa o preço dele.
 
 ## WhatsApp (API oficial da Meta)
 
