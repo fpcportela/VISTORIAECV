@@ -52,7 +52,10 @@ export async function gerarPdfPonto({ loja, colaboradores, mes }) {
         `${d.slice(8)}/${d.slice(5, 7)} ${SEMANA[sem]}`,
         ...ORDEM.map((k) => (marcas[k] ? `${hora(marcas[k].hora)}${marcas[k].ajuste ? '*' : ''}` : '')),
         min ? duracao(min) : '',
-        c.justificativas.find((j) => j.data === d)?.texto || '',
+        // dia todo primeiro, depois cada marcação
+        c.justificativas.filter((j) => j.data === d)
+          .sort((a, b) => (a.tipo ? ORDEM.indexOf(a.tipo) + 1 : 0) - (b.tipo ? ORDEM.indexOf(b.tipo) + 1 : 0))
+          .map((j) => (j.tipo ? `${NOMES[j.tipo]}: ${j.texto}` : j.texto)).join('\n'),
       ];
     });
     autoTable(doc, {

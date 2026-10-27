@@ -957,3 +957,18 @@ span.agenda-livre { cursor: default; color: #64748b; }
 
 /* Preço do item travado na venda: destrava com a senha de quem autoriza */
 .item-venda input.preco-travado { background: #f3f4f6; color: var(--texto); cursor: pointer; }
+
+/* Justificativa por marcação no espelho do ponto */
+.tp-justificar { border: none; background: none; color: var(--suave, #9ca3af); font-size: 13px; padding: 0 3px; cursor: pointer; opacity: .55; }
+.tp-justificar:hover { opacity: 1; color: var(--forte); }
+.tp-justificar.feita { opacity: 1; color: #b45309; font-weight: 700; }
+.tp-just-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+
+/* Tela inicial: vendas em aberto e agendadas (abre a lista filtrada) */
+.vendas-abertas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.vendas-abertas .cartao { flex: 1 1 220px; display: flex; align-items: baseline; gap: 10px; padding: 14px 18px; border: none; text-align: left; color: var(--texto); cursor: pointer; }
+.vendas-abertas strong { font-size: 24px; }
+.vendas-abertas .aberta { background: #fef9c3; box-shadow: inset 4px 0 0 #eab308; }
+.vendas-abertas .agendada { background: #e0f2fe; box-shadow: inset 4px 0 0 #0ea5e9; }
+.tp-justificativa { gap: 2px; }
+.tp-justificativa .botao-texto { padding: 0; min-height: 0; font-size: 12px; }

@@ -275,7 +275,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
           where r.colaborador_id = $1 and to_char(r.data, 'YYYY-MM') = $2
           order by r.data, r.criado_em`, [c.id, mes])).rows;
       const justificativas = (await db.query(
-        `select j.data, j.texto, u.nome as criado_por, j.criado_em,
+        `select j.data, j.tipo, j.texto, u.nome as criado_por, j.criado_em,
                 coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'nome', a.nome_arquivo, 'tamanho', a.tamanho) order by a.criado_em)
                             from ponto_justificativa_arquivos a where a.justificativa_id = j.id), '[]') as arquivos
            from ponto_justificativas j left join usuarios u on u.id = j.criado_por
@@ -323,19 +323,25 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     res.json({ id });
   }));
 
+  // Justificativa de uma marcação (tipo) ou do dia todo (sem tipo)
   app.put('/api/ponto/justificativa', exigeLogin, comRecusa(async (req, res) => {
     const b = req.body || {};
     const data = dataValida(b.data);
     if (!data) throw new Recusa(400, 'Data inválida.');
+    if (b.tipo && !ORDEM_PONTO.includes(b.tipo)) throw new Recusa(400, 'Marcação inválida.');
+    const tipo = b.tipo || null;
     const textoJ = texto(b.texto, 500);
     await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, b.colaborador_id);
       await exigirColab(db, c, 'ponto.justificar', 'Seu perfil não pode justificar o ponto.');
-      if (!textoJ) return db.query('delete from ponto_justificativas where colaborador_id = $1 and data = $2', [c.id, data]);
+      if (!textoJ) {
+        return db.query('delete from ponto_justificativas where colaborador_id = $1 and data = $2 and tipo is not distinct from $3::tipo_marcacao_ponto', [c.id, data, tipo]);
+      }
+      const alvo = tipo ? '(colaborador_id, data, tipo) where tipo is not null' : '(colaborador_id, data) where tipo is null';
       return db.query(
-        `insert into ponto_justificativas (colaborador_id, data, texto, criado_por) values ($1, $2, $3, $4)
-         on conflict (colaborador_id, data) do update set texto = excluded.texto, criado_por = excluded.criado_por, criado_em = now()`,
-        [c.id, data, textoJ, req.usuarioId]);
+        `insert into ponto_justificativas (colaborador_id, data, tipo, texto, criado_por) values ($1, $2, $3, $4, $5)
+         on conflict ${alvo} do update set texto = excluded.texto, criado_por = excluded.criado_por, criado_em = now()`,
+        [c.id, data, tipo, textoJ, req.usuarioId]);
     });
     res.json({ ok: true });
   }));
@@ -384,7 +390,9 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       const id = await comoUsuario(req.usuarioId, async (db) => {
         const c = await colaborador(db, req.query.colaborador);
         await exigirColab(db, c, 'ponto.justificar', 'Seu perfil não pode justificar o ponto.');
-        const j = (await db.query('select id from ponto_justificativas where colaborador_id = $1 and data = $2', [c.id, data])).rows[0];
+        const tipo = ORDEM_PONTO.includes(req.query.tipo) ? req.query.tipo : null;
+        const j = (await db.query('select id from ponto_justificativas where colaborador_id = $1 and data = $2 and tipo is not distinct from $3::tipo_marcacao_ponto',
+          [c.id, data, tipo])).rows[0];
         if (!j) throw new Recusa(400, 'Escreva a justificativa antes de anexar o documento.');
         return (await db.query(
           `insert into ponto_justificativa_arquivos (justificativa_id, nome_arquivo, mime, tamanho, conteudo, enviado_por)
@@ -434,7 +442,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
         `select c.id, c.nome, c.cpf, c.cargo,
                 coalesce((select jsonb_agg(jsonb_build_object('data', r.data, 'tipo', r.tipo, 'hora', r.hora, 'ajuste', r.origem = 'ajuste') order by r.hora)
                             from ponto_registros r where r.colaborador_id = c.id and r.ativo and to_char(r.data, 'YYYY-MM') = $2), '[]') as registros,
-                coalesce((select jsonb_agg(jsonb_build_object('data', j.data, 'texto', j.texto))
+                coalesce((select jsonb_agg(jsonb_build_object('data', j.data, 'tipo', j.tipo, 'texto', j.texto))
                             from ponto_justificativas j where j.colaborador_id = c.id and to_char(j.data, 'YYYY-MM') = $2), '[]') as justificativas
            from colaboradores c
           where (c.loja_id = $1 or exists (select 1 from colaborador_lojas cl where cl.colaborador_id = c.id and cl.loja_id = $1))

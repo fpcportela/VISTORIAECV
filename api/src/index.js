@@ -132,6 +132,11 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
               and ($1::uuid is null or v.loja_id = $1) and pode(v.loja_id, 'vendas.ver')
         where v.id is not null or i.id is null
         group by t.tipo`, [loja])).rows;
+    // vendas ainda em aberto (qualquer data): abertas e agendadas pelo robô do WhatsApp
+    const abertas = (await db.query(
+      `select count(*) filter (where situacao = 'aberta')::int as abertas, count(*) filter (where situacao = 'futuro')::int as agendadas
+         from vendas v
+        where v.situacao in ('aberta', 'futuro') and ($1::uuid is null or v.loja_id = $1) and pode(v.loja_id, 'vendas.ver')`, [loja])).rows[0];
     const royalties = (await db.query(
       `select coalesce(sum(valor_total), 0) as total
          from apuracoes_royalty
@@ -148,6 +153,7 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
       vistoriasHoje: porVeiculo('hoje'),
       vistoriasMes: porVeiculo('mes'),
       royaltiesMes: royalties,
+      vendasAbertas: abertas,
     };
   });
   res.json(dados);

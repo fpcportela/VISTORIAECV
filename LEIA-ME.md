@@ -95,6 +95,17 @@ cliente quer atendimento, mostrando o endereço de cada uma; os horários, o age
 unidade escolhida. Em **WhatsApp > Robô**, escolha o responsável padrão e, se quiser, um por unidade:
 quando o robô agenda (abre a venda) ou passa a conversa para uma pessoa, o chamado vai para ele.
 
+## Justificativa do ponto por marcação
+
+No espelho do ponto, cada marcação (entrada, saída almoço, volta almoço, saída) tem o seu ✎ para
+justificar, com documentos anexados. "Justificar o dia" continua existindo para falta ou atestado do dia
+inteiro. O relatório em PDF lista cada justificativa com o nome da marcação.
+
+## Vendas em aberto na tela inicial
+
+Abaixo das vistorias vendidas no mês, a tela inicial mostra quantas vendas estão em aberto (amarelo) e
+quantas foram agendadas pelo WhatsApp (azul). Clicar abre a lista de vendas já filtrada.
+
 ## Venda sem serviço
 
 **Salvar** grava a venda mesmo sem serviço (por exemplo, só com o cliente e a placa). Ela fica aberta e

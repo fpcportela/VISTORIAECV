@@ -203,7 +203,7 @@ function Espelho({ loja }) {
   const [mes, setMes] = useState(mesAtual());
   const [dados, setDados] = useState(null);
   const [detalhe, setDetalhe] = useState(null); // { data, tipo }
-  const [justificando, setJustificando] = useState(null); // data
+  const [justificando, setJustificando] = useState(null); // { data, tipo } (sem tipo = o dia todo)
   const [foto, setFoto] = useState(null); // { id, titulo }
   const [relatorio, setRelatorio] = useState(false);
   const [erro, setErro] = useState('');
@@ -220,7 +220,10 @@ function Espelho({ loja }) {
   const [ano, m] = mes.split('-').map(Number);
   const dias = Array.from({ length: new Date(ano, m, 0).getDate() }, (_, i) => `${mes}-${String(i + 1).padStart(2, '0')}`);
   const doDia = (d) => Object.fromEntries((dados?.registros || []).filter((r) => r.data === d && r.ativo).map((r) => [r.tipo, r]));
-  const justificativa = (d) => dados?.justificativas.find((j) => j.data === d);
+  // justificativa de cada marcação (tipo) ou do dia todo (sem tipo)
+  const justificativa = (d, tipo = null) => dados?.justificativas.find((j) => j.data === d && (j.tipo || null) === tipo);
+  const justificativasDia = (d) => (dados?.justificativas || []).filter((j) => j.data === d)
+    .sort((a, b) => (a.tipo ? ORDEM.indexOf(a.tipo) + 1 : 0) - (b.tipo ? ORDEM.indexOf(b.tipo) + 1 : 0));
   const comprovante = (d) => dados?.comprovantes?.find((c) => c.data === d);
   const totalMes = dias.reduce((t, d) => t + minutosDia(doDia(d)), 0);
 
@@ -246,7 +249,7 @@ function Espelho({ loja }) {
             </div>
             {dias.map((d) => {
               const marcas = doDia(d);
-              const j = justificativa(d);
+              const js = justificativasDia(d);
               const sem = new Date(`${d}T12:00:00`).getDay();
               return (
                 <div key={d} className={`tp-linha${sem === 0 || sem === 6 ? ' fim-semana' : ''}`} role="row">
@@ -268,6 +271,11 @@ function Espelho({ loja }) {
                       {marcas[k] ? null : dados.pode.ajustar ? (
                         <button className="tp-vazio" onClick={() => setDetalhe({ data: d, tipo: k })} title="Incluir marcação">+</button>
                       ) : <span className="cinza">—</span>}
+                      {dados.pode.justificar && (
+                        <button className={`tp-justificar${justificativa(d, k) ? ' feita' : ''}`} onClick={() => setJustificando({ data: d, tipo: k })}
+                          title={justificativa(d, k) ? `Justificativa: ${justificativa(d, k).texto}` : `Justificar ${MARCACOES[k].toLowerCase()}`}
+                          aria-label={`Justificar ${MARCACOES[k]} de ${new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}`}>✎</button>
+                      )}
                     </span>
                   ))}
                   <span data-rotulo="Horas" className="tp-horas">
@@ -279,12 +287,19 @@ function Espelho({ loja }) {
                     )}
                   </span>
                   <span data-rotulo="Justificativa" className="tp-justificativa">
-                    {j && <small title={`${j.criado_por || ''}`}>{j.texto}</small>}
-                    {j?.arquivos?.map((a) => (
-                      <button key={a.id} className="botao-texto tp-anexo" title="Abrir documento"
-                        onClick={() => abrirArquivo(`/ponto/justificativa/arquivos/${a.id}`).catch((f) => setErro(f.message))}>📎 {a.nome}</button>
+                    {js.map((j) => (
+                      <span key={j.tipo || 'dia'} className="tp-just-item">
+                        <small title={`${j.criado_por || ''}`}><strong>{j.tipo ? MARCACOES[j.tipo] : 'Dia'}:</strong> {j.texto}</small>
+                        {j.arquivos?.map((a) => (
+                          <button key={a.id} className="botao-texto tp-anexo" title="Abrir documento"
+                            onClick={() => abrirArquivo(`/ponto/justificativa/arquivos/${a.id}`).catch((f) => setErro(f.message))}>📎 {a.nome}</button>
+                        ))}
+                        {dados.pode.justificar && <button className="botao-texto" onClick={() => setJustificando({ data: d, tipo: j.tipo || null })}>Alterar</button>}
+                      </span>
                     ))}
-                    {dados.pode.justificar && <button className="botao-texto" onClick={() => setJustificando(d)}>{j ? 'Alterar' : 'Justificar'}</button>}
+                    {dados.pode.justificar && !justificativa(d) && (
+                      <button className="botao-texto" title="Falta, atestado ou folga do dia inteiro" onClick={() => setJustificando({ data: d, tipo: null })}>Justificar o dia</button>
+                    )}
                   </span>
                 </div>
               );
@@ -309,8 +324,8 @@ function Espelho({ loja }) {
         </div>
       )}
       {justificando && dados && (
-        <Justificar colaborador={dados.colaborador.id} data={justificando} atual={justificativa(justificando)?.texto || ''}
-          arquivos={justificativa(justificando)?.arquivos || []} aoMudar={carregar}
+        <Justificar colaborador={dados.colaborador.id} {...justificando} atual={justificativa(justificando.data, justificando.tipo)?.texto || ''}
+          arquivos={justificativa(justificando.data, justificando.tipo)?.arquivos || []} aoMudar={carregar}
           aoFechar={() => setJustificando(null)} aoSalvar={() => { setJustificando(null); carregar(); }} />
       )}
       {relatorio && <RelatorioPonto loja={loja} colaboradores={colaboradores} colab={colab} mes={mes} aoFechar={() => setRelatorio(false)} />}
@@ -383,7 +398,7 @@ function DetalheMarcacao({ dados, data, tipo, aoFechar, aoSalvar }) {
   );
 }
 
-function Justificar({ colaborador, data, atual, arquivos, aoMudar, aoFechar, aoSalvar }) {
+function Justificar({ colaborador, data, tipo, atual, arquivos, aoMudar, aoFechar, aoSalvar }) {
   const [texto, setTexto] = useState(atual);
   const [novos, setNovos] = useState([]); // arquivos escolhidos, enviados ao salvar
   const [erro, setErro] = useState('');
@@ -393,9 +408,9 @@ function Justificar({ colaborador, data, atual, arquivos, aoMudar, aoFechar, aoS
     if (novos.length && !texto.trim()) return setErro('Escreva a justificativa para anexar o documento.');
     setSalvando(true); setErro('');
     try {
-      await api('/ponto/justificativa', { metodo: 'PUT', corpo: { colaborador_id: colaborador, data, texto } });
+      await api('/ponto/justificativa', { metodo: 'PUT', corpo: { colaborador_id: colaborador, data, tipo, texto } });
       for (const arq of novos) {
-        const q = new URLSearchParams({ colaborador, data, nome: arq.name, mime: arq.type || 'application/octet-stream' });
+        const q = new URLSearchParams({ colaborador, data, ...(tipo && { tipo }), nome: arq.name, mime: arq.type || 'application/octet-stream' });
         const r = await fetch(`/api/ponto/justificativa/arquivos?${q}`, {
           method: 'POST', body: arq, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
         });
@@ -414,7 +429,7 @@ function Justificar({ colaborador, data, atual, arquivos, aoMudar, aoFechar, aoS
     <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
       <section className="modal" role="dialog" aria-modal="true" aria-label="Justificativa">
         <div className="modal-topo">
-          <h2>Justificativa · {new Date(`${data}T12:00:00`).toLocaleDateString('pt-BR')}</h2>
+          <h2>Justificativa · {tipo ? `${MARCACOES[tipo]} · ` : 'Dia todo · '}{new Date(`${data}T12:00:00`).toLocaleDateString('pt-BR')}</h2>
           <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
         </div>
         <form className="formulario" onSubmit={salvar}>

@@ -38,6 +38,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [abaVenda, setAbaVenda] = useState('lista'); // 'lista' ou a chave da aba
   const contadorAbas = useRef(0);
   const [buscaVendas, setBuscaVendas] = useState('');
+  const [situacaoVendas, setSituacaoVendas] = useState(''); // lista de vendas aberta já filtrada (cartão da tela inicial)
   const [organizandoMenu, setOrganizandoMenu] = useState(false);
   const [aviso, setAviso] = useState('');
   const [consulta, setConsulta] = useState(null); // null = fechada; texto = placa digitada
@@ -87,7 +88,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   function abrir(id) {
     setMenuAberto(false);
     if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config', 'lojas', 'clientes', 'whatsapp', 'relatorios', 'agenda'].includes(id)) {
-      setTela(id); setVistoriaId(null); setBuscaVendas('');
+      setTela(id); setVistoriaId(null); setBuscaVendas(''); setSituacaoVendas('');
       if (id === 'vendas') setAbaVenda('lista');
       if (id === 'financeiro') setFinanceiroAbre((f) => ({ aba: 'receber', novo: false, chave: f.chave + 1 }));
     }
@@ -117,6 +118,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     setMenuAberto(false); setTela('financeiro');
     setFinanceiroAbre((f) => ({ aba, novo, chave: f.chave + 1 }));
   };
+  // cartões de vendas em aberto: abre a lista já filtrada pela situação
+  const verVendas = (situacao) => { setMenuAberto(false); setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(''); setSituacaoVendas(situacao); };
   const abrirVistoria = (id) => { setTela('vistorias'); setVistoriaId(id); };
   const abrirVenda = (id) => {
     setTela('vendas');
@@ -270,6 +273,16 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               <small className="cinza total">Total: {mes ? mes.carros + mes.motos + mes.caminhoes : '–'}</small>
             </div>
             {contadores(mes)}
+            {dados?.vendasAbertas && (
+              <div className="vendas-abertas">
+                <button className="cartao aberta" onClick={() => verVendas('aberta')}>
+                  <strong>{dados.vendasAbertas.abertas}</strong><span>{dados.vendasAbertas.abertas === 1 ? 'venda em aberto' : 'vendas em aberto'}</span>
+                </button>
+                <button className="cartao agendada" onClick={() => verVendas('futuro')}>
+                  <strong>{dados.vendasAbertas.agendadas}</strong><span>{dados.vendasAbertas.agendadas === 1 ? 'agendada pelo WhatsApp' : 'agendadas pelo WhatsApp'}</span>
+                </button>
+              </div>
+            )}
           </section>
         </>
       )}
@@ -424,7 +437,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;
               })()
             : tela === 'vendas' ? (abaVenda === 'lista' || !abasVenda.length) && (
-                <ListaVendas key={buscaVendas} loja={loja} buscaInicial={buscaVendas} empresa={empresa} logo={perfil.logo} lojasLote={perfil.lojas.filter((l) => lojasCom('vendas.criar').includes(l.id))} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
+                <ListaVendas key={`${buscaVendas}|${situacaoVendas}`} loja={loja} buscaInicial={buscaVendas} situacaoInicial={situacaoVendas} empresa={empresa} logo={perfil.logo} lojasLote={perfil.lojas.filter((l) => lojasCom('vendas.criar').includes(l.id))} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
             : tela === 'vistorias' ? (vistoriaId
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)

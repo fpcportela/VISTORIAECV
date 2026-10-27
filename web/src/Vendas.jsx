@@ -60,9 +60,9 @@ const PERIODOS = {
   todas: () => ['', ''],
 };
 
-export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', empresa, logo, lojasLote = [] }) {
-  const [[de, ate], setIntervalo] = useState(buscaInicial ? PERIODOS.todas() : PERIODOS.mes());
-  const [situacao, setSituacao] = useState('');
+export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', situacaoInicial = '', empresa, logo, lojasLote = [] }) {
+  const [[de, ate], setIntervalo] = useState(buscaInicial || situacaoInicial ? PERIODOS.todas() : PERIODOS.mes());
+  const [situacao, setSituacao] = useState(situacaoInicial);
   const [cliente, setCliente] = useState(buscaInicial);
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState(null);
