@@ -203,7 +203,7 @@ select { border: 1px solid #d6dbe3; border-radius: 4px; padding: 4px 6px; font-s
 .lista-atalhos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .lista-atalhos li { display: flex; align-items: center; gap: 8px; border: 1px solid #e3e7ee; border-radius: 8px; padding: 4px 8px; }
 .lista-atalhos label { flex: 1; display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; min-height: 48px; cursor: pointer; }
-.lista-atalhos input, .formulario input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--forte); flex-shrink: 0; }
+.lista-atalhos input, .formulario input[type=checkbox], .formulario input[type=radio] { width: 20px; height: 20px; accent-color: var(--forte); flex-shrink: 0; }
 .ordem { display: flex; gap: 4px; }
 .ordem button { width: 40px; height: 40px; border: 1px solid var(--borda); border-radius: 6px; background: #fff; color: var(--forte); font-size: 14px; }
 .acoes-modal { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
@@ -972,3 +972,5 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .vendas-abertas .agendada { background: #e0f2fe; box-shadow: inset 4px 0 0 #0ea5e9; }
 .tp-justificativa { gap: 2px; }
 .tp-justificativa .botao-texto { padding: 0; min-height: 0; font-size: 12px; }
+.escolha-coluna { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--borda, #dde3ea); border-radius: 8px; padding: 8px 12px; }
+.formulario .escolha-coluna label.linha-check { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 36px; font-weight: 600; }

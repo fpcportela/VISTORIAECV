@@ -54,6 +54,29 @@ async function dadosAgendamento(db, b, empresa, loja) {
   return { nome, tel, placa, servico, cliente, obs: texto(b.observacao, 1000) };
 }
 
+// Põe o agendamento num chamado do kanban do WhatsApp, na coluna escolhida (o chamado aberto do contato muda de coluna)
+async function ligarChamado(db, ag, colunaId, usuarioId) {
+  if (!ag.telefone) throw new Recusa(400, 'Para mandar para o WhatsApp, informe o celular do cliente.');
+  const col = (await db.query('select id from whatsapp_colunas where id = $1 and empresa_id = $2 and not finaliza', [colunaId, ag.empresa_id])).rows[0];
+  if (!col) throw new Recusa(400, 'Escolha a coluna do chamado.');
+  const contato = (await db.query(
+    `insert into whatsapp_contatos (empresa_id, telefone, nome) values ($1, $2, $3)
+     on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome) returning id`,
+    [ag.empresa_id, internacional(ag.telefone), ag.nome])).rows[0].id;
+  const ordem = `coalesce((select min(ordem) from whatsapp_chamados where coluna_id = $1), 1) - 1`;
+  let chamado = (await db.query('select id from whatsapp_chamados where contato_id = $1 and aberto order by criado_em desc limit 1', [contato])).rows[0]?.id;
+  if (chamado) {
+    await db.query(`update whatsapp_chamados set coluna_id = $1, ordem = ${ordem}, atualizado_em = now() where id = $2`, [col.id, chamado]);
+  } else {
+    chamado = (await db.query(
+      `insert into whatsapp_chamados (empresa_id, contato_id, coluna_id, ordem, titulo, criado_por)
+       values ($2, $3, $1, ${ordem}, $4, $5) returning id`,
+      [col.id, ag.empresa_id, contato, 'AGENDAMENTO', usuarioId])).rows[0].id;
+  }
+  await db.query('select app_robo_atribuir($1, $2)', [chamado, ag.loja_id]);
+  await db.query('update agendamentos set chamado_id = $1 where id = $2', [chamado, ag.id]);
+}
+
 // Manda a confirmação pelo WhatsApp do grupo e grava na conversa do contato
 async function mandarConfirmacao(usuarioId, agendamentoId) {
   const a = await comoUsuario(usuarioId, async (db) => {
@@ -120,7 +143,10 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       const livres = (await db.query('select * from agenda_livres($1, $2::date, $3::date)', [l.id, de, ate])).rows;
       const servicos = (await db.query('select id, nome from servicos where empresa_id = $1 and ativo order by nome', [l.empresa_id])).rows;
       const gerenciar = (await db.query("select pode($1, 'agenda.gerenciar') as ok", [l.id])).rows[0].ok;
-      return { config: await config(db, l.id), agendamentos, bloqueios, livres, servicos, pode_gerenciar: gerenciar };
+      // colunas do kanban de chamados, para escolher onde vai o chamado do agendamento novo
+      await db.query('select app_whatsapp_colunas_padrao($1)', [l.empresa_id]);
+      const colunas = (await db.query('select id, nome from whatsapp_colunas where empresa_id = $1 and not finaliza order by ordem, nome', [l.empresa_id])).rows;
+      return { config: await config(db, l.id), agendamentos, bloqueios, livres, servicos, colunas, pode_gerenciar: gerenciar };
     }));
   }));
 
@@ -133,10 +159,12 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       await exigir(db, l.id, 'agenda.gerenciar', 'Seu perfil não pode agendar.');
       const d = await dadosAgendamento(db, b, l.empresa_id, l.id);
       const fim = await horarioValido(db, { loja: l.id, inicio, encaixe: b.encaixe === true });
-      return (await db.query(
+      const novo = (await db.query(
         `insert into agendamentos (empresa_id, loja_id, inicio, fim, nome, telefone, placa, servico_id, cliente_id, observacao, criado_por)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
-        [l.empresa_id, l.id, inicio, fim, d.nome, d.tel, d.placa, d.servico, d.cliente, d.obs, req.usuarioId])).rows[0].id;
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`,
+        [l.empresa_id, l.id, inicio, fim, d.nome, d.tel, d.placa, d.servico, d.cliente, d.obs, req.usuarioId])).rows[0];
+      if (UUID.test(b.coluna_id || '')) await ligarChamado(db, novo, b.coluna_id, req.usuarioId);
+      return novo.id;
     });
     let aviso = null;
     if (b.enviar_whatsapp) {

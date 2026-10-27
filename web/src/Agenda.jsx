@@ -107,7 +107,7 @@ export default function Agenda({ perfil, loja, aoVenda }) {
         ) : (
           <Semana de={de} d={d} aoDia={(x) => { setDia(x); setModo('dia'); }} />
         )}
-      {janela?.tipo === 'novo' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} inicial={{ dia: janela.dia, hora: janela.hora }}
+      {janela?.tipo === 'novo' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} colunas={d?.colunas || []} inicial={{ dia: janela.dia, hora: janela.hora }}
         aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
       {janela?.tipo === 'editar' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} agendamento={janela.a}
         aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
@@ -198,13 +198,13 @@ function Semana({ de, d, aoDia }) {
 }
 
 // ------------------------------------------------------------ novo / editar
-function Editor({ perfil, loja, servicos, agendamento, inicial, aoFechar, aoSalvar }) {
+function Editor({ perfil, loja, servicos, colunas = [], agendamento, inicial, aoFechar, aoSalvar }) {
   const a = agendamento;
   const [f, setF] = useState({
     nome: a?.nome || '', telefone: a?.telefone ? mascaraTelefone(String(a.telefone).replace(/^55/, '')) : '', placa: a?.placa || '',
     servico_id: a?.servico_id || '', observacao: a?.observacao || '',
     dia: a ? diaSP(a.inicio) : inicial?.dia || hoje(), hora: a ? horaSP(a.inicio) : inicial?.hora || '',
-    encaixe: false, enviar_whatsapp: !a, cpf_cnpj: a?.cliente_doc ? formatarDoc(a.cliente_doc) : '',
+    encaixe: false, enviar_whatsapp: false, cpf_cnpj: a?.cliente_doc ? formatarDoc(a.cliente_doc) : '',
   });
   // cliente do cadastro: achado pelo CPF/CNPJ ou escolhido na busca pelo nome (nunca cadastra duplicado)
   const [cliente, setCliente] = useState(a?.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : null);
@@ -216,6 +216,8 @@ function Editor({ perfil, loja, servicos, agendamento, inicial, aoFechar, aoSalv
   const [livres, setLivres] = useState(null);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  // agendamento novo com celular: antes de gravar, escolhe a coluna do chamado no WhatsApp
+  const [escolhendo, setEscolhendo] = useState(null); // { coluna_id, enviar_whatsapp }
   const mudar = (c) => setF((x) => ({ ...x, ...c }));
 
   useEffect(() => {
@@ -257,16 +259,25 @@ function Editor({ perfil, loja, servicos, agendamento, inicial, aoFechar, aoSalv
     if (!f.hora) { setErro('Escolha o horário.'); return; }
     const d = f.cpf_cnpj.replace(/\D/g, '');
     if (d && !(d.length === 11 ? cpfValido(d) : d.length === 14 && cnpjValido(d))) { setErro('CPF ou CNPJ inválido. Confira os números.'); return; }
-    setSalvando(true);
+    if (!a && f.telefone.replace(/\D/g, '').length >= 10 && colunas.length) {
+      setEscolhendo({ coluna_id: colunas[0].id, enviar_whatsapp: true });
+      return;
+    }
+    gravar({ enviar_whatsapp: f.enviar_whatsapp && Boolean(a) });
+  }
+
+  async function gravar(extra) {
+    setErro(''); setSalvando(true);
+    const d = f.cpf_cnpj.replace(/\D/g, '');
     const corpo = {
       loja_id: loja, nome: f.nome, telefone: f.telefone, placa: f.placa, servico_id: f.servico_id || null, observacao: f.observacao,
-      inicio: instanteSP(f.dia, f.hora), encaixe: f.encaixe, enviar_whatsapp: f.enviar_whatsapp,
+      inicio: instanteSP(f.dia, f.hora), encaixe: f.encaixe, ...extra,
       ...(cliente ? { cliente_id: cliente.id } : { cpf_cnpj: d }),
     };
     try {
       const r = a ? await api(`/agenda/${a.id}`, { metodo: 'PUT', corpo }) : await api('/agenda', { metodo: 'POST', corpo });
-      aoSalvar(r.aviso || (a ? 'Agendamento salvo.' : 'Agendado.'));
-    } catch (falha) { setErro(falha.message); setSalvando(false); }
+      aoSalvar(r.aviso || (a ? 'Agendamento salvo.' : extra.enviar_whatsapp ? 'Agendado e confirmação enviada pelo WhatsApp.' : 'Agendado.'));
+    } catch (falha) { setErro(falha.message); setSalvando(false); setEscolhendo(null); }
   }
 
   return (
@@ -326,8 +337,10 @@ function Editor({ perfil, loja, servicos, agendamento, inicial, aoFechar, aoSalv
         <label className="linha-check"><input type="checkbox" checked={f.encaixe} onChange={(e) => mudar({ encaixe: e.target.checked })} />
           Encaixe (agendar fora dos horários livres)</label>
         <label>Observação<textarea rows={2} value={f.observacao} onChange={(e) => mudar({ observacao: e.target.value })} /></label>
-        <label className="linha-check"><input type="checkbox" checked={f.enviar_whatsapp} onChange={(e) => mudar({ enviar_whatsapp: e.target.checked })} />
-          Mandar a confirmação pelo WhatsApp</label>
+        {a && (
+          <label className="linha-check"><input type="checkbox" checked={f.enviar_whatsapp} onChange={(e) => mudar({ enviar_whatsapp: e.target.checked })} />
+            Mandar a confirmação pelo WhatsApp</label>
+        )}
         {erro && <p className="erro" role="alert">{erro}</p>}
         <div className="acoes-modal">
           <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
@@ -335,6 +348,31 @@ function Editor({ perfil, loja, servicos, agendamento, inicial, aoFechar, aoSalv
         </div>
       </form>
     </Janela>
+    {escolhendo && (
+      <Janela titulo="Chamado no WhatsApp" aoFechar={() => setEscolhendo(null)}>
+        <div className="formulario">
+          <p>Em qual coluna dos chamados fica o atendimento de <strong>{f.nome}</strong>?</p>
+          <div className="escolha-coluna" role="radiogroup">
+            {colunas.map((c) => (
+              <label key={c.id} className="linha-check">
+                <input type="radio" name="coluna" checked={escolhendo.coluna_id === c.id} onChange={() => setEscolhendo({ ...escolhendo, coluna_id: c.id })} />
+                {c.nome}
+              </label>
+            ))}
+          </div>
+          <label className="linha-check"><input type="checkbox" checked={escolhendo.enviar_whatsapp}
+            onChange={(e) => setEscolhendo({ ...escolhendo, enviar_whatsapp: e.target.checked })} />
+            Mandar a confirmação pelo WhatsApp para {f.telefone}</label>
+          {erro && <p className="erro" role="alert">{erro}</p>}
+          <div className="acoes-modal">
+            <button type="button" className="botao-contorno" onClick={() => setEscolhendo(null)}>Voltar</button>
+            <button type="button" className="botao-primario" disabled={salvando} onClick={() => gravar(escolhendo)}>
+              {salvando ? 'Agendando…' : escolhendo.enviar_whatsapp ? 'Agendar e enviar' : 'Agendar'}
+            </button>
+          </div>
+        </div>
+      </Janela>
+    )}
     {cadastrando && (
       <EditorCliente lojas={lojasCadastro} lojaInicial={loja} tipoInicial={f.cpf_cnpj.replace(/\D/g, '').length > 11 ? 'pj' : 'pf'}
         inicial={{ cpf_cnpj: f.cpf_cnpj, nome: f.nome, whatsapp: f.telefone }} aoAbrir={() => {}} aoFechar={() => setCadastrando(false)}

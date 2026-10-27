@@ -44,7 +44,10 @@ Menu **Agenda**: os horários de cada loja por dia ou semana, com os livres e os
 Em **Horários** a loja define os dias e horas de atendimento, o almoço, a duração de cada vistoria,
 quantas vistorias cabem ao mesmo tempo, a antecedência mínima, até quantos dias à frente dá para
 agendar e os bloqueios (feriado, folga). **+ Agendar** marca na mão (com "Encaixe" para fora dos
-horários livres) e pode mandar a confirmação pelo WhatsApp.
+horários livres). Com o celular preenchido, ao clicar em **Agendar** abre a janela **Chamado no
+WhatsApp**: escolha em qual coluna dos chamados fica o atendimento (se o contato já tem um chamado
+aberto, ele muda para essa coluna) e se manda a confirmação pelo WhatsApp. A confirmação fica na
+conversa do chamado.
 
 No robô do WhatsApp, a pergunta **Horário da vistoria (agenda)** mostra os próximos horários livres
 da loja do robô (o cliente responde com o número, ou MAIS para ver outros). O horário fica reservado
