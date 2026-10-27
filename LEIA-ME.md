@@ -239,7 +239,22 @@ Os dois computadores precisam estar com a mesma versão do sistema. O WhatsApp (
 computador em que ele foi conectado.
 
 No Windows, instale o Node.js e o Docker Desktop, copie a pasta do projeto (com `api/.env` e `.env`),
-rode `npm run instalar` e use o arquivo **Iniciar Vistoria ECV (Windows).bat** (dois cliques).
+rode `npm run instalar` e use o arquivo **Abrir Vistoria ECV (Windows).bat** (dois cliques).
+
+## Atalho para abrir (atualiza, traz os dados do Drive e abre)
+
+Os arquivos **Abrir Vistoria ECV (Mac).command** e **Abrir Vistoria ECV (Windows).bat** fazem tudo com dois cliques
+(`npm run abrir` faz o mesmo):
+
+1. liga o Docker e espera ele ficar pronto;
+2. confere no GitHub se há versão nova do sistema e, se houver, instala (`npm run atualizar`): mantém os `.env`,
+   os `node_modules` e os backups automáticos, guarda a versão anterior em `~/.vistoria-ecv/versao-anterior`,
+   roda `npm run instalar` e atualiza as regras do banco sem perder os dados;
+3. liga o banco e o WhatsApp (só no Mac, se estiver configurado);
+4. traz os dados mais novos do Google Drive, liga o app e abre **http://localhost:5173** no navegador.
+
+As atualizações vêm do branch `consulta-placa` (para trocar: `VISTORIA_RAMO=` no `.env` da pasta do projeto).
+Sem internet, ele só avisa e abre a versão que já está no computador.
 
 ## Atualizar o banco sem perder os dados
 

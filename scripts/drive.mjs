@@ -301,11 +301,26 @@ async function status() {
   console.log(`Este computador está com: ${local.ultimoArquivo || 'nada do Drive ainda'}`);
 }
 
+// Quando o app responder, abre no navegador
+async function abrirNavegador() {
+  if (process.env.VISTORIA_NAO_ABRIR) return;
+  const endereco = 'http://localhost:5173';
+  for (let i = 0; i < 180; i++) {
+    await esperar(2000);
+    try {
+      if ((await fetch(endereco, { signal: AbortSignal.timeout(2000) })).ok) break;
+    } catch { /* ainda subindo */ }
+  }
+  const [programa, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', endereco]] : ['open', [endereco]];
+  spawn(programa, args, { stdio: 'ignore' }).on('error', () => {});
+}
+
 // Abre, liga o app (npm run iniciar) e, quando ele for fechado, salva no Drive e libera
 async function iniciar() {
   const pasta = await abrir();
   aviso(`Ligando o sistema. Para FECHAR, aperte Ctrl+C nesta janela e espere a mensagem "Liberado" (salva no Drive a cada ${SALVAR_A_CADA_MIN} min também).`);
   const app = spawn('npm', ['run', 'iniciar'], { cwd: RAIZ, stdio: 'inherit', shell: process.platform === 'win32' });
+  abrirNavegador();
   let salvando = Promise.resolve();
   const timer = setInterval(() => {
     salvando = salvando.then(() => salvar(pasta)).catch((e) => aviso(`Não consegui salvar no Drive agora: ${e.message}`));

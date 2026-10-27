@@ -8,6 +8,8 @@
     "banco:parar": "docker compose stop",
     "banco:zerar": "docker compose down -v && docker compose up -d",
     "iniciar": "npm run build --prefix web && concurrently -n api,web -c blue,green \"npm start --prefix api\" \"npm run preview --prefix web\"",
+    "abrir": "node scripts/abrir.mjs",
+    "atualizar": "node scripts/atualizar.mjs",
     "drive:iniciar": "node scripts/drive.mjs iniciar",
     "drive:salvar": "node scripts/drive.mjs salvar",
     "drive:fechar": "node scripts/drive.mjs fechar",
