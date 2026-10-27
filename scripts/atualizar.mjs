@@ -2,6 +2,7 @@
 //
 //   node scripts/atualizar.mjs           atualiza se tiver versão nova
 //   node scripts/atualizar.mjs --forcar  baixa e instala de novo mesmo sem versão nova
+//   node scripts/atualizar.mjs --banco   só atualiza as regras do banco (npm run banco:atualizar)
 //
 // Mantém os arquivos .env, os node_modules e os backups automáticos. A versão anterior fica
 // guardada em ~/.vistoria-ecv/versao-anterior (sem os node_modules), para voltar se precisar.
@@ -115,13 +116,26 @@ async function atualizarBanco() {
       break;
     } catch { await new Promise((r) => setTimeout(r, 1000)); }
   }
-  const script = 'export PGOPTIONS="-c client_min_messages=warning"; cd /docker-entrypoint-initdb.d && for f in 02-*.sql 0[5-9]-*.sql [1-9][0-9]-*.sql; do '
-    + 'psql -q -v ON_ERROR_STOP=1 -U vistoria -d vistoria_ecv -f $f > /dev/null || exit 1; done';
-  await rodar('docker', ['exec', CONTEINER, 'sh', '-c', script], { stdio: ['ignore', 'ignore', 'inherit'], shell: false });
+  // Os .sql são lidos da pasta do app e mandados pela entrada do psql. A pasta db montada no
+  // contêiner não serve: a atualização recria a pasta, e o contêiner continua vendo a antiga (vazia).
+  const pasta = path.join(RAIZ, 'db');
+  const arquivos = (await fsp.readdir(pasta)).filter((f) => /^(02|0[5-9]|[1-9][0-9])-.*\.sql$/.test(f)).sort();
+  for (const f of arquivos) {
+    const entrada = fs.openSync(path.join(pasta, f), 'r');
+    try {
+      await rodar('docker', ['exec', '-i', '-e', 'PGOPTIONS=-c client_min_messages=warning', CONTEINER,
+        'psql', '-q', '-v', 'ON_ERROR_STOP=1', '-U', 'vistoria', '-d', 'vistoria_ecv', '-f', '-'],
+      { stdio: [entrada, 'ignore', 'inherit'], shell: false })
+        .catch((e) => { throw new Error(`${f}: ${e.message}`); });
+    } finally {
+      fs.closeSync(entrada);
+    }
+  }
   aviso('Regras do banco atualizadas (os dados continuam).');
 }
 
 async function main() {
+  if (process.argv.includes('--banco')) return atualizarBanco();
   const forcar = process.argv.includes('--forcar');
   let nova;
   try {
