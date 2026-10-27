@@ -147,6 +147,52 @@ Com o celular no mesmo Wi-Fi do Mac, o Terminal mostra uma linha `Network: http:
 Abra esse endereço no celular. Para instalar como app: no iPhone, Compartilhar > "Adicionar à Tela de Início";
 no Android, menu do Chrome > "Instalar app".
 
+## Usar em dois computadores pelo Google Drive (um de cada vez)
+
+O sistema pode rodar no Mac ou em outro computador (Mac ou Windows), **nunca nos dois ao mesmo tempo**.
+Os dados passam por uma pasta do Google Drive chamada `Vistoria ECV - backups`: o banco de verdade fica
+em cada computador, e no Drive vão só os backups.
+
+- **Ao abrir** (`npm run drive:iniciar`): confere se o outro computador ainda está com o sistema aberto
+  (arquivo `em-uso.json` no Drive) e avisa; se o outro salvou algo mais novo, restaura esse backup
+  (antes guarda o banco deste computador em `~/.vistoria-ecv/antes-de-restaurar`); depois liga o sistema.
+- **Enquanto usa**: salva um backup no Drive a cada 60 minutos.
+- **Ao fechar** (`Ctrl + C` na janela): salva o backup final no Drive e libera para o outro computador.
+  Espere a mensagem **Liberado** e o Google Drive terminar de sincronizar antes de abrir no outro.
+
+O Drive guarda os 20 backups mais novos. Outros comandos:
+
+```bash
+npm run drive:status      # quem está usando, último backup e com qual este computador está
+npm run drive:salvar      # salva no Drive agora
+npm run drive:fechar      # salva e libera (se a janela foi fechada sem Ctrl + C)
+npm run drive:restaurar   # restaura o backup mais novo do Drive mesmo que pareça em dia
+```
+
+O Google Drive para computador precisa estar instalado e logado nos dois computadores (o sistema acha
+a pasta "Meu Drive" sozinho). Se não achar, coloque no arquivo `.env` da pasta do projeto
+`VISTORIA_DRIVE_PASTA=caminho-da-pasta`. O nome de cada computador pode ser trocado com `VISTORIA_MAQUINA=`.
+Os dois computadores precisam estar com a mesma versão do sistema. O WhatsApp (QR code) só funciona no
+computador em que ele foi conectado.
+
+No Windows, instale o Node.js e o Docker Desktop, copie a pasta do projeto (com `api/.env` e `.env`),
+rode `npm run instalar` e use o arquivo **Abrir Vistoria ECV (Windows).bat** (dois cliques).
+
+## Atalho para abrir (atualiza, traz os dados do Drive e abre)
+
+Os arquivos **Abrir Vistoria ECV (Mac).command** e **Abrir Vistoria ECV (Windows).bat** fazem tudo com dois cliques
+(`npm run abrir` faz o mesmo):
+
+1. liga o Docker e espera ele ficar pronto;
+2. confere no GitHub se há versão nova do sistema e, se houver, instala (`npm run atualizar`): mantém os `.env`,
+   os `node_modules` e os backups automáticos, guarda a versão anterior em `~/.vistoria-ecv/versao-anterior`,
+   roda `npm run instalar` e atualiza as regras do banco sem perder os dados;
+3. liga o banco e o WhatsApp (só no Mac, se estiver configurado);
+4. traz os dados mais novos do Google Drive, liga o app e abre **http://localhost:5173** no navegador.
+
+As atualizações vêm do branch `consulta-placa` (para trocar: `VISTORIA_RAMO=` no `.env` da pasta do projeto).
+Sem internet, ele só avisa e abre a versão que já está no computador.
+
 ## Atualizar o banco sem perder os dados
 
 Quando uma versão nova muda as regras do banco (funções, permissões), com o banco ligado rode:
