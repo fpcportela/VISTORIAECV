@@ -155,6 +155,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
                   <span className="lv-nome">
                     <strong>{v.cliente}</strong>
                     <small className="cinza">{v.cpf_cnpj && `${formatarDoc(v.cpf_cnpj)}`}{v.cpf_cnpj && !loja && ' · '}{!loja && v.loja}</small>
+                    {v.vendedor && <small className="lv-vendedor" title="Vistoriador (responsável pela venda)">Vistoriador: <strong>{v.vendedor}</strong></small>}
                     {v.sem_servico && ['aberta', 'futuro'].includes(v.situacao) && <small className="lv-pendente">Falta o serviço</small>}
                   </span>
                 </span>
