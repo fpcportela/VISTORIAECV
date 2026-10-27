@@ -53,6 +53,12 @@ A confirmação pergunta **"Confirma o agendamento? Responda SIM ou NÃO."** e o
 SIM deixa o agendamento **Confirmado**; NÃO pergunta para qual dia remarcar (aceita 30/10, 30, amanhã,
 sexta...), mostra os horários livres desse dia e remarca no horário escolhido (pelo número da lista
 ou pela hora, ex.: 14:30). Se o cliente pedir um atendente, a conversa segue para o atendimento normal.
+Na agenda, **Dia / Semana / Mês** mudam a visão (o mês mostra o calendário com os agendamentos de cada dia;
+clique no dia para abrir). O botão **Abrir venda** no agendamento abre uma venda nova já com o cliente,
+a placa, o serviço e a unidade do agendamento; ao salvar a venda, o agendamento fica **Compareceu** e
+ganha o link da venda. Uma venda já ligada ao agendamento (ex.: a do robô), salva no dia ou depois,
+também marca **Compareceu**.
+
 Toda remarcação (pelo cliente ou na tela) fica no histórico: o cartão do agendamento lista as
 respostas e remarcações, e o dia de onde ele saiu mostra um registro tracejado "Remarcado" no horário antigo.
 

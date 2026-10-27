@@ -14,6 +14,7 @@ const diaSP = (t) => new Date(t).toLocaleDateString('sv-SE', { timeZone: FUSO })
 const horaSP = (t) => new Date(t).toLocaleTimeString('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit' });
 const hoje = () => diaSP(new Date());
 const somar = (dia, n) => { const d = new Date(`${dia}T12:00:00`); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const somarMes = (dia, n) => { const d = new Date(`${dia.slice(0, 8)}01T12:00:00`); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 10); };
 const inicioSemana = (dia) => somar(dia, -new Date(`${dia}T12:00:00`).getDay());
 const instanteSP = (dia, hora) => new Date(`${dia}T${hora}:00-03:00`).toISOString(); // horário de Brasília (sem horário de verão)
 const nomeDia = (dia, opcoes) => new Date(`${dia}T12:00:00`).toLocaleDateString('pt-BR', opcoes);
@@ -39,7 +40,7 @@ export const SITUACOES_AGENDA = {
   agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado',
 };
 
-export default function Agenda({ perfil, loja, aoVenda }) {
+export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda }) {
   const lojas = perfil.lojas.filter((l) => criarTem(perfil, l.id)('agenda.ver'));
   const [filial, setFilial] = useState('');
   const lojaUsada = lojas.some((l) => l.id === filial) ? filial : lojas.some((l) => l.id === loja) ? loja : lojas[0]?.id || '';
@@ -51,8 +52,12 @@ export default function Agenda({ perfil, loja, aoVenda }) {
   const [aviso, setAviso] = useState('');
   const [recarga, setRecarga] = useState(0);
 
-  const de = modo === 'dia' ? dia : inicioSemana(dia);
-  const ate = modo === 'dia' ? dia : somar(de, 6);
+  // mês: semanas inteiras (de domingo a sábado) que cobrem o mês do dia escolhido
+  const primeiroMes = `${dia.slice(0, 8)}01`;
+  const ultimoMes = somar(`${somarMes(primeiroMes, 1)}`, -1);
+  const de = modo === 'dia' ? dia : modo === 'semana' ? inicioSemana(dia) : inicioSemana(primeiroMes);
+  const ate = modo === 'dia' ? dia : modo === 'semana' ? somar(de, 6) : somar(inicioSemana(ultimoMes), 6);
+  const passo = (n) => setDia(modo === 'dia' ? somar(dia, n) : modo === 'semana' ? somar(dia, 7 * n) : somarMes(primeiroMes, n));
   useEffect(() => {
     if (!lojaUsada) return undefined;
     let vivo = true;
@@ -78,7 +83,8 @@ export default function Agenda({ perfil, loja, aoVenda }) {
   const pode = d?.pode_gerenciar;
   const titulo = modo === 'dia'
     ? nomeDia(dia, { weekday: 'long', day: '2-digit', month: 'long' })
-    : `${nomeDia(de, { day: '2-digit', month: '2-digit' })} a ${nomeDia(ate, { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+    : modo === 'mes' ? nomeDia(primeiroMes, { month: 'long', year: 'numeric' }).replace(/^./, (c) => c.toUpperCase())
+      : `${nomeDia(de, { day: '2-digit', month: '2-digit' })} a ${nomeDia(ate, { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
 
   return (
     <>
@@ -98,11 +104,12 @@ export default function Agenda({ perfil, loja, aoVenda }) {
         <div className="abas" role="tablist">
           <button role="tab" aria-selected={modo === 'dia'} className={modo === 'dia' ? 'ativa' : ''} onClick={() => setModo('dia')}>Dia</button>
           <button role="tab" aria-selected={modo === 'semana'} className={modo === 'semana' ? 'ativa' : ''} onClick={() => setModo('semana')}>Semana</button>
+          <button role="tab" aria-selected={modo === 'mes'} className={modo === 'mes' ? 'ativa' : ''} onClick={() => setModo('mes')}>Mês</button>
         </div>
         <div className="agenda-nav">
-          <button className="botao-contorno" aria-label="Anterior" onClick={() => setDia(somar(dia, modo === 'dia' ? -1 : -7))}>‹</button>
+          <button className="botao-contorno" aria-label="Anterior" onClick={() => passo(-1)}>‹</button>
           <button className="botao-contorno" onClick={() => setDia(hoje())}>Hoje</button>
-          <button className="botao-contorno" aria-label="Próximo" onClick={() => setDia(somar(dia, modo === 'dia' ? 1 : 7))}>›</button>
+          <button className="botao-contorno" aria-label="Próximo" onClick={() => passo(1)}>›</button>
           <CampoData value={dia} onChange={(e) => e.target.value && setDia(e.target.value)} aria-label="Ir para o dia" />
         </div>
       </div>
@@ -112,9 +119,12 @@ export default function Agenda({ perfil, loja, aoVenda }) {
       {!d ? <p className="cinza">Carregando…</p>
         : modo === 'dia' ? (
           <Dia dia={dia} d={d} pode={pode} aoNovo={(hora) => setJanela({ tipo: 'novo', dia, hora })}
-            aoEditar={(a) => setJanela({ tipo: 'editar', a })} aoMudar={mudar} aoConfirmar={confirmar} aoVenda={aoVenda} />
-        ) : (
+            aoEditar={(a) => setJanela({ tipo: 'editar', a })} aoMudar={mudar} aoConfirmar={confirmar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} />
+        ) : modo === 'semana' ? (
           <Semana de={de} d={d} aoDia={(x) => { setDia(x); setModo('dia'); }} />
+        ) : (
+          <Semana de={de} dias={Math.round((new Date(`${ate}T12:00:00`) - new Date(`${de}T12:00:00`)) / 864e5) + 1} mes={primeiroMes.slice(0, 7)}
+            d={d} aoDia={(x) => { setDia(x); setModo('dia'); }} />
         )}
       {janela?.tipo === 'novo' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} colunas={d?.colunas || []} inicial={{ dia: janela.dia, hora: janela.hora }}
         aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
@@ -126,7 +136,7 @@ export default function Agenda({ perfil, loja, aoVenda }) {
 }
 
 // ------------------------------------------------------------ dia
-function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda }) {
+function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda }) {
   const doDia = d.agendamentos.filter((a) => diaSP(a.inicio) === dia);
   const livres = d.livres.filter((l) => diaSP(l.inicio) === dia);
   const bloqueios = d.bloqueios;
@@ -150,7 +160,7 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda }) 
             <span className="agenda-hora">{h}</span>
             <div className="agenda-itens">
               {aqui.map((a) => <Cartao key={a.id} a={a} historico={(d.historico || []).filter((h) => h.agendamento_id === a.id)}
-                pode={pode} aoEditar={aoEditar} aoMudar={aoMudar} aoConfirmar={aoConfirmar} aoVenda={aoVenda} />)}
+                pode={pode} aoEditar={aoEditar} aoMudar={aoMudar} aoConfirmar={aoConfirmar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} />)}
               {saiu.filter((x) => horaSP(x.de_inicio) === h).map((x) => (
                 <div key={x.id} className="agenda-cartao agenda-remarcado">
                   <div className="agenda-cartao-topo">
@@ -172,7 +182,15 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda }) 
   );
 }
 
-function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVenda }) {
+// Dados do agendamento para abrir a venda já preenchida
+const paraVenda = (a) => ({
+  id: a.id, loja_id: a.loja_id, placa: a.placa || '', servico_id: a.servico_id || '',
+  cliente: a.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : null,
+  observacao_venda: [`Agendamento de ${quando(a.inicio)}`, !a.cliente_id && a.nome, a.telefone && mascaraTelefone(String(a.telefone).replace(/^55/, '')),
+    a.observacao].filter(Boolean).join(' · '),
+});
+
+function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda }) {
   return (
     <div className={`agenda-cartao ag-${a.situacao}`}>
       <div className="agenda-cartao-topo">
@@ -197,6 +215,7 @@ function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVen
           </select>
         ) : <span className={`selo-sit ag-${a.situacao}`}>{SITUACOES_AGENDA[a.situacao]}</span>}
         {a.venda_id && <button className="botao-link" onClick={() => aoVenda?.(a.venda_id)}>Venda nº {a.venda_numero}</button>}
+        {!a.venda_id && aoNovaVenda && a.situacao !== 'cancelado' && <button className="botao-link" onClick={() => aoNovaVenda(paraVenda(a))}>Abrir venda</button>}
         {pode && a.telefone && a.situacao !== 'cancelado' && <button className="botao-link" onClick={() => aoConfirmar(a)}>Mandar confirmação</button>}
         {pode && <button className="botao-link" onClick={() => aoEditar(a)}>Editar / remarcar</button>}
       </div>
@@ -205,18 +224,23 @@ function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVen
 }
 
 // ------------------------------------------------------------ semana
-function Semana({ de, d, aoDia }) {
-  const dias = Array.from({ length: 7 }, (_, i) => somar(de, i));
+// semana (7 dias) ou mês (as semanas do mês; os dias de fora ficam apagados)
+function Semana({ de, d, aoDia, dias: total = 7, mes = null }) {
+  const dias = Array.from({ length: total }, (_, i) => somar(de, i));
+  const MAX = mes ? 3 : 99;
   return (
-    <div className="agenda-semana">
+    <div className={`agenda-semana${mes ? ' agenda-mes' : ''}`}>
+      {mes && SEMANA.map((n) => <span key={n} className="agenda-mes-cab">{n.slice(0, 3)}</span>)}
       {dias.map((x) => {
         const ags = d.agendamentos.filter((a) => diaSP(a.inicio) === x && a.situacao !== 'cancelado');
         const livres = d.livres.filter((l) => diaSP(l.inicio) === x).length;
         const bloq = d.bloqueios.some((b) => diaSP(b.inicio) <= x && diaSP(b.fim) >= x);
         return (
-          <button key={x} className={`agenda-col${x === hoje() ? ' hoje' : ''}`} onClick={() => aoDia(x)}>
-            <span className="agenda-col-dia">{SEMANA[new Date(`${x}T12:00:00`).getDay()].slice(0, 3)} {x.slice(8)}/{x.slice(5, 7)}</span>
-            {ags.map((a) => <span key={a.id} className={`agenda-mini ag-${a.situacao}`}>{horaSP(a.inicio)} {a.nome.split(' ')[0]}{a.placa ? ` · ${a.placa}` : ''}</span>)}
+          <button key={x} className={`agenda-col${x === hoje() ? ' hoje' : ''}${mes && !x.startsWith(mes) ? ' fora-mes' : ''}`} onClick={() => aoDia(x)}>
+            <span className="agenda-col-dia">{mes ? Number(x.slice(8)) : `${SEMANA[new Date(`${x}T12:00:00`).getDay()].slice(0, 3)} ${x.slice(8)}/${x.slice(5, 7)}`}</span>
+            {ags.slice(0, MAX).map((a) => <span key={a.id} className={`agenda-mini ag-${a.situacao}`}>{horaSP(a.inicio)} {a.nome.split(' ')[0]}{a.placa ? ` · ${a.placa}` : ''}</span>)}
+            {ags.length > MAX && <span className="agenda-mini-mais">+{ags.length - MAX} agendamento(s)</span>}
+            {mes && ags.length > 0 && <span className="agenda-mes-qtd">{ags.length} agend.</span>}
             <span className="cinza agenda-col-livres">{bloq && !livres ? 'bloqueado' : livres ? `${livres} livre${livres > 1 ? 's' : ''}` : '—'}</span>
           </button>
         );

@@ -304,6 +304,16 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe, autorizado_por) values ($1, $2, 'preco', $3, $4)",
         [id, req.usuarioId, `Preço alterado: ${alterados.join('; ')}`, autorizadorPreco]);
     }
+    // venda aberta pela agenda: liga ao agendamento, que fica "Compareceu"
+    if (!existente && UUID.test(b.agendamento_id || '')) {
+      await db.query(
+        `update agendamentos set venda_id = $1, situacao = 'compareceu', confirmacao_etapa = null, atualizado_em = now()
+          where id = $2 and loja_id = $3 and venda_id is null and situacao <> 'cancelado'`, [id, b.agendamento_id, loja]);
+    }
+    // venda já ligada a um agendamento (ex.: a que o robô abriu) salva no dia ou depois: o cliente compareceu
+    await db.query(
+      `update agendamentos set situacao = 'compareceu', confirmacao_etapa = null, atualizado_em = now()
+        where venda_id = $1 and situacao in ('agendado', 'confirmado') and inicio::date <= current_date`, [id]);
     return id;
   }
 

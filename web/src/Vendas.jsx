@@ -239,7 +239,7 @@ function EdicaoLote({ vendas, lojas, aoFechar, aoConcluir }) {
 // ---------------------------------------------------------------------------
 // Nova venda / edição
 // ---------------------------------------------------------------------------
-export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoInicial, aoVoltar, aoSalvo, aoTitulo }) {
+export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoInicial, agendamento = null, aoVoltar, aoSalvo, aoTitulo }) {
   const grupo = useId(); // nomes únicos dos botões de opção (várias vendas abertas em abas)
   const [venda, setVenda] = useState(null); // carregada do servidor (null = nova)
   const [loja, setLoja] = useState(lojasPermitidas.includes(lojaInicial) ? lojaInicial : lojasPermitidas[0] || '');
@@ -247,18 +247,21 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const [lojaFixa] = useState(Boolean(lojaInicial) && lojasPermitidas.includes(lojaInicial));
   const [trocandoUnidade, setTrocandoUnidade] = useState(false);
   const [data, setData] = useState(hoje());
-  const [modoCliente, setModoCliente] = useState('avulso');
-  const [cliente, setCliente] = useState(null);
+  // venda aberta pela agenda: já vem com o cliente do agendamento (se for cadastrado)
+  const [modoCliente, setModoCliente] = useState(agendamento?.cliente ? 'atual' : 'avulso');
+  const [cliente, setCliente] = useState(agendamento?.cliente || null);
   const [busca, setBusca] = useState('');
   const [clientes, setClientes] = useState([]);
   const [cadastrando, setCadastrando] = useState(false); // tela de cadastro de cliente aberta
   const [precosCliente, setPrecosCliente] = useState({}); // preços especiais do cliente escolhido
   const clienteCarregado = useRef(undefined); // cliente da venda salva: abrir a venda não muda os preços
   // venda aberta direto de uma consulta de placa: já vem com o veículo e o relatório da consulta
-  const [veiculos, setVeiculos] = useState(() => [veiculoInicial ? { ...veiculoVazio(), ...doConsultado(veiculoInicial) } : veiculoVazio()]);
+  const [veiculos, setVeiculos] = useState(() => [veiculoInicial ? { ...veiculoVazio(), ...doConsultado(veiculoInicial) }
+    : agendamento ? { ...veiculoVazio(), placa: agendamento.placa || '', itens: [{ ...itemVazio(), servico_id: agendamento.servico_id || '' }] }
+      : veiculoVazio()]);
   const [pagamentos, setPagamentos] = useState(() => [pagamentoVazio()]);
   const [desconto, setDesconto] = useState('');
-  const [observacoes, setObservacoes] = useState('');
+  const [observacoes, setObservacoes] = useState(agendamento ? agendamento.observacao_venda || '' : '');
   const [servicos, setServicos] = useState([]);
   const [consulta, setConsulta] = useState(null); // { indice, placa }
   const [liberando, setLiberando] = useState(false);
@@ -399,6 +402,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
           .map(({ data_pagamento, forma, valor, detalhe, cv, bandeira }) => ({ data_pagamento, forma, valor: numero(valor), detalhe, cv, bandeira })),
         ...(modoCliente === 'avulso' && { cliente_avulso: true }),
         ...((modoCliente === 'buscar' || modoCliente === 'atual') && cliente && { cliente_id: cliente.id }),
+        ...(!venda && agendamento && { agendamento_id: agendamento.id }),
       };
       let vid = venda?.id;
       if (vid) await api(`/vendas/${vid}`, { metodo: 'PUT', corpo });

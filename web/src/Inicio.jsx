@@ -108,10 +108,11 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   // Cada nova venda abre numa aba nova; uma venda já aberta só volta para a aba dela
   // veiculo: opcional, vindo da consulta de placa (a venda já abre com ele e o relatório da consulta)
-  const novaVenda = (veiculo) => {
+  // agendamento: opcional, vindo da agenda (a venda já abre com o cliente, a placa e o serviço dele)
+  const novaVenda = (veiculo, agendamento = null) => {
     setMenuAberto(false); setTela('vendas');
     const chave = `nova-${++contadorAbas.current}`;
-    setAbasVenda((abas) => [...abas, { chave, id: null, veiculo: veiculo?.placa ? veiculo : null, placa: veiculo?.placa || '' }]);
+    setAbasVenda((abas) => [...abas, { chave, id: null, veiculo: veiculo?.placa ? veiculo : null, agendamento, placa: veiculo?.placa || agendamento?.placa || '' }]);
     setAbaVenda(chave);
   };
   const abrirFinanceiro = (aba, novo = false) => {
@@ -428,7 +429,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'config' ? <Configuracoes perfil={perfil} />
             : tela === 'lojas' ? <Grupos />
             : tela === 'clientes' ? <Clientes perfil={perfil} loja={loja} />
-            : tela === 'agenda' ? <Agenda perfil={perfil} loja={loja} aoVenda={abrirVenda} />
+            : tela === 'agenda' ? <Agenda perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
             : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} aoVenda={abrirVenda} />
             : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo} />
             : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} />
@@ -447,7 +448,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             <div className="area-vendas" hidden={tela !== 'vendas'}>
               {abasVenda.map((a) => (
                 <div key={a.chave} hidden={abaVenda !== a.chave}>
-                  <EditorVenda id={a.id} perfil={perfil} lojaInicial={loja} lojasPermitidas={lojasCom('vendas.criar')} veiculoInicial={a.veiculo}
+                  <EditorVenda id={a.id} perfil={perfil} lojaInicial={a.agendamento?.loja_id || loja} lojasPermitidas={lojasCom('vendas.criar')} veiculoInicial={a.veiculo} agendamento={a.agendamento}
                     aoVoltar={() => setAbaVenda('lista')} aoSalvo={(id) => vendaSalva(a.chave, id)} aoTitulo={(info) => tituloAba(a.chave, info)} />
                 </div>
               ))}
