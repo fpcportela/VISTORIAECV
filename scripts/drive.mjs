@@ -150,9 +150,8 @@ async function restaurarDe(arquivo) {
   await rodar('docker', ['exec', '-i', CONTEINER, 'pg_restore', '-U', 'vistoria', '-d', 'vistoria_ecv',
     '--clean', '--if-exists', '--no-owner', '--single-transaction'], { entrada: arquivo });
   // Se o backup veio de uma versão um pouco mais antiga, deixa as funções e permissões iguais às deste computador
-  const script = 'cd /docker-entrypoint-initdb.d && for f in 02-*.sql 0[5-9]-*.sql [1-9][0-9]-*.sql; do '
-    + 'psql -q -v ON_ERROR_STOP=1 -U vistoria -d vistoria_ecv -f $f > /dev/null || exit 1; done';
-  await rodar('docker', ['exec', CONTEINER, 'sh', '-c', script], { silencioso: true })
+  // Usa os .sql desta pasta (o contêiner pode estar com a pasta db antiga montada depois de uma atualização)
+  await rodar(process.execPath, [path.join(RAIZ, 'scripts', 'atualizar.mjs'), '--banco'], { silencioso: true })
     .catch((e) => aviso(`Restaurado, mas a atualização do banco deu erro (rode "npm run banco:atualizar"): ${e.message}`));
 }
 
