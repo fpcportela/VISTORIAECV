@@ -974,3 +974,6 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .tp-justificativa .botao-texto { padding: 0; min-height: 0; font-size: 12px; }
 .escolha-coluna { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--borda, #dde3ea); border-radius: 8px; padding: 8px 12px; }
 .formulario .escolha-coluna label.linha-check { display: flex; flex-direction: row; align-items: center; gap: 10px; min-height: 36px; font-weight: 600; }
+.agenda-historico { list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--borda); font-size: .8rem; color: var(--cinza); display: grid; gap: 2px; }
+.agenda-historico li::before { content: '↪ '; }
+.agenda-remarcado { border-left-color: #94a3b8; border-style: dashed; background: transparent; opacity: .8; }

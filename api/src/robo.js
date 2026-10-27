@@ -3,6 +3,7 @@ import { comoUsuario } from './db.js';
 import { cnpjValido, cpfValido } from './documentos.js';
 import { normalizarPlaca } from './placas.js';
 import { enderecoLoja, rotuloHorario } from './agendaTexto.js';
+import { responderConfirmacao } from './confirmacaoAgenda.js';
 
 // Robô do WhatsApp: segue o fluxo de atendimento do grupo, em blocos (mensagem, menu com
 // caminhos, pergunta, conversa com IA, abrir venda, passar para atendente, encerrar). Junta nome,
@@ -315,7 +316,9 @@ async function perguntarIA(ctx, dados, livres, bloco) {
 const filas = new Map();
 export function atenderComRobo(contatoId, deps) {
   const anterior = filas.get(contatoId) || Promise.resolve();
-  const atual = anterior.then(() => atender(contatoId, deps)).catch((e) => console.error('[robô]', e.message));
+  // resposta à confirmação do agendamento (SIM / NÃO e a remarcação) vem antes do robô
+  const atual = anterior.then(async () => { if (!(await responderConfirmacao(contatoId, deps))) await atender(contatoId, deps); })
+    .catch((e) => console.error('[robô]', e.message));
   filas.set(contatoId, atual);
   atual.finally(() => { if (filas.get(contatoId) === atual) filas.delete(contatoId); });
   return atual;

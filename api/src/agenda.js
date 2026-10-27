@@ -101,7 +101,8 @@ async function mandarConfirmacao(usuarioId, agendamentoId) {
       `insert into whatsapp_conversa (empresa_id, contato_id, chamado_id, direcao, texto, status, erro, id_externo, enviado_por)
        values ($1, $2, $3, 'saida', $4, $5, $6, $7, $8)`,
       [a.empresa_id, contato, a.chamado_id, corpo, falha ? 'falhou' : envio.status, falha?.message || null, envio?.id_externo || null, usuarioId]);
-    if (!falha) await db.query('update agendamentos set confirmacao_em = now() where id = $1', [a.id]);
+    // a resposta (SIM / NÃO) é tratada em confirmacaoAgenda.js
+    if (!falha) await db.query("update agendamentos set confirmacao_em = now(), confirmacao_etapa = 'aguardando', confirmacao_dados = null where id = $1", [a.id]);
   });
   if (falha) throw new Recusa(502, falha.message);
 }
@@ -141,12 +142,19 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       const bloqueios = (await db.query(
         `select * from agenda_bloqueios where loja_id = $3 and inicio < ${fimPeriodo} and fim > ${iniPeriodo} order by inicio`, [de, ate, l.id])).rows;
       const livres = (await db.query('select * from agenda_livres($1, $2::date, $3::date)', [l.id, de, ate])).rows;
+      // remarcações e respostas do cliente: aparecem no dia de onde o agendamento saiu
+      const historico = (await db.query(
+        `select h.*, a.nome, a.placa, a.inicio as atual_inicio, u.nome as usuario
+           from agenda_historico h join agendamentos a on a.id = h.agendamento_id left join usuarios u on u.id = h.usuario_id
+          where h.loja_id = $3 and ((h.de_inicio < ${fimPeriodo} and h.de_inicio >= ${iniPeriodo})
+                                    or (a.inicio < ${fimPeriodo} and a.fim > ${iniPeriodo}))
+          order by h.criado_em`, [de, ate, l.id])).rows;
       const servicos = (await db.query('select id, nome from servicos where empresa_id = $1 and ativo order by nome', [l.empresa_id])).rows;
       const gerenciar = (await db.query("select pode($1, 'agenda.gerenciar') as ok", [l.id])).rows[0].ok;
       // colunas do kanban de chamados, para escolher onde vai o chamado do agendamento novo
       await db.query('select app_whatsapp_colunas_padrao($1)', [l.empresa_id]);
       const colunas = (await db.query('select id, nome from whatsapp_colunas where empresa_id = $1 and not finaliza order by ordem, nome', [l.empresa_id])).rows;
-      return { config: await config(db, l.id), agendamentos, bloqueios, livres, servicos, colunas, pode_gerenciar: gerenciar };
+      return { config: await config(db, l.id), agendamentos, bloqueios, livres, servicos, colunas, historico, pode_gerenciar: gerenciar };
     }));
   }));
 
@@ -235,7 +243,10 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
         if (inicio !== new Date(a.inicio).toISOString()) {
           const fim = await horarioValido(db, { loja: a.loja_id, inicio, encaixe: b.encaixe === true, ignorar: a.id });
           await db.query(
-            `update agendamentos set inicio = $2, fim = $3, confirmacao_em = null,
+            `insert into agenda_historico (agendamento_id, empresa_id, loja_id, acao, de_inicio, para_inicio, origem, usuario_id)
+             values ($1, $2, $3, 'remarcado', $4, $5, 'manual', $6)`, [a.id, a.empresa_id, a.loja_id, a.inicio, inicio, req.usuarioId]);
+          await db.query(
+            `update agendamentos set inicio = $2, fim = $3, confirmacao_em = null, confirmacao_etapa = null, confirmacao_dados = null,
                     situacao = case when situacao = 'cancelado' then 'agendado' else situacao end, atualizado_em = now() where id = $1`,
             [a.id, inicio, fim]);
           if (a.venda_id) {

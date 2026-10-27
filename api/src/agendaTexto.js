@@ -21,6 +21,7 @@ export function textoConfirmacao({ nome, inicio, placa }, loja) {
     `Olá${nomeBonito ? `, ${nomeBonito}` : ''}! Sua vistoria está agendada para ${rotuloHorario(inicio)}${loja?.nome ? `, na ${loja.nome}` : ''}.`,
     end ? `Endereço: ${end}.` : null,
     placa ? `Placa: ${placa}.` : null,
-    'Se precisar remarcar ou cancelar, é só responder esta mensagem.',
-  ].filter(Boolean).join('\n');
+    '',
+    'Confirma o agendamento? Responda SIM ou NÃO.',
+  ].filter((x) => x !== null).join('\n');
 }

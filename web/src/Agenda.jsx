@@ -26,6 +26,15 @@ function CampoHora({ value, onChange, ...resto }) {
     title="Hora no formato HH:MM" onChange={(e) => onChange(mascaraHora(e.target.value))} {...resto} />;
 }
 
+// "27/10 às 19:10"
+const quando = (t) => `${new Date(t).toLocaleDateString('pt-BR', { timeZone: FUSO, day: '2-digit', month: '2-digit' })} às ${horaSP(t)}`;
+const quem = (h) => (h.origem === 'whatsapp' ? 'pelo cliente no WhatsApp' : h.usuario ? `por ${h.usuario}` : 'na agenda');
+const textoHistorico = (h) => ({
+  confirmado: `Cliente confirmou pelo WhatsApp em ${quando(h.criado_em)}`,
+  nao_confirmado: `Cliente respondeu NÃO em ${quando(h.criado_em)}`,
+  remarcado: `Remarcado de ${quando(h.de_inicio)} para ${quando(h.para_inicio)} ${quem(h)} em ${quando(h.criado_em)}`,
+}[h.acao]);
+
 export const SITUACOES_AGENDA = {
   agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado',
 };
@@ -122,7 +131,9 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda }) 
   const livres = d.livres.filter((l) => diaSP(l.inicio) === dia);
   const bloqueios = d.bloqueios;
   // linhas: cada horário livre ou ocupado do dia, em ordem
-  const horas = [...new Set([...livres.map((l) => horaSP(l.inicio)), ...doDia.map((a) => horaSP(a.inicio))])].sort();
+  // remarcados que saíram deste dia: ficam como registro no horário antigo
+  const saiu = (d.historico || []).filter((h) => h.acao === 'remarcado' && diaSP(h.de_inicio) === dia);
+  const horas = [...new Set([...livres.map((l) => horaSP(l.inicio)), ...doDia.map((a) => horaSP(a.inicio)), ...saiu.map((h) => horaSP(h.de_inicio))])].sort();
   const fechado = !d.config.horarios?.[new Date(`${dia}T12:00:00`).getDay()];
 
   return (
@@ -138,7 +149,18 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda }) 
           <div key={h} className="agenda-linha">
             <span className="agenda-hora">{h}</span>
             <div className="agenda-itens">
-              {aqui.map((a) => <Cartao key={a.id} a={a} pode={pode} aoEditar={aoEditar} aoMudar={aoMudar} aoConfirmar={aoConfirmar} aoVenda={aoVenda} />)}
+              {aqui.map((a) => <Cartao key={a.id} a={a} historico={(d.historico || []).filter((h) => h.agendamento_id === a.id)}
+                pode={pode} aoEditar={aoEditar} aoMudar={aoMudar} aoConfirmar={aoConfirmar} aoVenda={aoVenda} />)}
+              {saiu.filter((x) => horaSP(x.de_inicio) === h).map((x) => (
+                <div key={x.id} className="agenda-cartao agenda-remarcado">
+                  <div className="agenda-cartao-topo">
+                    <strong>{x.nome}</strong>
+                    {x.placa && <Placa placa={x.placa} tamanho="mini" />}
+                    <span className="selo-sit">Remarcado</span>
+                  </div>
+                  <div className="cinza agenda-detalhe">Foi para {quando(x.para_inicio)} {quem(x)} (em {quando(x.criado_em)})</div>
+                </div>
+              ))}
               {livre && (pode
                 ? <button className="agenda-livre" onClick={() => aoNovo(h)}>+ Livre{livre.vagas > 1 ? ` (${livre.vagas} vagas)` : ''}</button>
                 : <span className="agenda-livre">Livre</span>)}
@@ -150,7 +172,7 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda }) 
   );
 }
 
-function Cartao({ a, pode, aoEditar, aoMudar, aoConfirmar, aoVenda }) {
+function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVenda }) {
   return (
     <div className={`agenda-cartao ag-${a.situacao}`}>
       <div className="agenda-cartao-topo">
@@ -159,8 +181,14 @@ function Cartao({ a, pode, aoEditar, aoMudar, aoConfirmar, aoVenda }) {
         {a.origem === 'whatsapp' && <span className="selo-robo" title="Agendado pelo robô do WhatsApp">🤖 WhatsApp</span>}
       </div>
       <div className="cinza agenda-detalhe">
-        {[a.servico, a.telefone && mascaraTelefone(String(a.telefone).replace(/^55/, '')), a.confirmacao_em && 'confirmação enviada'].filter(Boolean).join(' · ')}
+        {[a.servico, a.telefone && mascaraTelefone(String(a.telefone).replace(/^55/, '')),
+          a.confirmacao_etapa ? 'aguardando a resposta do cliente' : a.confirmacao_em && 'confirmação enviada'].filter(Boolean).join(' · ')}
       </div>
+      {historico.length > 0 && (
+        <ul className="agenda-historico">
+          {historico.map((h) => <li key={h.id}>{textoHistorico(h)}</li>)}
+        </ul>
+      )}
       {a.observacao && <div className="cinza agenda-detalhe">{a.observacao}</div>}
       <div className="agenda-acoes">
         {pode ? (

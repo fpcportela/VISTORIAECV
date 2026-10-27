@@ -49,6 +49,13 @@ WhatsApp**: escolha em qual coluna dos chamados fica o atendimento (se o contato
 aberto, ele muda para essa coluna) e se manda a confirmação pelo WhatsApp. A confirmação fica na
 conversa do chamado.
 
+A confirmação pergunta **"Confirma o agendamento? Responda SIM ou NÃO."** e o robô cuida da resposta:
+SIM deixa o agendamento **Confirmado**; NÃO pergunta para qual dia remarcar (aceita 30/10, 30, amanhã,
+sexta...), mostra os horários livres desse dia e remarca no horário escolhido (pelo número da lista
+ou pela hora, ex.: 14:30). Se o cliente pedir um atendente, a conversa segue para o atendimento normal.
+Toda remarcação (pelo cliente ou na tela) fica no histórico: o cartão do agendamento lista as
+respostas e remarcações, e o dia de onde ele saiu mostra um registro tracejado "Remarcado" no horário antigo.
+
 No robô do WhatsApp, a pergunta **Horário da vistoria (agenda)** mostra os próximos horários livres
 da loja do robô (o cliente responde com o número, ou MAIS para ver outros). O horário fica reservado
 na hora da escolha, a venda AGENDADO abre com a data do agendamento e a mensagem final diz o dia, a hora
