@@ -991,3 +991,4 @@ span.agenda-livre { cursor: default; color: #64748b; }
   .agenda-mes .agenda-mes-qtd { display: block; }
   .agenda-mes .agenda-col-livres, .agenda-mes .agenda-mini-mais { font-size: .65rem; }
 }
+.selo-sem-cadastro { background: #fee2e2; color: #991b1b; border-radius: 10px; font-size: 12px; font-weight: 700; padding: 3px 10px; }

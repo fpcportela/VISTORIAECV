@@ -282,7 +282,6 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [cadastrar, setCadastrar] = useState(false);
-  const [ligar, setLigar] = useState(false);
   const fim = useRef(null);
 
   const carregar = (ler) => api(`/whatsapp/contatos/${contatoId}${ler ? '?ler=1' : ''}`).then((d) => { setK(d); }).catch((f) => setErro(f.message));
@@ -317,7 +316,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
 
   async function ligarCliente(clienteId) {
     setErro('');
-    try { await api(`/whatsapp/contatos/${k.id}`, { metodo: 'PUT', corpo: { cliente_id: clienteId } }); setLigar(false); setCadastrar(false); carregar(); aoMudar?.(); }
+    try { await api(`/whatsapp/contatos/${k.id}`, { metodo: 'PUT', corpo: { cliente_id: clienteId } }); setCadastrar(false); carregar(); aoMudar?.(); }
     catch (f) { setErro(f.message); }
   }
 
@@ -331,21 +330,16 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
           <small className="cinza">{telefoneBR(k.telefone)}{k.cliente && k.nome && k.nome !== k.cliente ? ` · no WhatsApp: ${k.nome}` : ''}</small>
         </div>
         <div className="conversa-cliente">
-          {k.cliente_id ? (
+          {/* o servidor liga sozinho o contato ao cliente com o mesmo celular */}
+          {k.cliente_id ? <span className="selo-cliente">Cliente cadastrado</span> : (
             <>
-              <span className="selo-cliente">Cliente cadastrado</span>
-              {k.pode_enviar && <button type="button" className="botao-texto" onClick={() => ligarCliente(null)}>Desligar</button>}
-            </>
-          ) : k.pode_enviar && (
-            <>
-              {lojasCliente.length > 0 && <button type="button" className="botao-contorno pequeno" onClick={() => setCadastrar(true)}>Salvar contato como cliente</button>}
-              <button type="button" className="botao-texto" onClick={() => setLigar(!ligar)}>Ligar a cliente já cadastrado</button>
+              <span className="selo-sem-cadastro">CLIENTE NÃO CADASTRADO</span>
+              {k.pode_enviar && lojasCliente.length > 0 && <button type="button" className="botao-contorno pequeno" onClick={() => setCadastrar(true)}>Salvar como cliente</button>}
             </>
           )}
         </div>
         <button className="fechar" onClick={aoFechar} aria-label="Fechar conversa">×</button>
       </header>
-      {ligar && <BuscarCliente empresa={k.empresa_id} aoEscolher={ligarCliente} />}
       {k.chamado && (
         <div className="conversa-chamado">
           <label>Etapa
@@ -407,24 +401,6 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
           inicial={{ nome: k.nome || '', whatsapp: telefoneBR(k.telefone) }}
           aoAbrir={() => {}} aoFechar={() => setCadastrar(false)} aoSalvar={(id) => ligarCliente(id)} />
       )}
-    </div>
-  );
-}
-
-function BuscarCliente({ empresa, aoEscolher }) {
-  const [busca, setBusca] = useState('');
-  const [lista, setLista] = useState([]);
-  useEffect(() => {
-    if (busca.trim().length < 2) { setLista([]); return undefined; }
-    const t = setTimeout(() => api(`/clientes?venda=1&busca=${encodeURIComponent(busca)}`).then(setLista).catch(() => setLista([])), 300);
-    return () => clearTimeout(t);
-  }, [busca, empresa]);
-  return (
-    <div className="buscar-cliente-zap">
-      <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome, CPF ou CNPJ do cliente" autoFocus aria-label="Buscar cliente" />
-      {lista.filter((c) => c.tipo !== 'avulso').slice(0, 8).map((c) => (
-        <button key={c.id} type="button" className="botao-link" onClick={() => aoEscolher(c.id)}>{c.nome}{c.cpf_cnpj ? ` · ${c.cpf_cnpj}` : ''}</button>
-      ))}
     </div>
   );
 }

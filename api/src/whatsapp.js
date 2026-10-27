@@ -808,6 +808,18 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       if (!k) throw new Recusa(404, 'Conversa não encontrada.');
       const ve = (await db.query("select exists (select 1 from lojas l where l.empresa_id = $1 and pode(l.id, 'whatsapp.ver')) as ok", [k.empresa_id])).rows[0].ok;
       if (!ve) throw new Recusa(403, 'Seu perfil não tem acesso ao WhatsApp.');
+      // contato ainda sem ligação: se o celular é de um (e só um) cliente cadastrado, liga sozinho
+      if (!k.cliente_id) {
+        const achados = (await db.query(
+          `select c.id, c.nome, c.cpf_cnpj from clientes c
+            where c.empresa_id = $1 and c.ativo and c.tipo in ('pf', 'pj') and c.cpf_cnpj is not null
+              and tel_chave($2) is not null and tel_chave($2) in (tel_chave(c.whatsapp), tel_chave(c.telefone))
+            limit 2`, [k.empresa_id, k.telefone])).rows;
+        if (achados.length === 1) {
+          await db.query('update whatsapp_contatos set cliente_id = $2 where id = $1', [k.id, achados[0].id]);
+          Object.assign(k, { cliente_id: achados[0].id, cliente: achados[0].nome, cpf_cnpj: achados[0].cpf_cnpj });
+        }
+      }
       const mensagens = (await db.query(
         `select m.id, m.direcao, m.texto, m.status, m.erro, m.criado_em, m.robo, u.nome as enviado_por
            from whatsapp_conversa m left join usuarios u on u.id = m.enviado_por
