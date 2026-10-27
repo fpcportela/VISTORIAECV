@@ -32,7 +32,8 @@ $$;
 create or replace function app_agenda_unidade_robo(p_empresa uuid, p_loja uuid) returns jsonb
 language sql stable security definer as $$
   select to_jsonb(x) from (
-    select l.id, l.nome, l.logradouro, l.numero, l.bairro, l.cidade, l.uf
+    select l.id, l.nome, l.logradouro, l.numero, l.bairro, l.cidade, l.uf, l.cep,
+           (select c.horarios from agenda_config c where c.loja_id = l.id and c.ativo) as horarios
       from lojas l where l.id = robo_unidade(p_empresa, p_loja)) x
 $$;
 

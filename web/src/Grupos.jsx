@@ -3,11 +3,11 @@ import { api } from './api.js';
 import { cnpjValido, mascaraCnpj, mascaraTelefone } from './documentos.js';
 import { semAcento } from './entrada.js';
 
-const mascaraCep = (v) => String(v || '').replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
+export const mascaraCep = (v) => String(v || '').replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
 const enderecoVazio = (x) => ({ cep: mascaraCep(x?.cep), logradouro: x?.logradouro || '', numero: x?.numero || '', bairro: x?.bairro || '', cidade: x?.cidade || '', uf: x?.uf || '' });
 
 // Endereço com CEP: ao completar o CEP, preenche rua, bairro, cidade e UF (o número fica para completar)
-function CamposEndereco({ f, setF }) {
+export function CamposEndereco({ f, setF }) {
   const [aviso, setAviso] = useState('');
   async function mudarCep(valor) {
     const cep = mascaraCep(valor);

@@ -3,6 +3,7 @@ import { api, grupoEscolhido, sessao } from './api.js';
 import { criarTem } from './modulos.js';
 import { mascaraTelefone } from './documentos.js';
 import { EditorCliente } from './Clientes.jsx';
+import { CamposEndereco, mascaraCep } from './Grupos.jsx';
 
 // Módulo WhatsApp: chamados em kanban (colunas do grupo) e as conversas.
 // Um chamado é aberto sozinho quando um contato manda mensagem e não tem chamado aberto.
@@ -575,6 +576,46 @@ const DICA_BLOCO = {
   fim: 'Manda o texto e encerra o robô nesta conversa, sem abrir venda.',
 };
 
+const HORARIO_PADRAO = { 1: { abre: '08:00', fecha: '17:00' }, 2: { abre: '08:00', fecha: '17:00' }, 3: { abre: '08:00', fecha: '17:00' },
+  4: { abre: '08:00', fecha: '17:00' }, 5: { abre: '08:00', fecha: '17:00' }, 6: { abre: '08:00', fecha: '12:00' } };
+const DIAS_SEMANA = [[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta'], [6, 'Sábado'], [0, 'Domingo']];
+const enderecoTexto = (u) => [[u.logradouro, u.numero].filter(Boolean).join(', '), u.bairro, [u.cidade, u.uf].filter(Boolean).join('/')].filter(Boolean).join(' - ');
+const linkWaze = (u) => (u.logradouro ? `https://waze.com/ul?q=${encodeURIComponent([enderecoTexto(u), u.cep].filter(Boolean).join(', '))}&navigate=yes` : '');
+const mascaraHora = (t) => { const d = String(t ?? '').replace(/\D/g, '').slice(0, 4); return d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d; };
+
+// Endereço e horário de uma unidade (nas configurações do robô)
+function UnidadeRobo({ u, mudarU }) {
+  const h = u.horarios || {};
+  const mudarDia = (dia, campos) => mudarU((x) => {
+    const novo = { ...(x.horarios || {}) };
+    if (campos === null) delete novo[dia]; else novo[dia] = { ...(novo[dia] || { abre: '08:00', fecha: '17:00' }), ...campos };
+    return { ...x, horarios: novo };
+  });
+  const waze = linkWaze(u);
+  return (
+    <details className="unidade-robo">
+      <summary><strong>{u.nome}</strong> <span className="cinza">{enderecoTexto(u) || 'sem endereço'}</span></summary>
+      <CamposEndereco f={u} setF={mudarU} />
+      <span className="rotulo-campo">Horário de funcionamento</span>
+      <div className="horarios-unidade" role="group" aria-label={`Horário de funcionamento · ${u.nome}`}>
+        {DIAS_SEMANA.map(([dia, nome]) => (
+          <div key={dia} className="horario-dia">
+            <label className="linha-check"><input type="checkbox" checked={Boolean(h[dia])} onChange={(e) => mudarDia(dia, e.target.checked ? {} : null)} />{nome}</label>
+            {h[dia] ? (
+              <>
+                <input className="campo-hora" value={h[dia].abre} inputMode="numeric" maxLength={5} aria-label={`${nome}: abre`} onChange={(e) => mudarDia(dia, { abre: mascaraHora(e.target.value) })} />
+                <span className="cinza">às</span>
+                <input className="campo-hora" value={h[dia].fecha} inputMode="numeric" maxLength={5} aria-label={`${nome}: fecha`} onChange={(e) => mudarDia(dia, { fecha: mascaraHora(e.target.value) })} />
+              </>
+            ) : <span className="cinza">Fechado</span>}
+          </div>
+        ))}
+      </div>
+      {waze && <small className="cinza">Link do Waze: <a href={waze} target="_blank" rel="noreferrer">abrir no Waze</a></small>}
+    </details>
+  );
+}
+
 function Robo() {
   const [d, setD] = useState(null);
   const [f, setF] = useState(null);
@@ -584,7 +625,10 @@ function Robo() {
   const [novoTipo, setNovoTipo] = useState('mensagem');
   const promptArquivo = useRef(null);
 
-  const carregar = () => api('/whatsapp/robo').then((r) => { setD(r); setF(r.robo); }).catch((x) => setErro(x.message));
+  const carregar = () => api('/whatsapp/robo').then((r) => {
+    setD(r);
+    setF({ ...r.robo, unidades: r.lojas.map((u) => ({ ...u, cep: mascaraCep(u.cep), horarios: u.horarios || HORARIO_PADRAO })) });
+  }).catch((x) => setErro(x.message));
   useEffect(() => { carregar(); }, []);
   if (!f) return erro ? <p className="erro" role="alert">{erro}</p> : <p className="cinza">Carregando…</p>;
 
@@ -673,6 +717,15 @@ function Robo() {
             </label>
           ))}
         </div>
+
+        <h3>Endereço e horário de funcionamento</h3>
+        <p className="cinza ajuda">
+          O robô mostra o endereço e o horário de cada unidade e manda o link do Waze (gerado pelo endereço) na confirmação do agendamento.
+          O horário é o mesmo da Agenda (botão Horários): mudar aqui muda lá.
+        </p>
+        {f.unidades.map((u) => (
+          <UnidadeRobo key={u.id} u={u} mudarU={(fn) => { setF((x) => ({ ...x, unidades: x.unidades.map((y) => (y.id === u.id ? fn(y) : y)) })); setOk(''); }} />
+        ))}
 
         <label>Mensagem de boas-vindas
           <textarea rows={2} data-livre value={f.saudacao || ''} onChange={(e) => mudar({ saudacao: e.target.value })} />

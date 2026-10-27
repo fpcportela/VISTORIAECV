@@ -992,3 +992,11 @@ span.agenda-livre { cursor: default; color: #64748b; }
   .agenda-mes .agenda-col-livres, .agenda-mes .agenda-mini-mais { font-size: .65rem; }
 }
 .selo-sem-cadastro { background: #fee2e2; color: #991b1b; border-radius: 10px; font-size: 12px; font-weight: 700; padding: 3px 10px; }
+.unidade-robo { border: 1px solid var(--borda); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+.unidade-robo[open] { gap: 10px; }
+.unidade-robo > summary { cursor: pointer; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.unidade-robo > *:not(summary) { margin-top: 10px; }
+.horarios-unidade { display: grid; gap: 6px; }
+.horario-dia { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.horario-dia .linha-check { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 120px; font-weight: 600; }
+.horario-dia .campo-hora { width: 80px; }

@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { comoUsuario } from './db.js';
 import { cnpjValido, cpfValido } from './documentos.js';
 import { normalizarPlaca } from './placas.js';
-import { enderecoLoja, rotuloHorario } from './agendaTexto.js';
+import { enderecoLoja, linkWaze, rotuloHorario, textoHorarios } from './agendaTexto.js';
 import { responderConfirmacao } from './confirmacaoAgenda.js';
 
 // Robô do WhatsApp: segue o fluxo de atendimento do grupo, em blocos (mensagem, menu com
@@ -327,7 +327,7 @@ export function atenderComRobo(contatoId, deps) {
 // Unidade escolhida (nome e endereço), para a IA falar da unidade certa
 const unidadeDe = (ctx, dados) => {
   const l = (ctx.lojas || []).find((x) => x.id === dados.loja_id);
-  return l ? [l.nome, enderecoLoja(l)].filter(Boolean).join(' - ') : '';
+  return l ? [l.nome, enderecoLoja(l), textoHorarios(l.horarios) && `horário de funcionamento: ${textoHorarios(l.horarios)}`].filter(Boolean).join(' - ') : '';
 };
 
 // Campos que vêm do cadastro do cliente reconhecido
@@ -347,7 +347,10 @@ function saudarPeloNome(saudacao, nome) {
 }
 
 const textoUnidades = (lojas) => `Em qual unidade você deseja atendimento?\n${lojas
-  .map((l, i) => { const end = enderecoLoja(l); return `${i + 1} - ${l.nome}${end ? `\n    ${end}` : ''}`; }).join('\n')}\n(responda com o número)`;
+  .map((l, i) => {
+    const end = enderecoLoja(l), hor = textoHorarios(l.horarios);
+    return `${i + 1} - ${l.nome}${end ? `\n    ${end}` : ''}${hor ? `\n    ${hor}` : ''}`;
+  }).join('\n')}\n(responda com o número)`;
 
 const juntar = (falas) => falas.filter(Boolean).join('\n\n');
 const textoMenu = (b) => `${b.texto}\n${b.opcoes.map((o, i) => `${i + 1} - ${o.rotulo}`).join('\n')}`;
@@ -404,7 +407,8 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     if (dados.horario && !/\{horario\}/.test(modelo || '')) {
       const loja = await comoUsuario(null, async (db) => (await db.query('select app_agenda_unidade_robo($1, $2) as l', [ctx.empresa_id, dados.loja_id || null])).rows[0].l);
       const end = enderecoLoja(loja);
-      fim += `\n\nSua vistoria ficou agendada para ${rotuloHorario(dados.horario)}${loja?.nome ? `, na ${loja.nome}` : ''}.${end ? `\nEndereço: ${end}.` : ''}`;
+      const waze = linkWaze(loja);
+      fim += `\n\nSua vistoria ficou agendada para ${rotuloHorario(dados.horario)}${loja?.nome ? `, na ${loja.nome}` : ''}.${end ? `\nEndereço: ${end}.` : ''}${waze ? `\nComo chegar (Waze): ${waze}` : ''}`;
     } else if (dados.sem_horario) {
       fim += '\n\nNo momento não há horário livre na agenda; o atendente vai combinar o horário com você.';
     }

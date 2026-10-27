@@ -593,12 +593,30 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
   }));
 
   // ------------------------------------------------------------ robô de atendimento
+  const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const enderecoUnidade = (u) => Object.fromEntries(['cep', 'logradouro', 'numero', 'bairro', 'cidade', 'uf']
+    .map((c) => [c, texto(u?.[c], c === 'logradouro' ? 120 : 80) || null]));
+  function horariosValidos(h, nome) {
+    const r = {};
+    for (const [dia, x] of Object.entries(h && typeof h === 'object' ? h : {})) {
+      if (!/^[0-6]$/.test(dia) || !x) continue;
+      if (!HORA.test(x.abre || '') || !HORA.test(x.fecha || '') || x.fecha <= x.abre) {
+        throw new Recusa(400, `${nome || 'Unidade'}: confira os horários de abrir e fechar (HH:MM, e o fechamento depois da abertura).`);
+      }
+      r[dia] = { abre: x.abre, fecha: x.fecha };
+    }
+    return r;
+  }
   app.get('/api/whatsapp/robo', exigeLogin, comRecusa(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
       const salvo = (await db.query('select * from whatsapp_robo where empresa_id = $1', [empresa])).rows[0];
       const g = (await db.query('select ia_liberada, eh_admin_rede() as master from empresas where id = $1', [empresa])).rows[0];
-      const lojas = (await db.query('select id, nome from lojas where empresa_id = $1 and ativo order by nome', [empresa])).rows;
+      // unidades com endereço e horário de funcionamento (o mesmo da agenda)
+      const lojas = (await db.query(
+        `select l.id, l.nome, l.cep, l.logradouro, l.numero, l.bairro, l.cidade, l.uf, c.horarios
+           from lojas l left join agenda_config c on c.loja_id = l.id
+          where l.empresa_id = $1 and l.ativo order by l.nome`, [empresa])).rows;
       const servicos = (await db.query('select id, nome from servicos where empresa_id = $1 and ativo order by nome', [empresa])).rows;
       const usuarios = (await db.query('select * from app_responsaveis($1)', [empresa])).rows;
       const robo = { ...ROBO_PADRAO, ...(salvo || {}) };
@@ -639,6 +657,11 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const responsavel = doGrupo.has(b.responsavel_id) ? b.responsavel_id : null;
       const responsaveis = Object.fromEntries(Object.entries(b.responsaveis && typeof b.responsaveis === 'object' ? b.responsaveis : {})
         .filter(([l, u]) => lojasGrupo.has(l) && doGrupo.has(u)));
+      // endereço e horário de funcionamento de cada unidade
+      for (const u of Array.isArray(b.unidades) ? b.unidades : []) {
+        if (!lojasGrupo.has(u?.id)) continue;
+        await db.query('select app_unidade_endereco_horario($1, $2, $3)', [u.id, JSON.stringify(enderecoUnidade(u)), JSON.stringify(horariosValidos(u.horarios, u.nome))]);
+      }
       await db.query(
         `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, fluxo,
                                     responsavel_id, responsaveis, atualizado_em)

@@ -49,6 +49,12 @@ WhatsApp**: escolha em qual coluna dos chamados fica o atendimento (se o contato
 aberto, ele muda para essa coluna) e se manda a confirmação pelo WhatsApp. A confirmação fica na
 conversa do chamado.
 
+Nas configurações do robô (WhatsApp > Robô de atendimento), **Endereço e horário de funcionamento**
+tem, para cada unidade, o endereço (com busca pelo CEP) e o horário de cada dia da semana. O horário é
+o mesmo da Agenda (botão Horários). O robô mostra endereço e horário ao perguntar a unidade, a IA usa
+os dois nas respostas, e a confirmação do agendamento (pela agenda ou pelo robô) leva o link do
+**Waze** gerado pelo endereço ("Como chegar (Waze): ...").
+
 A confirmação pergunta **"Confirma o agendamento? Responda SIM ou NÃO."** e o robô cuida da resposta:
 SIM deixa o agendamento **Confirmado**; NÃO pergunta para qual dia remarcar (aceita 30/10, 30, amanhã,
 sexta...), mostra os horários livres desse dia e remarca no horário escolhido (pelo número da lista

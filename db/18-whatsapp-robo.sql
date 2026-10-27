@@ -199,7 +199,8 @@ begin
   return jsonb_build_object(
     -- unidades ativas do grupo, com endereço: com mais de uma, o robô pergunta qual
     'lojas', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'nome', l.nome, 'logradouro', l.logradouro, 'numero', l.numero,
-                         'bairro', l.bairro, 'cidade', l.cidade, 'uf', l.uf) order by l.nome)
+                         'bairro', l.bairro, 'cidade', l.cidade, 'uf', l.uf, 'cep', l.cep,
+                         'horarios', (select c.horarios from agenda_config c where c.loja_id = l.id and c.ativo)) order by l.nome)
                          from lojas l where l.empresa_id = v_k.empresa_id and l.ativo), '[]'),
     'cliente', case when v_cli.id is not null then jsonb_build_object('id', v_cli.id, 'nome', v_cli.nome,
                  'cpf_cnpj', v_cli.cpf_cnpj, 'email', v_cli.email) end,
