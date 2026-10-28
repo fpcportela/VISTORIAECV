@@ -1044,3 +1044,5 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .agenda-responsavel { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--cinza); white-space: nowrap; }
 .agenda-agendar-para { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 8px 0; padding: 10px 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
 .conversa-agendar { display: inline-flex; align-items: center; gap: 6px; }
+.sit-agenda.ag-confirmado { border-color: #16a34a; color: #166534; font-weight: 600; }
+.sit-agenda.ag-agendado { border-color: #ca8a04; color: #854d0e; font-weight: 600; }

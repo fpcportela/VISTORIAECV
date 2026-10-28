@@ -110,7 +110,7 @@ async function mandarConfirmacao(usuarioId, agendamentoId) {
 }
 
 // Confirmado na agenda: manda ao cliente a confirmação com o endereço e o link do Waze
-async function avisarConfirmado(usuarioId, agendamentoId) {
+export async function avisarConfirmado(usuarioId, agendamentoId) {
   const a = await comoUsuario(usuarioId, async (db) => (await db.query(
     `select a.*, to_jsonb(l) as loja, n.phone_number_id from agendamentos a join lojas l on l.id = a.loja_id
        left join whatsapp_numeros n on n.empresa_id = a.empresa_id and n.ativo where a.id = $1`, [agendamentoId])).rows[0]);

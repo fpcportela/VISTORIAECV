@@ -20,7 +20,8 @@ const nacional = (tel) => {
   return d;
 };
 const telefoneBR = (tel) => mascaraTelefone(nacional(tel));
-const quandoAgenda = (iso) => new Date(iso).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const SITUACAO_AG = { agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado' };
+const quandoAgenda = (iso) => new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const quando = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -319,7 +320,21 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
 
   async function mudarChamado(campos) {
     setErro('');
-    try { await api(`/whatsapp/chamados/${k.chamado.id}`, { metodo: 'PUT', corpo: campos }); carregar(); aoMudar?.(); } catch (f) { setErro(f.message); }
+    try {
+      const r = await api(`/whatsapp/chamados/${k.chamado.id}`, { metodo: 'PUT', corpo: campos });
+      if (r?.aviso) setErro(r.aviso);
+      carregar(); aoMudar?.();
+    } catch (f) { setErro(f.message); }
+  }
+
+  // situação do agendamento: Confirmado manda a confirmação ao cliente e leva o chamado para AGENDADO
+  async function mudarAgendamento(situacao) {
+    setErro('');
+    try {
+      const r = await api(`/agenda/${k.agendamento.id}`, { metodo: 'PUT', corpo: { situacao } });
+      if (r?.aviso) setErro(r.aviso);
+      carregar(); aoMudar?.();
+    } catch (f) { setErro(f.message); }
   }
 
   async function robo(acao) {
@@ -381,6 +396,14 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
               {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
             </select>
           </label>
+          {k.agendamento && (
+            <label>Agendamento · {quandoAgenda(k.agendamento.inicio)}
+              <select value={k.agendamento.situacao} disabled={!k.agendamento.pode} onChange={(e) => mudarAgendamento(e.target.value)}
+                className={`sit-agenda ag-${k.agendamento.situacao}`}>
+                {Object.entries(SITUACAO_AG).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+              </select>
+            </label>
+          )}
           <label className="conversa-assunto">Assunto
             <input defaultValue={k.chamado.titulo || ''} key={k.chamado.id + (k.chamado.titulo || '')} disabled={!k.pode_enviar} placeholder="Ex.: ORÇAMENTO CAUTELAR"
               onBlur={(e) => e.target.value !== (k.chamado.titulo || '') && mudarChamado({ titulo: e.target.value })} />

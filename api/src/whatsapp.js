@@ -3,6 +3,7 @@ import express from 'express';
 import { comoUsuario } from './db.js';
 import { Recusa, UUID, criarComRecusa, texto } from './comum.js';
 import { BLOCOS, CAMPOS, ROBO_PADRAO, atenderComRobo, esquecerConhecimento, fluxoDe, iaDisponivel, normalizarFluxo } from './robo.js';
+import { avisarConfirmado } from './agenda.js';
 
 // Módulo WhatsApp: conversas, chamados em kanban e o código de "Esqueci a senha".
 // O envio usa a API oficial da Meta (WhatsApp Cloud API). As chaves ficam só no
@@ -254,6 +255,8 @@ async function grupoDoWhatsApp(db, permissao) {
 
 const podeEnviar = (db, empresa) =>
   db.query("select exists (select 1 from lojas l where l.empresa_id = $1 and pode(l.id, 'whatsapp.enviar')) as ok", [empresa]).then((r) => r.rows[0].ok);
+
+const semAcentoNome = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
 export function rotasWhatsApp(app, { exigeLogin, rota }) {
   const comRecusa = criarComRecusa(rota);
@@ -613,6 +616,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
   app.put('/api/whatsapp/chamados/:id', exigeLogin, comRecusa(async (req, res) => {
     if (!UUID.test(req.params.id)) throw new Recusa(404, 'Chamado não encontrado.');
     const b = req.body || {};
+    let confirmado = null;
     await comoUsuario(req.usuarioId, async (db) => {
       const ch = (await db.query('select * from whatsapp_chamados where id = $1', [req.params.id])).rows[0];
       if (!ch) throw new Recusa(404, 'Chamado não encontrado.');
@@ -633,8 +637,25 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       await db.query(
         `update whatsapp_chamados set coluna_id = $2, aberto = $3, concluido_em = $4, ordem = $5, titulo = $6, responsavel_id = $7, atualizado_em = now()
           where id = $1`, [ch.id, coluna, aberto, concluido, ordem, titulo, resp]);
+      // etapa CONFIRMAR / AGENDADO muda a situação do agendamento (agendado / confirmado)
+      if (coluna !== ch.coluna_id) {
+        const nome = (await db.query('select upper(nome) as n from whatsapp_colunas where id = $1', [coluna])).rows[0]?.n || '';
+        const nova = /^CONFIRMAR/.test(semAcentoNome(nome)) ? 'agendado' : /^AGENDADO/.test(semAcentoNome(nome)) ? 'confirmado' : null;
+        const ag = nova && (await db.query(
+          `select a.id, a.situacao from agendamentos a where a.id = app_agendamento_do_chamado($1)
+              and a.situacao in ('agendado', 'confirmado') and pode(a.loja_id, 'agenda.gerenciar')`, [ch.id])).rows[0];
+        if (ag && ag.situacao !== nova) {
+          await db.query('update agendamentos set situacao = $2, atualizado_em = now() where id = $1', [ag.id, nova]);
+          if (nova === 'confirmado') confirmado = ag.id;
+        }
+      }
     });
-    res.json({ ok: true });
+    // confirmado pela etapa: manda ao cliente a confirmação com o endereço e o Waze
+    let aviso = null;
+    if (confirmado) {
+      try { await avisarConfirmado(req.usuarioId, confirmado); } catch (e) { aviso = `Confirmado, mas a mensagem não foi pelo WhatsApp: ${e.message}`; }
+    }
+    res.json({ ok: true, aviso });
   }));
 
   // ------------------------------------------------------------ robô de atendimento
@@ -902,7 +923,11 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
           where h.contato_id = $1 order by h.aberto desc, h.criado_em desc limit 1`, [k.id])).rows[0] || null;
       if (req.query.ler === '1') await db.query('update whatsapp_contatos set nao_lidas = 0 where id = $1', [k.id]);
       const robo = (await db.query('select ativo from whatsapp_robo where empresa_id = $1', [k.empresa_id])).rows[0]?.ativo || false;
-      return { ...k, mensagens, chamado, robo, pode_enviar: await podeEnviar(db, k.empresa_id) };
+      // agendamento do chamado: a conversa mostra e muda a situação dele
+      const agendamento = chamado ? (await db.query(
+        `select a.id, a.inicio, a.situacao, a.loja_id, pode(a.loja_id, 'agenda.gerenciar') as pode
+           from agendamentos a where a.id = app_agendamento_do_chamado($1)`, [chamado.id])).rows[0] || null : null;
+      return { ...k, mensagens, chamado, agendamento, robo, pode_enviar: await podeEnviar(db, k.empresa_id) };
     }));
   }));
 
