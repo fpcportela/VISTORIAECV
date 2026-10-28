@@ -1030,3 +1030,14 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .robo-modelos label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 14px; flex: 1 1 280px; }
 .robo-modelos small { flex: 1 1 100%; }
 .robo-bloco.destacado { outline: 3px solid var(--forte); outline-offset: 2px; }
+
+/* venda: selo do agendamento ao lado do número; agenda: busca pela venda */
+.venda-titulo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.venda-agendamento { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--borda); border-left: 4px solid #2563eb; border-radius: 8px; background: #fff; font-size: 14px; font-weight: 600; color: #1e3a8a; }
+.venda-agendamento small { font-weight: 700; font-size: 11px; text-transform: uppercase; color: var(--cinza); }
+.venda-agendamento.ag-confirmado { border-left-color: #16a34a; }
+.venda-agendamento.ag-compareceu { border-left-color: #0f766e; }
+.venda-agendamento.ag-faltou, .venda-agendamento.ag-cancelado { border-left-color: #dc2626; }
+.agenda-busca-venda { display: flex; gap: 4px; }
+.agenda-busca-venda input { width: 110px; }
+.agenda-cartao.destacado { box-shadow: 0 0 0 3px rgba(37,99,235,.55); }

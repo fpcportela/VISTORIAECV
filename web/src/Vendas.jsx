@@ -9,6 +9,8 @@ import { formatarDoc, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
 import { EditorCliente } from './Clientes.jsx';
 
+const SITUACAO_AG = { agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado' };
+
 export const SITUACOES = { aberta: 'Aberta', futuro: 'Agendado', finalizada: 'Finalizada', cancelada: 'Cancelada' };
 const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda agendada', cancelada: 'Cancelou', desconto: 'Deu desconto', preco: 'Alterou preço' };
 const BANDEIRAS = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD', 'AMERICAN EXPRESS', 'CABAL', 'OUTRA'];
@@ -454,7 +456,18 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     <>
       <div className="cabecalho">
         <button className="botao-texto" onClick={aoVoltar}>‹ Vendas</button>
-        <h1>{venda ? `Venda nº ${venda.numero}` : 'Nova venda'}</h1>
+        <h1 className="venda-titulo">{venda ? `Venda nº ${venda.numero}` : 'Nova venda'}
+          {venda?.agendamentos?.[0] && (() => {
+            const ag = venda.agendamentos[0];
+            const quando = new Date(ag.inicio).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return (
+              <span className={`venda-agendamento ag-${ag.situacao}`} title={`Agendamento: ${SITUACAO_AG[ag.situacao] || ag.situacao}`}>
+                <Icone nome="agenda" tamanho={16} /> {quando.replace(',', '').replace(', ', ' às ')}
+                <small>{SITUACAO_AG[ag.situacao] || ag.situacao}</small>
+              </span>
+            );
+          })()}
+        </h1>
         {venda ? <Etiqueta situacao={venda.situacao} /> : <span />}
       </div>
 

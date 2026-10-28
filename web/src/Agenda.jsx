@@ -51,6 +51,8 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
   const [janela, setJanela] = useState(null);
   const [aviso, setAviso] = useState('');
   const [recarga, setRecarga] = useState(0);
+  const [buscaVenda, setBuscaVenda] = useState('');
+  const [destaque, setDestaque] = useState(null); // agendamento achado pela busca da venda
 
   // mês: semanas inteiras (de domingo a sábado) que cobrem o mês do dia escolhido
   const primeiroMes = `${dia.slice(0, 8)}01`;
@@ -68,6 +70,21 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
     const t = setInterval(() => { if (!document.hidden) carregar(); }, 30000);
     return () => { vivo = false; clearInterval(t); };
   }, [lojaUsada, de, ate, recarga]);
+
+  async function acharVenda(e) {
+    e.preventDefault();
+    if (!buscaVenda.trim()) return;
+    setAviso('');
+    try {
+      const r = await api(`/agenda/venda?loja=${lojaUsada}&numero=${encodeURIComponent(buscaVenda)}`);
+      if (lojas.some((l) => l.id === r.loja_id)) setFilial(r.loja_id);
+      setDia(r.dia); setModo('dia'); setDestaque(r.id);
+    } catch (f) { setDestaque(null); setAviso(f.message); }
+  }
+  useEffect(() => {
+    if (!destaque || !d) return;
+    document.getElementById(`ag-${destaque}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [destaque, d]);
 
   const recarregar = (msg) => { setRecarga((n) => n + 1); setJanela(null); setAviso(msg || ''); };
   const mudar = async (a, corpo) => {
@@ -112,6 +129,11 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
           <button className="botao-contorno" aria-label="Próximo" onClick={() => passo(1)}>›</button>
           <CampoData value={dia} onChange={(e) => e.target.value && setDia(e.target.value)} aria-label="Ir para o dia" />
         </div>
+        <form className="agenda-busca-venda" onSubmit={acharVenda}>
+          <input value={buscaVenda} inputMode="numeric" placeholder="Venda nº" aria-label="Buscar agendamento pelo número da venda"
+            onChange={(e) => setBuscaVenda(e.target.value.replace(/\D/g, ''))} />
+          <button type="submit" className="botao-contorno" aria-label="Buscar venda">🔍</button>
+        </form>
       </div>
       <h2 className="agenda-titulo">{titulo}</h2>
       {aviso && <p className={/enviada|Agendado\b(?!,)/.test(aviso) ? 'sucesso' : 'erro'} role="status">{aviso}</p>}
@@ -119,7 +141,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
       {!d ? <p className="cinza">Carregando…</p>
         : modo === 'dia' ? (
           <Dia dia={dia} d={d} pode={pode} aoNovo={(hora) => setJanela({ tipo: 'novo', dia, hora })}
-            aoEditar={(a) => setJanela({ tipo: 'editar', a })} aoMudar={mudar} aoConfirmar={confirmar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} />
+            aoEditar={(a) => setJanela({ tipo: 'editar', a })} aoMudar={mudar} aoConfirmar={confirmar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} destaque={destaque} />
         ) : modo === 'semana' ? (
           <Semana de={de} d={d} aoDia={(x) => { setDia(x); setModo('dia'); }} />
         ) : (
@@ -136,7 +158,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
 }
 
 // ------------------------------------------------------------ dia
-function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda }) {
+function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda, destaque }) {
   const doDia = d.agendamentos.filter((a) => diaSP(a.inicio) === dia);
   const livres = d.livres.filter((l) => diaSP(l.inicio) === dia);
   const bloqueios = d.bloqueios;
@@ -159,7 +181,7 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda, ao
           <div key={h} className="agenda-linha">
             <span className="agenda-hora">{h}</span>
             <div className="agenda-itens">
-              {aqui.map((a) => <Cartao key={a.id} a={a} historico={(d.historico || []).filter((h) => h.agendamento_id === a.id)}
+              {aqui.map((a) => <Cartao key={a.id} a={a} destaque={destaque === a.id} historico={(d.historico || []).filter((h) => h.agendamento_id === a.id)}
                 pode={pode} aoEditar={aoEditar} aoMudar={aoMudar} aoConfirmar={aoConfirmar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} />)}
               {saiu.filter((x) => horaSP(x.de_inicio) === h).map((x) => (
                 <div key={x.id} className="agenda-cartao agenda-remarcado">
@@ -190,9 +212,9 @@ const paraVenda = (a) => ({
     a.observacao].filter(Boolean).join(' · '),
 });
 
-function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda }) {
+function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda, destaque }) {
   return (
-    <div className={`agenda-cartao ag-${a.situacao}`}>
+    <div id={`ag-${a.id}`} className={`agenda-cartao ag-${a.situacao}${destaque ? ' destacado' : ''}`}>
       <div className="agenda-cartao-topo">
         <strong>{a.nome}</strong>
         {a.placa && <Placa placa={a.placa} tamanho="mini" />}

@@ -125,6 +125,23 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
   };
 
   // A agenda de um período: agendamentos, bloqueios e os horários livres
+  // Acha o agendamento de uma venda pelo número (no grupo da unidade escolhida)
+  app.get('/api/agenda/venda', exigeLogin, comRecusa(async (req, res) => {
+    const numero = Number(String(req.query.numero || '').replace(/\D/g, ''));
+    if (!numero) throw new Recusa(400, 'Digite o número da venda.');
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      const l = await lojaDe(db, req.query.loja);
+      await exigir(db, l.id, 'agenda.ver', 'Seu perfil não pode ver a agenda.');
+      const a = (await db.query(
+        `select a.id, a.loja_id, to_char(a.inicio at time zone 'America/Sao_Paulo', 'YYYY-MM-DD') as dia
+           from agendamentos a join vendas v on v.id = a.venda_id
+          where v.empresa_id = $1 and v.numero = $2
+          order by (a.situacao <> 'cancelado') desc, a.inicio desc limit 1`, [l.empresa_id, numero])).rows[0];
+      if (!a) throw new Recusa(404, `A venda nº ${numero} não tem agendamento.`);
+      return a;
+    }));
+  }));
+
   app.get('/api/agenda', exigeLogin, comRecusa(async (req, res) => {
     const de = DIA.test(req.query.de || '') ? req.query.de : null;
     const ate = DIA.test(req.query.ate || '') ? req.query.ate : de;

@@ -165,7 +165,11 @@ export function rotasVendas(app, { exigeLogin, rota }) {
         `select pode($1, 'vendas.criar') as editar, pode($1, 'vendas.finalizar') as finalizar,
                 pode($1, 'vendas.cancelar') as cancelar, pode($1, 'vendas.desconto') as desconto,
                 pode($1, 'vendas.autorizar') as autorizar`, [v.loja_id])).rows[0];
-      return { ...v, ...extra, itens, historico, pagamentos, pode };
+      // agendamento da venda (o atual ou o que teve), para o selo ao lado do número
+      const agendamentos = (await db.query(
+        `select id, loja_id, inicio, situacao from agendamentos where venda_id = $1
+          order by (situacao <> 'cancelado') desc, inicio desc`, [v.id])).rows;
+      return { ...v, ...extra, itens, historico, pagamentos, pode, agendamentos };
     });
     res.json(dados);
   }));
