@@ -318,6 +318,8 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     await db.query(
       `update agendamentos set situacao = 'compareceu', confirmacao_etapa = null, atualizado_em = now()
         where venda_id = $1 and situacao in ('agendado', 'confirmado') and inicio::date <= current_date`, [id]);
+    // quem salvou a venda passa a ser o responsável pelo chamado do WhatsApp dela
+    await db.query('select app_venda_responsavel_chamado($1, $2)', [id, req.usuarioId]);
     return id;
   }
 

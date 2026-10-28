@@ -1041,3 +1041,4 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .agenda-busca-venda { display: flex; gap: 4px; }
 .agenda-busca-venda input { width: 110px; }
 .agenda-cartao.destacado { box-shadow: 0 0 0 3px rgba(37,99,235,.55); }
+.agenda-responsavel { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--cinza); white-space: nowrap; }

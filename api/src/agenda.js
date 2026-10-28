@@ -153,7 +153,12 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       const iniPeriodo = `($1::date::timestamp at time zone 'America/Sao_Paulo')`;
       const agendamentos = (await db.query(
         `select a.*, s.nome as servico, v.numero as venda_numero, v.situacao as venda_situacao,
-                c.nome as cliente_nome, c.cpf_cnpj as cliente_doc
+                c.nome as cliente_nome, c.cpf_cnpj as cliente_doc,
+                -- responsável: o do chamado do WhatsApp (quem salvou a venda); sem chamado, quem criou a venda
+                coalesce((select u.nome from whatsapp_chamados h join usuarios u on u.id = h.responsavel_id
+                           where h.id = a.chamado_id or (a.venda_id is not null and h.venda_id = a.venda_id)
+                           order by (h.id = a.chamado_id) desc limit 1),
+                         (select u.nome from usuarios u where u.id = v.criado_por)) as responsavel
            from agendamentos a left join servicos s on s.id = a.servico_id left join vendas v on v.id = a.venda_id
            left join clientes c on c.id = a.cliente_id
           where a.loja_id = $3 and a.inicio < ${fimPeriodo} and a.fim > ${iniPeriodo}

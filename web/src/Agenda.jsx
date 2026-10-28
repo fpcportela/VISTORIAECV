@@ -240,6 +240,7 @@ function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVen
         {!a.venda_id && aoNovaVenda && a.situacao !== 'cancelado' && <button className="botao-link" onClick={() => aoNovaVenda(paraVenda(a))}>Abrir venda</button>}
         {pode && a.telefone && a.situacao !== 'cancelado' && <button className="botao-link" onClick={() => aoConfirmar(a)}>Mandar confirmação</button>}
         {pode && <button className="botao-link" onClick={() => aoEditar(a)}>Editar / remarcar</button>}
+        {a.responsavel && <span className="agenda-responsavel" title="Responsável pelo atendimento">👤 {a.responsavel}</span>}
       </div>
     </div>
   );
