@@ -213,7 +213,7 @@ begin
     'robo', to_jsonb(v_r),
     'servicos', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'nome', s.nome) order by s.nome)
                             from servicos s where s.empresa_id = v_k.empresa_id and s.ativo), '[]'),
-    'mensagens', coalesce((select jsonb_agg(jsonb_build_object('direcao', m.direcao, 'texto', m.texto) order by m.criado_em)
+    'mensagens', coalesce((select jsonb_agg(jsonb_build_object('direcao', m.direcao, 'texto', m.texto, 'em', m.criado_em, 'robo', m.robo) order by m.criado_em)
                              from (select * from whatsapp_conversa m where m.chamado_id = v_ch.id
                                     order by m.criado_em desc limit 40) m), '[]'));
 end $$;

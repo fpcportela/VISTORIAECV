@@ -371,6 +371,39 @@ export function normalizarResposta(texto) {
   return t.replace(/^\s*(\d{1,2})\s*[.)–-]\s+[\s\S]*$/, '$1');
 }
 
+// Do outro lado é outro robô (atendimento automático de uma empresa)? Devolve o motivo ou null.
+// Sinais: mensagem de robô (menu numerado, "mensagem automática"...), a mesma mensagem repetida,
+// respostas instantâneas seguidas ou conversa em ciclo (muitas mensagens em pouco tempo).
+const FRASES_ROBO = /\b(MENSAGEM AUTOMATICA|RESPOSTA AUTOMATICA|ASSISTENTE VIRTUAL|ATENDENTE VIRTUAL|SOU UM ROBO|SOU O ROBO|CHATBOT|DIGITE O NUMERO|DIGITE A OPCAO|ESCOLHA UMA DAS OPCOES|SELECIONE UMA OPCAO|OPCAO INVALIDA|NAO ENTENDI SUA (RESPOSTA|MENSAGEM)|NOSSO HORARIO DE ATENDIMENTO|FORA DO HORARIO DE ATENDIMENTO|AGRADECEMOS (O SEU |SEU )?CONTATO|EM BREVE RETORNAREMOS)\b/;
+export function pareceRobo(mensagens = []) {
+  const entradas = mensagens.filter((m) => m.direcao === 'entrada');
+  const ultimas = entradas.slice(-6);
+  for (const m of ultimas.slice(-3)) {
+    const t = semAcento(m.texto);
+    if (FRASES_ROBO.test(t)) return 'mensagem automática de outro robô';
+    if ((String(m.texto || '').match(/^\s*\*?\d{1,2}\s*[-.)️⃣]/gm) || []).length >= 3) return 'menu numerado de outro robô';
+  }
+  // a mesma mensagem (não curta) três vezes
+  const contagem = {};
+  for (const m of ultimas) {
+    const t = semAcento(m.texto).replace(/\s+/g, ' ');
+    if (t.length >= 15 && (contagem[t] = (contagem[t] || 0) + 1) >= 3) return 'a mesma mensagem repetida';
+  }
+  // respondeu em menos de 2 segundos depois do nosso robô, três vezes seguidas
+  let rapidas = 0;
+  for (let i = 1; i < mensagens.length; i += 1) {
+    const a = mensagens[i - 1], b = mensagens[i];
+    if (a.direcao === 'saida' && a.robo && b.direcao === 'entrada' && a.em && b.em) {
+      rapidas = new Date(b.em) - new Date(a.em) < 2000 ? rapidas + 1 : 0;
+      if (rapidas >= 3) return 'respostas instantâneas';
+    }
+  }
+  // conversa em ciclo: mais de 16 mensagens em 3 minutos
+  const agora = mensagens.at(-1)?.em ? new Date(mensagens.at(-1).em) : null;
+  if (agora && mensagens.filter((m) => m.em && agora - new Date(m.em) < 180000).length > 16) return 'conversa em ciclo';
+  return null;
+}
+
 async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar = false }) {
   const ctx = await comoUsuario(null, async (db) => (await db.query('select app_robo_contexto($1) as c', [contatoId])).rows[0].c);
   if (!ctx) return; // robô desligado ou sem chamado aberto
@@ -404,6 +437,14 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
     await atribuir();
     await falar(juntar([...falas, msg || 'Certo! Um atendente vai continuar a conversa com você em instantes.']));
   };
+  // outro robô do outro lado: para sem responder (responder só alimenta o ciclo) e deixa para uma pessoa
+  const motivoRobo = pareceRobo(ctx.mensagens);
+  if (motivoRobo) {
+    console.warn(`[robô] parou no chamado ${ch.id}: ${motivoRobo}`);
+    await comoUsuario(null, (db) => db.query('select app_robo_parar_outro_robo($1, $2)', [ch.id, motivoRobo]));
+    await atribuir();
+    return;
+  }
   // opções de cada tipo de pergunta, para os botões
   const comFalas = (falas, botoes) => botoes && { ...botoes, pergunta: juntar([...falas, botoes.pergunta]) };
   const botoesMenu = (b) => ({ pergunta: formatar(b.texto, dados), opcoes: b.opcoes.map((o) => ({ titulo: o.rotulo })) });
