@@ -25,7 +25,7 @@ async function horarioValido(db, { loja, inicio, encaixe, ignorar }) {
   await db.query("select pg_advisory_xact_lock(hashtext('agenda:' || $1))", [loja]);
   const dia = new Date(inicio).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
   const livre = (await db.query(
-    `select 1 from agenda_livres($1, $2::date, $2::date) f where f.inicio = $3
+    `select 1 from agenda_livres_equipe($1, $2::date, $2::date) f where f.inicio = $3
       union all
      select 1 from agendamentos a where a.id = $4 and a.inicio = $3 and a.situacao <> 'cancelado'`,
     [loja, dia, inicio, ignorar || null])).rowCount;
@@ -189,7 +189,7 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
           order by a.inicio, a.criado_em`, [de, ate, l.id])).rows;
       const bloqueios = (await db.query(
         `select * from agenda_bloqueios where loja_id = $3 and inicio < ${fimPeriodo} and fim > ${iniPeriodo} order by inicio`, [de, ate, l.id])).rows;
-      const livres = (await db.query('select * from agenda_livres($1, $2::date, $3::date)', [l.id, de, ate])).rows;
+      const livres = (await db.query('select * from agenda_livres_equipe($1, $2::date, $3::date)', [l.id, de, ate])).rows;
       // remarcações e respostas do cliente: aparecem no dia de onde o agendamento saiu
       const historico = (await db.query(
         `select h.*, a.nome, a.placa, a.inicio as atual_inicio, u.nome as usuario

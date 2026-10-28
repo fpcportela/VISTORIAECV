@@ -66,8 +66,10 @@ select pp.perfil_id, n.nova
   join (values ('vendas.ver', 'agenda.ver'), ('vendas.criar', 'agenda.gerenciar'), ('vendas.criar', 'agenda.ver')) n(tem, nova) on n.tem = pp.permissao
 on conflict do nothing;
 
--- Horários livres da loja entre duas datas (com quantas vagas sobram em cada um)
-create or replace function agenda_livres(p_loja uuid, p_de date, p_ate date)
+-- Horários livres da loja entre duas datas (com quantas vagas sobram em cada um).
+-- p_antecedencia: respeita a antecedência mínima (robô e cliente); a equipe na agenda pode usar
+-- qualquer horário que ainda não passou.
+create or replace function agenda_livres_base(p_loja uuid, p_de date, p_ate date, p_antecedencia boolean)
 returns table (inicio timestamptz, fim timestamptz, vagas integer)
 language plpgsql security definer as $$
 declare c agenda_config;
@@ -94,7 +96,7 @@ begin
       t := d + (h->>'abre')::time;
       while t + dur <= d + (h->>'fecha')::time loop
         ts := t at time zone 'America/Sao_Paulo';
-        if ts >= now() + make_interval(mins => c.antecedencia_min)
+        if ts >= now() + make_interval(mins => case when p_antecedencia then c.antecedencia_min else 0 end)
            and not (c.almoco_inicio is not null and c.almoco_fim is not null
                     and t::time < c.almoco_fim and (t + dur)::time > c.almoco_inicio)
            and not exists (select 1 from agenda_bloqueios b where b.loja_id = p_loja and b.inicio < ts + dur and b.fim > ts) then
@@ -111,6 +113,14 @@ begin
     d := d + 1;
   end loop;
 end $$;
+
+create or replace function agenda_livres(p_loja uuid, p_de date, p_ate date)
+returns table (inicio timestamptz, fim timestamptz, vagas integer)
+language sql security definer as $$ select * from agenda_livres_base(p_loja, p_de, p_ate, true) $$;
+
+create or replace function agenda_livres_equipe(p_loja uuid, p_de date, p_ate date)
+returns table (inicio timestamptz, fim timestamptz, vagas integer)
+language sql security definer as $$ select * from agenda_livres_base(p_loja, p_de, p_ate, false) $$;
 
 -- Agenda pelo robô do WhatsApp (sem usuário logado). Confere de novo se o horário está livre.
 -- p_dados: nome, telefone, placa, servico_id, observacao
@@ -218,7 +228,7 @@ begin
   end if;
   if exists (select 1 from pg_roles where rolname = 'app_api') then
     grant select, insert, update, delete on agenda_config, agenda_bloqueios, agendamentos to app_api;
-    grant execute on function agenda_livres(uuid, date, date), app_agenda_robo(uuid, timestamptz, jsonb),
+    grant execute on function agenda_livres(uuid, date, date), agenda_livres_equipe(uuid, date, date), agenda_livres_base(uuid, date, date, boolean), app_agenda_robo(uuid, timestamptz, jsonb),
       app_agenda_livres_robo(uuid, date, integer), app_agenda_loja_robo(uuid) to app_api;
   end if;
 end $$;
