@@ -997,8 +997,8 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     if (falha) throw falha;
     res.json(msg);
   }));
-  // Documentos do lançamento (financeiro) para o WhatsApp do cliente: saudação + "fechamos o mês"
-  // com a competência, e os arquivos marcados. Fica registrado no chamado do cliente.
+  // Documentos do lançamento (financeiro) para o WhatsApp do cliente: cada arquivo marcado com a
+  // legenda "<saudação>, segue anexo: <nome>". Fica registrado no chamado do cliente.
   app.post('/api/whatsapp/lancamento-documentos', exigeLogin, comErroZap(async (req, res) => {
     const lid = req.body?.lancamento_id;
     const ids = [...new Set((Array.isArray(req.body?.arquivos) ? req.body.arquivos : []).filter((i) => UUID.test(String(i))))].slice(0, 10);
@@ -1027,16 +1027,15 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     });
     const hora = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date()));
     const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
-    const corpo = `${saudacao}, fechamos o mês, em anexo segue relatório do mês de competência ${d.comp}.`;
-    // envia fora da transação e grava cada mensagem no chamado do cliente
+    // cada arquivo vai com a legenda "<saudação>, segue anexo: <NOME DO DOCUMENTO>" (o nome dado em Documentos)
     const enviadas = [];
     let falha = null;
-    try { enviadas.push({ texto: corpo, ...(await enviarTexto(d.numero, d.tel, corpo)) }); } catch (e) { falha = e; enviadas.push({ texto: corpo, falha: e }); }
-    for (const a of falha ? [] : d.arquivos) {
+    for (const a of d.arquivos) {
       const ext = (/\.[\w]+$/.exec(a.nome_arquivo) || [''])[0];
       const nome = `${a.nome}${ext && !a.nome.toLowerCase().endsWith(ext.toLowerCase()) ? ext : ''}`;
-      try { enviadas.push({ texto: `📎 ${nome}`, ...(await enviarDocumento(d.numero, d.tel, { bytes: a.conteudo, nome, mime: a.mime, legenda: nome })) }); }
-      catch (e) { falha = e; enviadas.push({ texto: `📎 ${nome}`, falha: e }); break; }
+      const legenda = `${saudacao}, segue anexo: ${a.nome}`;
+      try { enviadas.push({ texto: `${legenda} 📎`, ...(await enviarDocumento(d.numero, d.tel, { bytes: a.conteudo, nome, mime: a.mime, legenda })) }); }
+      catch (e) { falha = e; enviadas.push({ texto: `${legenda} 📎`, falha: e }); break; }
     }
     await comoUsuario(req.usuarioId, async (db) => {
       const ch = (await db.query('select app_whatsapp_chamado_do_contato($1, $2, $3) as id', [d.empresa_id, d.contato, req.usuarioId])).rows[0].id;
