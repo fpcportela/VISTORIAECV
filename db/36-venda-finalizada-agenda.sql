@@ -39,6 +39,37 @@ drop trigger if exists trg_venda_agenda_compareceu on vendas;
 create trigger trg_venda_agenda_compareceu after insert or update of situacao on vendas
   for each row execute function trg_venda_agenda_compareceu();
 
+-- Compareceu: o chamado do WhatsApp desse agendamento vai para a coluna que conclui (CONCLUÍDO)
+create or replace function app_agenda_concluir_chamado(p_ag uuid) returns void
+language plpgsql security definer as $$
+declare a agendamentos;
+        col uuid;
+begin
+  select * into a from agendamentos where id = p_ag;
+  if a.id is null or a.situacao <> 'compareceu' then return; end if;
+  select id into col from whatsapp_colunas where empresa_id = a.empresa_id and finaliza order by ordem limit 1;
+  if col is null then return; end if;
+  update whatsapp_chamados h
+     set coluna_id = col, aberto = false, concluido_em = now(), atualizado_em = now(),
+         ordem = coalesce((select min(ordem) from whatsapp_chamados where coluna_id = col), 1) - 1
+   where h.aberto and h.empresa_id = a.empresa_id
+     and (h.id = a.chamado_id
+          or (a.venda_id is not null and h.venda_id = a.venda_id)
+          or (a.chamado_id is null and h.contato_id in (select k.id from whatsapp_contatos k
+                                                        where k.empresa_id = a.empresa_id and tel_chave(k.telefone) = tel_chave(a.telefone))));
+end $$;
+
+create or replace function trg_agenda_concluir_chamado() returns trigger language plpgsql security definer as $$
+begin
+  if new.situacao = 'compareceu' and old.situacao is distinct from 'compareceu' then
+    perform app_agenda_concluir_chamado(new.id);
+  end if;
+  return null;
+end $$;
+drop trigger if exists trg_agenda_concluir_chamado on agendamentos;
+create trigger trg_agenda_concluir_chamado after update of situacao on agendamentos
+  for each row execute function trg_agenda_concluir_chamado();
+
 -- Acerta as vendas já finalizadas (ex.: venda nº 18 que ficou AGENDADO na agenda)
 do $$
 declare r record;
@@ -46,11 +77,16 @@ begin
   for r in select id from vendas where situacao = 'finalizada' and data_venda > current_date - 90 loop
     perform app_venda_agenda_compareceu(r.id);
   end loop;
+  -- e conclui o chamado dos que compareceram nos últimos dias com a venda finalizada
+  for r in select a.id from agendamentos a join vendas v on v.id = a.venda_id
+            where a.situacao = 'compareceu' and v.situacao = 'finalizada' and a.inicio > now() - interval '7 days' loop
+    perform app_agenda_concluir_chamado(r.id);
+  end loop;
 end $$;
 
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'app_api') then
-    grant execute on function app_venda_agenda_compareceu(uuid) to app_api;
+    grant execute on function app_venda_agenda_compareceu(uuid), app_agenda_concluir_chamado(uuid) to app_api;
   end if;
 end $$;

@@ -31,7 +31,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [oculto, setOculto] = useState(false);
   const [paletaAberta, setPaletaAberta] = useState(false);
   const [menuAberto, setMenuAberto] = useState(false);
-  const [editandoAtalhos, setEditandoAtalhos] = useState(false);
   const [novaVistoria, setNovaVistoria] = useState(false);
   const [vistoriaId, setVistoriaId] = useState(null);
   // Vendas abertas em abas: { chave, id (null = nova, ainda não salva), titulo }
@@ -49,10 +48,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const modulos = ordenar(MODULOS.filter((m) => tem(m.permissao)), perfil.menu);
   // Lojas em que o usuário pode fazer algo (para telas que precisam de uma loja só)
   const lojasCom = (permissao) => perfil.lojas.map((l) => l.id).filter((id) => criarTem(perfil, id)(permissao));
-  // Atalhos: os escolhidos pelo usuário (que ele ainda pode ver) ou, sem escolha, todos os liberados
-  const atalhos = perfil.atalhos
-    ? perfil.atalhos.map((id) => modulos.find((m) => m.id === id)).filter(Boolean)
-    : modulos;
 
   useEffect(() => {
     if (tela !== 'inicio') return;
@@ -156,16 +151,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     }
   }
 
-  async function salvarAtalhos(lista) {
-    setPerfil({ ...perfil, atalhos: lista });
-    setEditandoAtalhos(false);
-    try {
-      await api('/atalhos', { metodo: 'PUT', corpo: { atalhos: lista } });
-    } catch (falha) {
-      setErro(falha.message);
-    }
-  }
-
   const valor = (v) => (oculto ? '••••' : moeda(v));
   const receber = dados?.receber, pagar = dados?.pagar, hoje = dados?.vistoriasHoje, mes = dados?.vistoriasMes;
   const nomeMes = new Date().toLocaleDateString('pt-BR', { month: 'long' });
@@ -241,24 +226,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       </div>
 
       {erro && <p className="erro" role="alert">{erro}</p>}
-
-      <section className="bloco" aria-label="Atalhos">
-        <div className="bloco-topo">
-          <h2>Atalhos</h2>
-          <button className="botao-contorno pequeno" onClick={() => setEditandoAtalhos(true)}>Personalizar</button>
-        </div>
-        {atalhos.length ? (
-          <div className="atalhos">
-            {atalhos.map((m) => (
-              <button key={m.id} className="cartao atalho" onClick={() => abrir(m.id)}>
-                <span className="bolha"><Icone nome={m.id} tamanho={22} /></span>{m.curto}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p className="cinza vazio">Nenhum atalho escolhido. Toque em Personalizar para escolher.</p>
-        )}
-      </section>
 
       {tem('vendas.ver') && (
         <>
@@ -499,11 +466,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
         <EditorAtalhos soOrdem titulo="Organizar menu" ajuda="Use as setas para escolher a ordem dos itens do seu menu."
           disponiveis={MODULOS.filter((m) => tem(m.permissao))} escolhidos={modulos.map((m) => m.id)}
           aoSalvar={salvarMenu} aoFechar={() => setOrganizandoMenu(false)} />
-      )}
-
-      {editandoAtalhos && (
-        <EditorAtalhos disponiveis={modulos} escolhidos={atalhos.map((m) => m.id)}
-          aoSalvar={salvarAtalhos} aoFechar={() => setEditandoAtalhos(false)} />
       )}
 
       {novaVistoria && (
