@@ -91,7 +91,7 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
 
   app.post('/api/relatorios/modelos', exigeLogin, comRecusa(async (req, res) => {
     const nome = texto(req.body?.nome, 60)?.toUpperCase();
-    const fonte = ['vendas', 'financeiro'].includes(req.body?.fonte) ? req.body.fonte : null;
+    const fonte = ['vendas', 'financeiro', 'faturar'].includes(req.body?.fonte) ? req.body.fonte : null;
     if (!nome || !fonte) throw new Recusa(400, 'Dê um nome ao modelo.');
     const config = req.body?.config && typeof req.body.config === 'object' ? req.body.config : {};
     if (JSON.stringify(config).length > 5000) throw new Recusa(400, 'Modelo grande demais.');

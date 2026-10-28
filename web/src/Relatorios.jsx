@@ -85,7 +85,7 @@ export default function Relatorios({ perfil, loja, empresa, logo }) {
       </div>
       {aba === 'personalizado'
         ? <Personalizado loja={loja} empresa={empresa} logo={logo} podeFinanceiro={tem('financeiro.ver')} />
-        : <Faturar perfil={perfil} loja={loja} />}
+        : <Faturar perfil={perfil} loja={loja} empresa={empresa} logo={logo} />}
     </>
   );
 }
@@ -145,7 +145,7 @@ function Personalizado({ loja, empresa, logo, podeFinanceiro }) {
   const [modelos, setModelos] = useState([]);
   const [aviso, setAviso] = useState('');
 
-  const carregarModelos = () => api('/relatorios/modelos').then(setModelos).catch(() => {});
+  const carregarModelos = () => api('/relatorios/modelos').then((l) => setModelos(l.filter((m) => m.fonte !== 'faturar'))).catch(() => {});
   useEffect(() => { carregarModelos(); }, []);
 
   function trocarFonte(nova) {
@@ -311,7 +311,8 @@ function GrupoLinhas({ titulo, lista, cols, soma }) {
 }
 
 // ------------------------------------------------------------ faturar cliente
-function Faturar({ perfil, loja }) {
+const PADRAO_FATURAR = ['numero', 'data_venda', 'cliente', 'placas', 'veiculos', 'servicos', 'loja', 'formas', 'valor_total', 'a_faturar'];
+function Faturar({ perfil, loja, empresa, logo }) {
   const [cliente, setCliente] = useState(null);
   const [f, setF] = useState({ de: '', ate: '', situacao: '' });
   const [linhas, setLinhas] = useState(null);
@@ -320,6 +321,10 @@ function Faturar({ perfil, loja }) {
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [gerando, setGerando] = useState(false);
+  const [colunas, setColunas] = useState(PADRAO_FATURAR);
+  const [modelos, setModelos] = useState([]);
+  const carregarModelos = () => api('/relatorios/modelos').then((l) => setModelos(l.filter((m) => m.fonte === 'faturar'))).catch(() => {});
+  useEffect(() => { carregarModelos(); }, []);
 
   async function buscar(e) {
     e?.preventDefault();
@@ -353,6 +358,36 @@ function Faturar({ perfil, loja }) {
   const total = escolhidas.reduce((t, v) => t + Number(v.a_faturar), 0);
   const todas = linhas?.length > 0 && escolhidas.length === linhas.length;
   const marcar = (id, sim) => setMarcadas((m) => { const n = new Set(m); if (sim) n.add(id); else n.delete(id); return n; });
+  const cols = COLUNAS.vendas.filter((c) => colunas.includes(c.id));
+
+  async function salvarModelo() {
+    const nome = window.prompt('Nome do modelo (ex.: FATURAMENTO MENSAL)');
+    if (!nome) return;
+    try {
+      await api('/relatorios/modelos', { metodo: 'POST', corpo: { nome, fonte: 'faturar', config: { colunas, situacao: f.situacao } } });
+      setAviso(`Modelo ${semAcento(nome)} salvo.`); carregarModelos();
+    } catch (falha) { setErro(falha.message); }
+  }
+  function usarModelo(id) {
+    const m = modelos.find((x) => x.id === id);
+    if (!m) return;
+    setColunas(m.config.colunas?.length ? m.config.colunas : PADRAO_FATURAR);
+    setF((x) => ({ ...x, situacao: m.config.situacao || '' }));
+    setAviso(`Modelo ${m.nome} carregado.`);
+  }
+  async function excluirModelo(id) {
+    const m = modelos.find((x) => x.id === id);
+    if (!m || !window.confirm(`Excluir o modelo ${m.nome}?`)) return;
+    await api(`/relatorios/modelos/${id}`, { metodo: 'DELETE' }).catch(() => {});
+    carregarModelos();
+  }
+  // PDF das vendas marcadas, com as colunas escolhidas
+  async function pdf() {
+    const { gerarPdfRelatorio } = await import('./relatorioPersonalizado.js');
+    const filtros = [`Cliente: ${cliente.nome}`, f.de || f.ate ? `Período: ${dataBR(f.de) || '...'} a ${dataBR(f.ate) || '...'}` : '',
+      `${escolhidas.length} venda(s) · a receber ${real(total)}`].filter(Boolean);
+    await gerarPdfRelatorio({ titulo: 'Faturamento do cliente', empresa, logo, filtros, cols, grupos: [['', escolhidas]], agrupado: false });
+  }
 
   return (
     <>
@@ -368,7 +403,33 @@ function Faturar({ perfil, loja }) {
               <option value="">Todas</option><option value="aberta">ABERTA</option><option value="finalizada">FINALIZADA</option>
             </select>
           </label>
-          <button className="botao-contorno" disabled={!cliente}>Filtrar</button>
+        </div>
+        <fieldset className="colunas-relatorio">
+          <legend>Colunas</legend>
+          {COLUNAS.vendas.map((c) => (
+            <label key={c.id} className="linha-check">
+              <input type="checkbox" checked={colunas.includes(c.id)}
+                onChange={(e) => setColunas(e.target.checked ? COLUNAS.vendas.map((x) => x.id).filter((id) => id === c.id || colunas.includes(id)) : colunas.filter((x) => x !== c.id))} />
+              {c.nome}
+            </label>
+          ))}
+        </fieldset>
+        <div className="acoes-relatorio">
+          <button className="botao-primario" disabled={!cliente}>Gerar</button>
+          <button type="button" className="botao-contorno" disabled={!escolhidas.length} onClick={pdf}>Gerar PDF</button>
+          <button type="button" className="botao-contorno" onClick={salvarModelo}>Salvar modelo</button>
+          {modelos.length > 0 && (
+            <select value="" onChange={(e) => usarModelo(e.target.value)} aria-label="Modelos salvos">
+              <option value="">Modelos salvos…</option>
+              {modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          )}
+          {modelos.length > 0 && (
+            <select value="" onChange={(e) => excluirModelo(e.target.value)} aria-label="Excluir modelo" className="excluir-modelo">
+              <option value="">Excluir modelo…</option>
+              {modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          )}
         </div>
       </form>
       {aviso && <p className="aviso-ok" role="status">{aviso}</p>}
@@ -387,18 +448,14 @@ function Faturar({ perfil, loja }) {
               <tr>
                 <th className="marcar"><input type="checkbox" checked={todas} aria-label="Marcar todas"
                   onChange={(e) => setMarcadas(e.target.checked ? new Set(linhas.map((v) => v.id)) : new Set())} /></th>
-                <th>Nº</th><th>Data</th><th>Cliente</th><th>Placa</th><th>Marca/Modelo</th><th>Serviços</th><th>Loja</th><th>Pagamento</th>
-                <th className="num">Total</th><th className="num">A receber</th>
+                {cols.map((c) => <th key={c.id} className={c.soma ? 'num' : ''}>{c.nome}</th>)}
               </tr>
             </thead>
             <tbody>
               {linhas.map((v) => (
                 <tr key={v.id} className={marcadas.has(v.id) ? 'marcada' : ''} onClick={(e) => e.target.type !== 'checkbox' && marcar(v.id, !marcadas.has(v.id))}>
                   <td className="marcar"><input type="checkbox" checked={marcadas.has(v.id)} onChange={(e) => marcar(v.id, e.target.checked)} aria-label={`Venda ${v.numero}`} /></td>
-                  <td>{v.numero}</td><td>{dataBR(v.data_venda)}</td><td>{v.cliente}</td><td>{v.placas || ''}</td><td>{v.veiculos || ''}</td>
-                  <td>{v.servicos || ''}</td><td>{v.loja}</td>
-                  <td>{(v.formas || '').split(',').filter(Boolean).map((x) => FORMAS[x] || x).join(', ') || 'SEM PAGAMENTO'}</td>
-                  <td className="num">{moeda(v.valor_total)}</td><td className="num">{moeda(v.a_faturar)}</td>
+                  {cols.map((c) => <td key={c.id} className={c.soma ? 'num' : ''}>{c.id === 'formas' ? celula(c, v) || 'SEM PAGAMENTO' : celula(c, v)}</td>)}
                 </tr>
               ))}
             </tbody>
