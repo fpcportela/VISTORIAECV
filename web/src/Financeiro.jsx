@@ -19,10 +19,11 @@ const mes = (desloc = 0) => {
   const fim = new Date(Date.UTC(a, m + desloc, 0));
   return [ini.toISOString().slice(0, 10), fim.toISOString().slice(0, 10)];
 };
+const CARTAO = ['cartao_credito', 'cartao_debito'];
 export const FORMAS = { dinheiro: 'Dinheiro', pix: 'Pix', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito', boleto: 'Boleto', transferencia: 'Transferência', faturado: 'Faturado' };
 const SITUACOES = { em_aberto: 'Em aberto', pago_parcial: 'Pago em parte', pago: 'Pago', cancelado: 'Cancelado' };
 
-export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoInicial = false }) {
+export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoInicial = false, aoVenda }) {
   const pode = (p, l = loja) => criarTem(perfil, l)(p);
   const lojasLancar = perfil.lojas.filter((l) => pode('financeiro.lancar', l.id));
   const podePlano = perfil.lojas.some((l) => pode('financeiro.plano', l.id));
@@ -46,7 +47,7 @@ export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoI
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {aba === 'receber' || aba === 'pagar' ? (
-        <Lancamentos key={aba} tipo={aba} loja={loja} perfil={perfil} lojasLancar={lojasLancar} plano={plano} centros={centros} novoInicial={novoInicial} />
+        <Lancamentos key={aba} tipo={aba} loja={loja} perfil={perfil} lojasLancar={lojasLancar} plano={plano} centros={centros} novoInicial={novoInicial} aoVenda={aoVenda} />
       ) : aba === 'contas' ? (
         <ContasFinanceiras loja={lojaGrupo} perfil={perfil} lojasLancar={lojasLancar} />
       ) : aba === 'plano' ? (
@@ -72,7 +73,7 @@ function OpcoesCategoria({ plano, tipo, comGrupos = false }) {
 // ---------------------------------------------------------------------------
 // Lista de contas a receber / a pagar
 // ---------------------------------------------------------------------------
-function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInicial }) {
+function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInicial, aoVenda }) {
   const [[de, ate], setIntervalo] = useState(mes());
   const [situacao, setSituacao] = useState('');
   const [categoria, setCategoria] = useState('');
@@ -156,7 +157,7 @@ function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInic
         </div>
       )}
       {aberto !== undefined && (
-        <EditorLancamento id={aberto} tipo={tipo} loja={loja} perfil={perfil} lojasLancar={lojasLancar} plano={plano} centros={centros}
+        <EditorLancamento id={aberto} tipo={tipo} loja={loja} perfil={perfil} lojasLancar={lojasLancar} plano={plano} centros={centros} aoVenda={aoVenda}
           aoFechar={() => { setAberto(undefined); carregar(); }} aoSalvar={() => { setAberto(undefined); carregar(); }} />
       )}
     </>
@@ -172,13 +173,13 @@ function EtiquetaFin({ l, receita }) {
 // ---------------------------------------------------------------------------
 // Novo lançamento / detalhe (edição, receber/pagar, cancelar, excluir)
 // ---------------------------------------------------------------------------
-function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros, aoFechar, aoSalvar }) {
+function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros, aoVenda, aoFechar, aoSalvar }) {
   const receita = tipo === 'receber';
   const [l, setL] = useState(null);
   const lojaPadrao = lojasLancar.some((x) => x.id === loja) ? loja : lojasLancar[0]?.id || '';
   const centroDaLoja = (lj) => centros.find((c) => c.loja_id === lj && c.ativo)?.id || '';
   const [f, setF] = useState({ loja_id: lojaPadrao, descricao: '', categoria_id: '', centro_custo_id: centroDaLoja(lojaPadrao),
-    valor: '', vencimento: hoje(), competencia: `${hoje().slice(0, 7)}-01`, parcelas: '1', documento: '', observacoes: '' });
+    valor: '', vencimento: hoje(), competencia: `${hoje().slice(0, 7)}-01`, parcelas: '1', documento: '', observacoes: '', forma_pagamento: '', cv: '' });
   const [novosArquivos, setNovosArquivos] = useState([]); // { arquivo, nome } anexados ao lançar
   const [baixando, setBaixando] = useState(false);
   const [erro, setErro] = useState('');
@@ -190,7 +191,7 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
       setL(d);
       setF({ loja_id: d.loja_id, descricao: d.descricao, categoria_id: d.categoria_id || '', centro_custo_id: d.centro_custo_id || '',
         valor: paraMoeda(d.valor), vencimento: d.vencimento, competencia: d.competencia, parcelas: '1',
-        documento: d.documento || '', observacoes: d.observacoes || '' });
+        documento: d.documento || '', observacoes: d.observacoes || '', forma_pagamento: d.forma_pagamento || '', cv: d.cv || '' });
     } catch (falha) {
       setErro(falha.message);
     }
@@ -255,6 +256,11 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
         {id && !l ? <p className="cinza">{erro || 'Carregando…'}</p> : (
           <>
             {l && l.total_parcelas > 1 && <p className="cinza">Parcela {l.parcela} de {l.total_parcelas}</p>}
+            {l?.vendas?.length > 0 && aoVenda && (
+              <p className="links-venda">{l.vendas.length > 1 ? 'Vendas:' : 'Venda:'}
+                {l.vendas.map((v) => <button key={v.id} type="button" className="botao-texto" onClick={() => aoVenda(v.id)}>nº {v.numero} ↗</button>)}
+              </p>
+            )}
             {l && (
               <div className="saldo-lancamento">
                 <span>Valor<strong>R$ {moeda(l.valor)}</strong></span>
@@ -292,7 +298,18 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
                     </label>
                   )}
                   <label>Documento<input value={f.documento} onChange={muda('documento')} placeholder="Nº da nota, boleto…" /></label>
+                  {id && (
+                    <label>Forma de pagamento
+                      <select value={f.forma_pagamento} onChange={muda('forma_pagamento')}>
+                        <option value="">Não informada</option>
+                        {Object.entries(FORMAS).filter(([v]) => v !== 'faturado' || l?.origem !== 'venda' || f.forma_pagamento === v)
+                          .map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {id && CARTAO.includes(f.forma_pagamento) && <label>CV (comprovante da maquininha)<input value={f.cv} onChange={muda('cv')} maxLength={40} placeholder="Nº do CV" /></label>}
                 </div>
+                {l?.origem === 'venda' && <small className="cinza">Ao trocar a forma de pagamento ou o CV, o pagamento da venda é ajustado junto e fica no histórico dela.</small>}
                 {!id && Number(f.parcelas) > 1 && numero(f.valor) > 0 && (
                   <small className="cinza">{f.parcelas} parcelas de cerca de R$ {moeda(valorParcela)}, uma por mês.</small>
                 )}
@@ -336,7 +353,8 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
 function Baixa({ l, receita, aoFechar, aoSalvar }) {
   const [contas, setContas] = useState([]);
   const [f, setF] = useState({ data: hoje(), valor: paraMoeda(Math.round((l.valor - l.valor_pago) * 100) / 100),
-    forma_pagamento: 'pix', conta_id: '', juros: '', multa: '', desconto: '' });
+    forma_pagamento: l.forma_pagamento && !(l.origem === 'venda' && l.forma_pagamento === 'faturado') ? l.forma_pagamento : 'pix', cv: l.cv || '',
+    conta_id: '', juros: '', multa: '', desconto: '' });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   useEffect(() => {
@@ -370,9 +388,10 @@ function Baixa({ l, receita, aoFechar, aoSalvar }) {
             <label>Valor (R$)<input value={f.valor} onChange={muda('valor')} inputMode="numeric" data-moeda required /></label>
             <label>Forma de pagamento
               <select value={f.forma_pagamento} onChange={muda('forma_pagamento')}>
-                {Object.entries(FORMAS).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+                {Object.entries(FORMAS).filter(([v]) => v !== 'faturado' || l.origem !== 'venda').map(([v, n]) => <option key={v} value={v}>{n}</option>)}
               </select>
             </label>
+            {CARTAO.includes(f.forma_pagamento) && <label>CV (comprovante)<input value={f.cv} onChange={muda('cv')} maxLength={40} placeholder="Nº do CV" /></label>}
             <label>Conta
               <select value={f.conta_id} onChange={muda('conta_id')} required>
                 {contas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}

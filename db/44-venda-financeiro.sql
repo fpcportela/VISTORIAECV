@@ -10,6 +10,10 @@
 -- =====================================================================
 
 alter table lancamentos add column if not exists origem text;   -- 'venda' = criado sozinho pela venda
+alter table lancamentos add column if not exists cv text;       -- comprovante da maquininha (cartão)
+-- o CV ia no campo Documento: passa para o campo próprio
+update lancamentos set cv = documento, documento = null
+ where origem = 'venda' and forma_pagamento in ('cartao_credito', 'cartao_debito') and cv is null and documento is not null;
 create index if not exists lancamentos_venda on lancamentos(venda_id) where venda_id is not null;
 
 -- Caixa da loja (cria um se ainda não houver)
@@ -64,7 +68,7 @@ begin
                            else upper(p.forma::text) end;
     v_venc := p.data_pagamento + case p.forma when 'cartao_credito' then 30 when 'cartao_debito' then 1 else 0 end;
     insert into lancamentos (loja_id, tipo, categoria_id, centro_custo_id, cliente_id, venda_id, origem, descricao, competencia,
-                             vencimento, valor, forma_pagamento, documento, observacoes, criado_por)
+                             vencimento, valor, forma_pagamento, cv, observacoes, criado_por)
     values (v.loja_id, 'receber', v_cat, v_centro, v.cliente_id, v.id, 'venda',
             'VENDA Nº ' || v.numero || ' - ' || coalesce(v_cliente, ''), date_trunc('month', v.data_venda)::date,
             v_venc, p.valor - v_ja, p.forma, nullif(p.cv, ''),
@@ -153,6 +157,38 @@ begin
     grant execute on function app_venda_financeiro(uuid), app_caixa_da_loja(uuid) to app_api;
   end if;
 end $$;
+
+-- Forma de pagamento (ou CV) trocada no financeiro: o pagamento da venda acompanha, com registro no histórico
+create or replace function trg_lancamento_forma_venda() returns trigger language plpgsql security definer as $$
+declare pg uuid;
+        nome text;
+begin
+  if new.origem is distinct from 'venda' or new.venda_id is null or new.forma_pagamento is null
+     or (new.forma_pagamento is not distinct from old.forma_pagamento and new.cv is not distinct from old.cv) then
+    return null;
+  end if;
+  select id into pg from venda_pagamentos
+   where venda_id = new.venda_id and forma = old.forma_pagamento
+   order by (valor = old.valor) desc, criado_em limit 1;
+  if pg is null then return null; end if;
+  update venda_pagamentos set forma = new.forma_pagamento,
+         cv = case when new.forma_pagamento in ('cartao_credito', 'cartao_debito') then new.cv end
+   where id = pg;
+  if new.forma_pagamento is distinct from old.forma_pagamento then
+    nome := case new.forma_pagamento when 'dinheiro' then 'DINHEIRO' when 'pix' then 'PIX' when 'cartao_credito' then 'CARTÃO CRÉDITO'
+                 when 'cartao_debito' then 'CARTÃO DÉBITO' when 'boleto' then 'BOLETO' when 'transferencia' then 'TRANSFERÊNCIA' else upper(new.forma_pagamento::text) end;
+    insert into venda_historico (venda_id, usuario_id, acao, detalhe)
+    values (new.venda_id, app_usuario_atual(), 'alterada',
+            'Forma de pagamento ajustada no financeiro: ' || nome || coalesce(' (CV ' || nullif(new.cv, '') || ')', ''));
+  elsif new.cv is distinct from old.cv then
+    insert into venda_historico (venda_id, usuario_id, acao, detalhe)
+    values (new.venda_id, app_usuario_atual(), 'alterada', 'CV do cartão ajustado no financeiro: ' || coalesce(nullif(new.cv, ''), '(sem CV)'));
+  end if;
+  return null;
+end $$;
+drop trigger if exists trg_lancamento_forma_venda on lancamentos;
+create trigger trg_lancamento_forma_venda after update of forma_pagamento, cv on lancamentos
+  for each row execute function trg_lancamento_forma_venda();
 
 -- Vendas já finalizadas que ainda não estão no financeiro
 select app_venda_financeiro(v.id) from vendas v where v.situacao = 'finalizada';

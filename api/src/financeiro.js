@@ -189,6 +189,10 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
           where b.lancamento_id = $1 order by b.data, b.criado_em`, [l.id])).rows;
       l.pode = (await db.query(
         "select pode($1, 'financeiro.lancar') as lancar, pode($1, 'financeiro.excluir') as excluir", [l.loja_id])).rows[0];
+      // vendas do lançamento (a da própria venda ou as da fatura do Faturar cliente), para abrir na tela Vendas
+      l.vendas = (await db.query(
+        `select v.id, v.numero from vendas v
+          where v.id = $2 or v.id in (select venda_id from lancamento_vendas where lancamento_id = $1) order by v.numero`, [l.id, l.venda_id])).rows;
       l.arquivos = (await db.query(
         `select a.id, a.nome, a.nome_arquivo, a.mime, a.tamanho, a.criado_em, u.nome as enviado_por
            from lancamento_arquivos a left join usuarios u on u.id = a.enviado_por
@@ -215,7 +219,9 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
         [UUID.test(b.centro_custo_id) ? b.centro_custo_id : null, empresa])).rows[0]?.id;
       if (!centro) throw new Recusa(400, 'Centro de custo não encontrado.');
     }
-    return { descricao, vencimento, competencia, categoria: cat.id, centro, documento: texto(b.documento, 60), observacoes: texto(b.observacoes, 1000) };
+    const forma = FORMAS.includes(b.forma_pagamento) ? b.forma_pagamento : null;
+    const cv = forma === 'cartao_credito' || forma === 'cartao_debito' ? texto(b.cv, 40) : null;
+    return { descricao, vencimento, competencia, categoria: cat.id, centro, documento: texto(b.documento, 60), observacoes: texto(b.observacoes, 1000), forma, cv };
   }
 
   app.post('/api/financeiro/lancamentos', exigeLogin, comRecusa(async (req, res) => {
@@ -259,12 +265,14 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
       const valor = dinheiro(b.valor);
       if (!(valor > 0)) throw new Recusa(400, 'Informe o valor.');
       if (valor < l.valor_pago) throw new Recusa(400, 'O valor não pode ser menor que o já pago.');
+      // venda: "faturado" é do Faturar cliente (cobraria duas vezes)
+      if (l.origem === 'venda' && c.forma === 'faturado') throw new Recusa(400, 'Venda faturada vai pelo Relatórios > Faturar cliente. Escolha outra forma.');
       await db.query(
         `update lancamentos set descricao = $2, vencimento = $3, competencia = $4, categoria_id = $5, centro_custo_id = $6,
-                documento = $7, observacoes = $8, valor = $9,
+                documento = $7, observacoes = $8, valor = $9, forma_pagamento = coalesce($10, forma_pagamento), cv = $11,
                 status = case when valor_pago >= $9 then 'pago' when valor_pago > 0 then 'pago_parcial' else 'em_aberto' end::status_lancamento
           where id = $1`,
-        [l.id, c.descricao, c.vencimento, c.competencia, c.categoria, c.centro, c.documento, c.observacoes, valor]);
+        [l.id, c.descricao, c.vencimento, c.competencia, c.categoria, c.centro, c.documento, c.observacoes, valor, c.forma, c.forma ? c.cv : l.cv]);
     });
     res.json({ ok: true });
   }));
@@ -290,7 +298,10 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
       await db.query(
         `insert into lancamento_baixas (lancamento_id, data, valor, juros, multa, desconto, forma_pagamento, conta_id, criado_por)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [l.id, data, valor, ...extras, b.forma_pagamento, conta.id, req.usuarioId]);
-      await db.query('update lancamentos set forma_pagamento = $2, conta_id = $3 where id = $1', [l.id, b.forma_pagamento, conta.id]);
+      if (l.origem === 'venda' && b.forma_pagamento === 'faturado') throw new Recusa(400, 'Venda faturada vai pelo Relatórios > Faturar cliente. Escolha outra forma.');
+      const cartao = ['cartao_credito', 'cartao_debito'].includes(b.forma_pagamento);
+      await db.query('update lancamentos set forma_pagamento = $2, conta_id = $3, cv = $4 where id = $1',
+        [l.id, b.forma_pagamento, conta.id, cartao ? (texto(b.cv, 40) || l.cv) : null]);
     });
     res.json({ ok: true });
   }));

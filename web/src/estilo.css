@@ -1056,3 +1056,5 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .envio-whatsapp-docs .aviso-ok { margin: 0; padding: 4px 8px; }
 .lista-arquivos li input[type=checkbox] { width: 16px; height: 16px; flex: none; margin: 0; }
 a.botao-whatsapp { text-decoration: none; }
+.links-venda { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--cinza, #64748b); font-size: 14px; }
+.links-venda .botao-texto { font-weight: 700; padding: 0; }
