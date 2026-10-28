@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, grupoEscolhido, sessao } from './api.js';
 import { criarTem } from './modulos.js';
-import { mascaraTelefone } from './documentos.js';
+import { formatarDoc as formatarDocumento, mascaraTelefone } from './documentos.js';
 import { EditorCliente } from './Clientes.jsx';
 import { CamposEndereco, mascaraCep } from './Grupos.jsx';
 import { Fluxograma, MODELOS } from './Fluxograma.jsx';
@@ -31,11 +31,11 @@ const quando = (iso) => {
 };
 const STATUS = { simulada: 'modo teste', enviada: 'enviada', entregue: 'entregue', lida: 'lida', falhou: 'não enviada' };
 
-export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar }) {
+export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar, contatoInicial }) {
   const [aba, setAba] = useState('chamados');
   const [situacao, setSituacao] = useState(null);
   const [erro, setErro] = useState('');
-  const [aberto, setAberto] = useState(null);      // contato da conversa aberta (no quadro)
+  const [aberto, setAberto] = useState(contatoInicial || null); // contato da conversa aberta (no quadro)
   const [janela, setJanela] = useState(null);      // 'chamado' | 'simular' | 'configurar'
   const [recarga, setRecarga] = useState(0);
   const recarregar = () => setRecarga((n) => n + 1);
@@ -460,12 +460,43 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
 function NovoChamado({ aoFechar, aoCriar }) {
   const [f, setF] = useState({ telefone: '', nome: '', titulo: '' });
   const [erro, setErro] = useState('');
+  // pesquisa no cadastro de clientes pelo nome ou pelo telefone, para ver se o cliente já existe
+  const [busca, setBusca] = useState('');
+  const [achados, setAchados] = useState(null);
+  const [escolhido, setEscolhido] = useState(null);
+  useEffect(() => {
+    const t = busca.trim();
+    if (t.replace(/\D/g, '').length < 4 && t.length < 3) { setAchados(null); return undefined; }
+    const timer = setTimeout(() => api(`/clientes?busca=${encodeURIComponent(t)}`)
+      .then((l) => setAchados(l.filter((c) => c.tipo !== 'avulso' && c.tipo !== 'grupo').slice(0, 8))).catch(() => setAchados([])), 300);
+    return () => clearTimeout(timer);
+  }, [busca]);
+  const usar = (c) => {
+    setEscolhido(c); setAchados(null); setBusca('');
+    setF({ ...f, nome: c.nome, telefone: (c.whatsapp || c.telefone) ? mascaraTelefone(String(c.whatsapp || c.telefone).replace(/^55(?=\d{10,11}$)/, '')) : f.telefone });
+  };
   return (
     <Janela titulo="Novo chamado" aoFechar={aoFechar}>
       <form className="formulario" onSubmit={async (e) => {
         e.preventDefault(); setErro('');
         try { await api('/whatsapp/chamados', { metodo: 'POST', corpo: f }); aoCriar(); } catch (falha) { setErro(falha.message); }
       }}>
+        <label>Pesquisar cliente cadastrado
+          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome ou telefone" />
+        </label>
+        {achados && (achados.length ? (
+          <ul className="busca-chamado">
+            {achados.map((c) => (
+              <li key={c.id}>
+                <button type="button" onClick={() => usar(c)}>
+                  <strong>{c.nome}</strong>
+                  <small className="cinza">{[c.cpf_cnpj && formatarDocumento(c.cpf_cnpj), (c.whatsapp || c.telefone) ? telefoneBR(c.whatsapp || c.telefone) : 'sem telefone', c.cidade].filter(Boolean).join(' · ')}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="selo-sem-cadastro">CLIENTE NÃO CADASTRADO com esse nome ou telefone</p>)}
+        {escolhido && <p className="selo-cliente">Cliente cadastrado: {escolhido.nome}</p>}
         <label>WhatsApp do cliente<input value={f.telefone} inputMode="tel" required placeholder="(11) 99999-9999" onChange={(e) => setF({ ...f, telefone: mascaraTelefone(e.target.value) })} /></label>
         <label>Nome<input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} placeholder="Opcional" /></label>
         <label>Assunto<input value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} placeholder="Ex.: ORÇAMENTO CAUTELAR" /></label>

@@ -1046,3 +1046,8 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .conversa-agendar { display: inline-flex; align-items: center; gap: 6px; }
 .sit-agenda.ag-confirmado { border-color: #16a34a; color: #166534; font-weight: 600; }
 .sit-agenda.ag-agendado { border-color: #ca8a04; color: #854d0e; font-weight: 600; }
+.botao-whatsapp { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #16a34a; border-radius: 8px; background: #f0fdf4; color: #15803d; font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.botao-whatsapp:hover { background: #16a34a; color: #fff; }
+.busca-chamado { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow: auto; }
+.busca-chamado button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 8px; background: #fff; font: inherit; cursor: pointer; }
+.busca-chamado button:hover { border-color: var(--primaria, #0b6fb6); }

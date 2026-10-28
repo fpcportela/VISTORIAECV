@@ -595,6 +595,25 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
   }));
 
   // Chamado novo pelo atendente (ex.: cliente ligou ou veio na loja)
+  // Abre a conversa com um celular (botão WhatsApp do cliente, do fornecedor ou da venda)
+  app.post('/api/whatsapp/abrir', exigeLogin, comRecusa(async (req, res) => {
+    const tel = internacional(req.body?.telefone);
+    if (tel.length < 12) throw new Recusa(400, 'Este cadastro não tem WhatsApp com DDD.');
+    const id = await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = UUID.test(req.body?.loja_id || '')
+        ? (await db.query("select empresa_id from lojas where id = $1 and pode(id, 'whatsapp.ver')", [req.body.loja_id])).rows[0]?.empresa_id
+        : await grupoDoWhatsApp(db, 'whatsapp.ver');
+      if (!empresa) throw new Recusa(403, 'Seu perfil não tem acesso ao WhatsApp desta unidade.');
+      return (await db.query(
+        `insert into whatsapp_contatos (empresa_id, telefone, nome, cliente_id) values ($1, $2, $3, $4)
+         on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome),
+                                                         cliente_id = coalesce(whatsapp_contatos.cliente_id, excluded.cliente_id)
+         returning id`,
+        [empresa, tel, texto(req.body?.nome, 80)?.toUpperCase() || null, UUID.test(req.body?.cliente_id || '') ? req.body.cliente_id : null])).rows[0].id;
+    });
+    res.json({ contato_id: id });
+  }));
+
   app.post('/api/whatsapp/chamados', exigeLogin, comRecusa(async (req, res) => {
     const tel = internacional(req.body?.telefone);
     if (tel.length < 12) throw new Recusa(400, 'Informe o celular com DDD.');

@@ -3,6 +3,7 @@ import { semAcento } from './entrada.js';
 import { api, moeda } from './api.js';
 import { criarTem } from './modulos.js';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
+import { BotaoWhatsApp } from './botaoWhatsApp.jsx';
 
 // Cadastro de clientes: pessoa física, empresa e grupo de empresas (vários CNPJs).
 
@@ -220,6 +221,7 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
             <label>WhatsApp<input value={c.whatsapp} inputMode="tel" onChange={(e) => setC({ ...c, whatsapp: mascaraTelefone(e.target.value) })} /></label>
             <label>Telefone<input value={c.telefone} inputMode="tel" onChange={(e) => setC({ ...c, telefone: mascaraTelefone(e.target.value) })} /></label>
           </div>
+          {id && <div><BotaoWhatsApp telefone={c.whatsapp || c.telefone} nome={c.nome} clienteId={id} loja={loja} rotulo="Abrir conversa no WhatsApp" /></div>}
           <label>E-mail<input type="email" value={c.email} onChange={muda('email')} placeholder="Opcional" /></label>
           {c.tipo !== 'grupo' && (
             <>

@@ -4,6 +4,7 @@ import { api, moeda } from './api.js';
 import { criarTem } from './modulos.js';
 import { CampoData } from './Data.jsx';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
+import { BotaoWhatsApp } from './botaoWhatsApp.jsx';
 
 // Royalties: fornecedores (cada um com o valor que recebe por serviço vendido) e o
 // relatório que soma os serviços das vendas finalizadas no período e gera a conta a pagar.
@@ -458,6 +459,7 @@ function EditorFornecedor({ id, lojas, lojaInicial, aoFechar }) {
             <label>WhatsApp<input value={c.whatsapp} inputMode="tel" onChange={(e) => setC({ ...c, whatsapp: mascaraTelefone(e.target.value) })} /></label>
             <label>Telefone<input value={c.telefone} inputMode="tel" onChange={(e) => setC({ ...c, telefone: mascaraTelefone(e.target.value) })} /></label>
           </div>
+          {id && <div><BotaoWhatsApp telefone={c.whatsapp || c.telefone} nome={c.nome_fantasia || c.nome} loja={loja} rotulo="Abrir conversa no WhatsApp" /></div>}
           <label>E-mail<input type="email" value={c.email} onChange={muda('email')} placeholder="Opcional" /></label>
           <div className="linha-campos cep">
             <label>CEP<input value={c.cep} inputMode="numeric" placeholder="00000-000" onChange={(e) => mudarCep(e.target.value)} /></label>

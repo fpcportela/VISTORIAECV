@@ -21,10 +21,12 @@ import Agenda from './Agenda.jsx';
 import Royalties from './Royalties.jsx';
 import { Placa, PlacasDiversas } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
+import { AbrirWhatsApp } from './botaoWhatsApp.jsx';
 
 export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [loja, setLoja] = useState('');
   const [tela, setTela] = useState('inicio');
+  const [whatsAbre, setWhatsAbre] = useState({ chave: 0 }); // botão WhatsApp dos cadastros: abre a conversa
   const [agendaAbre, setAgendaAbre] = useState({ chave: 0 }); // o WhatsApp abre a agenda no dia do agendamento
   const [financeiroAbre, setFinanceiroAbre] = useState({ aba: 'receber', novo: false, chave: 0 });
   const [dados, setDados] = useState(null);
@@ -88,6 +90,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
       setTela(id); setVistoriaId(null); setBuscaVendas(''); setSituacaoVendas('');
       if (id === 'vendas') setAbaVenda('lista');
       if (id === 'agenda') setAgendaAbre((a) => ({ chave: a.chave + 1 }));
+      if (id === 'whatsapp') setWhatsAbre((w) => ({ chave: w.chave + 1 }));
       if (id === 'financeiro') setFinanceiroAbre((f) => ({ aba: 'receber', novo: false, chave: f.chave + 1 }));
     }
     else if (id === 'busca') setConsulta('');
@@ -319,7 +322,15 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     </>
   );
 
+  const temWhatsApp = modulos.some((m) => m.id === 'whatsapp');
+  const abrirWhatsApp = temWhatsApp ? async (dados) => {
+    const r = await api('/whatsapp/abrir', { metodo: 'POST', corpo: dados });
+    setWhatsAbre((w) => ({ chave: w.chave + 1, contato: r.contato_id }));
+    setMenuAberto(false); setTela('whatsapp');
+  } : null;
+
   return (
+    <AbrirWhatsApp.Provider value={abrirWhatsApp}>
     <div className="app">
       {/* ---------- Topo (computador) ---------- */}
       <header className="topo so-computador">
@@ -402,7 +413,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'clientes' ? <Clientes perfil={perfil} loja={loja} />
             : tela === 'royalties' ? <Royalties perfil={perfil} loja={loja} />
             : tela === 'agenda' ? <Agenda key={agendaAbre.chave} diaInicial={agendaAbre.dia} lojaInicial={agendaAbre.loja} agendarPara={agendaAbre.agendarPara} perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
-            : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} aoVenda={abrirVenda}
+            : tela === 'whatsapp' ? <WhatsApp key={whatsAbre.chave} contatoInicial={whatsAbre.contato} perfil={perfil} loja={loja} aoVenda={abrirVenda}
                 aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined}
                 aoAgendar={tem('agenda.gerenciar') ? (dados) => { setAgendaAbre((a) => ({ chave: a.chave + 1, agendarPara: dados })); setTela('agenda'); } : undefined} />
             : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo} />
@@ -486,5 +497,6 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
       {aviso && <div className="aviso" role="status">{aviso}</div>}
     </div>
+    </AbrirWhatsApp.Provider>
   );
 }

@@ -8,6 +8,7 @@ import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { formatarDoc, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
 import { EditorCliente } from './Clientes.jsx';
+import { BotaoWhatsApp } from './botaoWhatsApp.jsx';
 
 const SITUACAO_AG = { agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado' };
 
@@ -540,6 +541,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
             <span><small className="cinza">{String(cliente.cpf_cnpj || '').replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'}</small><strong>{cliente.cpf_cnpj ? formatarDoc(cliente.cpf_cnpj) : 'NÃO INFORMADO'}</strong></span>
             {cliente.grupo_nome && <span><small className="cinza">Grupo</small><strong>{cliente.grupo_nome}</strong></span>}
             {cliente.whatsapp && <span><small className="cinza">WhatsApp</small><strong>{mascaraTelefone(cliente.whatsapp)}</strong></span>}
+            {(cliente.whatsapp || cliente.telefone) && <span><BotaoWhatsApp telefone={cliente.whatsapp || cliente.telefone} nome={cliente.nome} clienteId={cliente.id} loja={loja} /></span>}
           </div>
         )}
         {modoCliente === 'buscar' && (
