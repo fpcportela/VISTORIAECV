@@ -1000,3 +1000,20 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .horario-dia { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .horario-dia .linha-check { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 120px; font-weight: 600; }
 .horario-dia .campo-hora { width: 80px; }
+/* fluxograma do robô */
+.fx-quadro { overflow: auto; border: 1px solid var(--borda); border-radius: 10px; background: repeating-linear-gradient(0deg, transparent 0 23px, rgba(148,163,184,.12) 23px 24px), var(--fundo, #f8fafc); max-height: 640px; }
+.fx-area { position: relative; margin: 0 auto; }
+.fx-setas { position: absolute; inset: 0; color: #94a3b8; pointer-events: none; }
+.fx-rotulo { font-size: 11px; fill: #475569; paint-order: stroke; stroke: #f8fafc; stroke-width: 4px; }
+.fx-no { position: absolute; display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 10px; border: 2px solid; border-radius: 10px; background: #fff; font: inherit; overflow: hidden; box-shadow: 0 1px 3px rgba(15,23,42,.08); }
+button.fx-no { cursor: pointer; }
+button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
+.fx-no strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-no small { font-size: 11px; color: var(--cinza); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-tipo { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--cinza); }
+.fx-saida { border-style: dashed; background: transparent; }
+.fx-solto { border-style: dashed; opacity: .75; }
+.robo-modelos { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.robo-modelos label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 14px; flex: 1 1 280px; }
+.robo-modelos small { flex: 1 1 100%; }
+.robo-bloco.destacado { outline: 3px solid var(--forte); outline-offset: 2px; }

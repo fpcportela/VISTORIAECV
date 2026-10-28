@@ -1,7 +1,7 @@
 import { comoUsuario } from './db.js';
 import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './comum.js';
 import { normalizarPlaca } from './placas.js';
-import { enviarTexto, internacional } from './whatsapp.js';
+import { enviarOpcoes, internacional } from './whatsapp.js';
 import { textoConfirmacao } from './agendaTexto.js';
 
 // Agenda de vistorias por loja: horários de atendimento, bloqueios e agendamentos.
@@ -91,7 +91,9 @@ async function mandarConfirmacao(usuarioId, agendamentoId) {
   const para = internacional(a.telefone);
   const corpo = textoConfirmacao(a, a.loja);
   let envio, falha = null;
-  try { envio = await enviarTexto(a.phone_number_id, para, corpo); } catch (e) { falha = e; }
+  // SIM / NÃO como botões de ação (onde o WhatsApp mostra); o texto já pede para responder SIM ou NÃO
+  const pergunta = corpo.replace(/\n\nConfirma o agendamento\? Responda SIM ou NÃO\.$/, '\n\nConfirma o agendamento?');
+  try { envio = await enviarOpcoes(a.phone_number_id, para, corpo, pergunta, [{ titulo: 'SIM' }, { titulo: 'NÃO' }]); } catch (e) { falha = e; }
   await comoUsuario(usuarioId, async (db) => {
     const contato = (await db.query(
       `insert into whatsapp_contatos (empresa_id, telefone, nome) values ($1, $2, $3)

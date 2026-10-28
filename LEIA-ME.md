@@ -49,6 +49,16 @@ WhatsApp**: escolha em qual coluna dos chamados fica o atendimento (se o contato
 aberto, ele muda para essa coluna) e se manda a confirmação pelo WhatsApp. A confirmação fica na
 conversa do chamado.
 
+O **Fluxo de atendimento** do robô aparece como **fluxograma** (blocos e setas a partir das boas-vindas;
+clique num bloco para editá-lo na lista logo abaixo; setas tracejadas voltam para um bloco anterior).
+**Começar de um modelo pronto** troca o fluxo por um modelo: Agendamento de vistoria (menu com botões),
+Atendimento com IA, Menu com botões + IA para dúvidas, Orçamento rápido e Triagem para o atendente
+(só muda de verdade ao Salvar). **Opções como botões de ação** manda menus, unidades, tipo de veículo,
+serviço, horários e o SIM / NÃO da confirmação como botões (até 3) ou lista "Ver opções" (até 10).
+Com a API oficial do WhatsApp os botões aparecem sempre; pelo QR code (Evolution) o WhatsApp comum
+costuma esconder botões, então lá eles só são tentados com `EVOLUTION_BOTOES=1` no `api/.env`.
+Onde não der, as opções vão numeradas em texto e o cliente responde com o número.
+
 Nas configurações do robô (WhatsApp > Robô de atendimento), **Endereço e horário de funcionamento**
 tem, para cada unidade, o endereço (com busca pelo CEP) e o horário de cada dia da semana. O horário é
 o mesmo da Agenda (botão Horários). O robô mostra endereço e horário ao perguntar a unidade, a IA usa

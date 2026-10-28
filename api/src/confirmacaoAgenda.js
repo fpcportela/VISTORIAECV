@@ -76,7 +76,8 @@ export async function responderConfirmacao(contatoId, { enviarTexto }) {
   const p = await comoUsuario(null, async (db) => (await db.query('select app_agenda_confirmacao_pendente($1) as p', [contatoId])).rows[0].p);
   if (!p || !p.phone_number_id) return false;
   const a = p.ag;
-  const s = semAcento(p.ultima).replace(/[.!,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  // resposta pelo botão vem como "1. SIM" / "2. NÃO"
+  const s = semAcento(p.ultima).replace(/^\d{1,2}\s*[.)–-]\s+/, '').replace(/[.!,]+/g, ' ').replace(/\s+/g, ' ').trim();
   const dados = a.confirmacao_dados || {};
 
   const falar = async (texto) => {

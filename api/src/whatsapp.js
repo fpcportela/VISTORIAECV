@@ -137,6 +137,41 @@ export async function enviarTexto(phoneNumberId, para, corpo) {
   return { id_externo: id, status: 'enviada' };
 }
 
+// Mensagem com opções de resposta (botões de ação). corpo = texto completo com as opções numeradas
+// (é o que vai quando não dá para mandar botões e o que fica na conversa); pergunta = só a pergunta.
+// opcoes = [{ titulo, descricao? }]. A resposta volta como o título do botão, ou "1. Título" na lista (ver normalizarResposta no robô).
+//   API oficial: até 3 opções viram botões; até 10, uma lista ("Ver opções"); mais que isso vai em texto.
+//   Evolution (QR code): o WhatsApp comum costuma esconder botões, então só tenta com EVOLUTION_BOTOES=1.
+const corta = (t, n) => (String(t).length > n ? `${String(t).slice(0, n - 1)}…` : String(t));
+export async function enviarOpcoes(phoneNumberId, para, corpo, pergunta, opcoes) {
+  const ok = Array.isArray(opcoes) && opcoes.length > 0 && opcoes.length <= 10;
+  const titulo = (o, i, n) => corta(`${i + 1}. ${o.titulo}`, n);
+  try {
+    if (ok && provedor() === 'meta') {
+      const interactive = opcoes.length <= 3
+        ? { type: 'button', body: { text: corta(pergunta, 1024) },
+          action: { buttons: opcoes.map((o, i) => ({ type: 'reply', reply: { id: `op${i + 1}`, title: corta(o.titulo, 20) } })) } }
+        : { type: 'list', body: { text: corta(pergunta, 1024) },
+          action: { button: 'Ver opções', sections: [{ title: 'Opções', rows: opcoes.map((o, i) => {
+            const t = titulo(o, i, 24), descricao = o.descricao || (t.endsWith('…') ? o.titulo : '');
+            return { id: `op${i + 1}`, title: t, ...(descricao && { description: corta(descricao, 72) }) };
+          }) }] } };
+      const id = await chamarMeta(phoneNumberId, { to: para, type: 'interactive', interactive });
+      return { id_externo: id, status: 'enviada' };
+    }
+    if (ok && provedor() === 'evolution' && process.env.EVOLUTION_BOTOES === '1') {
+      return opcoes.length <= 3
+        ? await enviarEvolution(phoneNumberId, 'sendButtons', { number: para, title: '', description: pergunta, footer: '',
+          buttons: opcoes.map((o, i) => ({ type: 'reply', displayText: corta(o.titulo, 20), id: `op${i + 1}` })) })
+        : await enviarEvolution(phoneNumberId, 'sendList', { number: para, title: '', description: pergunta, buttonText: 'Ver opções', footerText: '',
+          sections: [{ title: 'Opções', rows: opcoes.map((o, i) => ({ title: titulo(o, i, 24), description: o.descricao ? corta(o.descricao, 72) : '', rowId: `op${i + 1}` })) }] });
+    }
+  } catch (e) {
+    console.error('[WhatsApp] botões não foram, vai em texto:', e.message);
+  }
+  return enviarTexto(phoneNumberId, para, corpo);
+}
+
 // Documento (PDF) por modelo aprovado: serve para mandar a quem não falou com a loja nas últimas
 // 24 horas (ex.: comprovante do ponto). O modelo precisa ter cabeçalho de DOCUMENTO e o corpo com
 // {{1}} = nome e {{2}} = data. Devolve { id_externo, status }.
@@ -298,7 +333,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     });
     res.sendStatus(200);
     // o robô responde depois (a Meta quer o 200 rápido)
-    for (const c of recebidos) atenderComRobo(c, { enviarTexto, nacional });
+    for (const c of recebidos) atenderComRobo(c, { enviarTexto, enviarOpcoes, nacional });
   }));
 
   // ------------------------------------------------------------ webhook da Evolution (sem login)
@@ -340,7 +375,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       }
     });
     res.sendStatus(200);
-    for (const c of recebidos) atenderComRobo(c, { enviarTexto, nacional });
+    for (const c of recebidos) atenderComRobo(c, { enviarTexto, enviarOpcoes, nacional });
   }));
 
   // ------------------------------------------------------------ ligar o celular por QR code (Evolution)
@@ -456,7 +491,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       return (await db.query('select app_whatsapp_receber($1, $2, $3, $4, null, now()) as id',
         [phoneId, tel, texto(req.body?.nome, 80)?.toUpperCase() || null, corpo])).rows[0].id;
     });
-    await atenderComRobo(contato, { enviarTexto, nacional });
+    await atenderComRobo(contato, { enviarTexto, enviarOpcoes, nacional });
     res.json({ contato_id: contato });
   }));
 
@@ -664,13 +699,14 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       }
       await db.query(
         `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, fluxo,
-                                    responsavel_id, responsaveis, atualizado_em)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+                                    responsavel_id, responsaveis, botoes, atualizado_em)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
          on conflict (empresa_id) do update set ativo = $2, saudacao = $3, etapas = $4, mensagem_final = $5, loja_id = $6,
                 servico_id = $7, ia_ativa = $8, ia_instrucoes = $9, fluxo = coalesce($10, whatsapp_robo.fluxo),
-                responsavel_id = $11, responsaveis = $12, atualizado_em = now()`,
+                responsavel_id = $11, responsaveis = $12, botoes = $13, atualizado_em = now()`,
         [empresa, Boolean(b.ativo), texto(b.saudacao, 1000), JSON.stringify(etapas), texto(b.mensagem_final, 1000),
-         loja, servico, usaIA && ia, texto(b.ia_instrucoes, 30000), fluxo && JSON.stringify(fluxo), responsavel, JSON.stringify(responsaveis)]);
+         loja, servico, usaIA && ia, texto(b.ia_instrucoes, 30000), fluxo && JSON.stringify(fluxo), responsavel, JSON.stringify(responsaveis),
+         b.botoes !== false]);
     });
     res.json({ ok: true });
   }));
@@ -802,7 +838,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const estado = req.body?.acao === 'devolver' ? 'coletando' : 'humano';
       await db.query('update whatsapp_chamados set robo_estado = $2, atualizado_em = now() where id = $1', [ch.id, estado]);
       return ch.contato_id;
-    }).then((contato) => req.body?.acao === 'devolver' && atenderComRobo(contato, { enviarTexto, nacional, retomar: true }));
+    }).then((contato) => req.body?.acao === 'devolver' && atenderComRobo(contato, { enviarTexto, enviarOpcoes, nacional, retomar: true }));
     res.json({ ok: true });
   }));
 

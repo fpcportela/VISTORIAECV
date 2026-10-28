@@ -4,6 +4,7 @@ import { criarTem } from './modulos.js';
 import { mascaraTelefone } from './documentos.js';
 import { EditorCliente } from './Clientes.jsx';
 import { CamposEndereco, mascaraCep } from './Grupos.jsx';
+import { Fluxograma, MODELOS } from './Fluxograma.jsx';
 
 // Módulo WhatsApp: chamados em kanban (colunas do grupo) e as conversas.
 // Um chamado é aberto sozinho quando um contato manda mensagem e não tem chamado aberto.
@@ -568,7 +569,7 @@ const blocoVazio = (tipo) => ({
 });
 const DICA_BLOCO = {
   mensagem: 'Manda o texto e segue sem esperar resposta.',
-  menu: 'Manda a pergunta com as opções numeradas; cada opção leva para um bloco.',
+  menu: 'Manda a pergunta com as opções como botões de ação (ou numeradas); cada opção leva para um bloco.',
   pergunta: 'Pergunta um dado do cliente e confere a resposta.',
   ia: 'A IA conversa usando o prompt e a base de conhecimento. Com dados marcados, ela junta esses dados; sem nenhum, só tira as dúvidas. Quando termina, segue o fluxo.',
   venda: 'Abre a venda AGENDADO com os dados juntados e manda a mensagem final. Termina o robô.',
@@ -623,6 +624,8 @@ function Robo() {
   const [ok, setOk] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [novoTipo, setNovoTipo] = useState('mensagem');
+  const [destaque, setDestaque] = useState(null); // bloco clicado no fluxograma
+  const [modelo, setModelo] = useState('');
   const promptArquivo = useRef(null);
 
   const carregar = () => api('/whatsapp/robo').then((r) => {
@@ -732,10 +735,38 @@ function Robo() {
         </label>
 
         <h3>Fluxo de atendimento</h3>
-        <p className="cinza ajuda">O robô começa no bloco 1 e segue a seta de cada bloco. Use {'{nome}'} para o primeiro nome, {'{numero}'} para o nº da venda, {'{placa}'} e {'{horario}'}.</p>
+        <label className="linha-check robo-ligar">
+          <input type="checkbox" checked={f.botoes !== false} onChange={(e) => mudar({ botoes: e.target.checked })} />
+          <span><strong>Opções como botões de ação</strong><br /><small className="cinza">
+            Menus, unidades, tipo de veículo, serviço, horários e o SIM / NÃO da confirmação vão como botões (até 3) ou lista "Ver opções" (até 10)
+            para o cliente tocar. Com a API oficial do WhatsApp os botões aparecem sempre; pelo QR code o WhatsApp costuma esconder botões, então
+            lá eles só são usados com EVOLUTION_BOTOES=1 no servidor. Onde não der, vai em texto numerado e o cliente responde com o número.</small></span>
+        </label>
+        <div className="robo-modelos">
+          <label>Começar de um modelo pronto
+            <select value={modelo} onChange={(e) => setModelo(e.target.value)}>
+              <option value="">Escolha um modelo…</option>
+              {MODELOS.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          </label>
+          {modelo && (
+            <>
+              <small className="cinza">{MODELOS.find((m) => m.id === modelo).descricao}</small>
+              <button type="button" className="botao-contorno" onClick={() => {
+                if (!window.confirm('Trocar o fluxo atual por este modelo? O fluxo só muda de verdade quando você clicar em Salvar.')) return;
+                mudar({ fluxo: MODELOS.find((m) => m.id === modelo).fluxo() }); setModelo('');
+              }}>Usar este modelo</button>
+            </>
+          )}
+        </div>
+        <p className="cinza ajuda">O robô começa no bloco 1 e segue as setas. Clique num bloco do fluxograma para editar. Use {'{nome}'} para o primeiro nome, {'{numero}'} para o nº da venda, {'{placa}'} e {'{horario}'}.</p>
+        <Fluxograma fluxo={f.fluxo} unidades={f.unidades.length} aoAbrir={(id) => {
+          setDestaque(id);
+          document.getElementById(`bloco-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }} />
         <ol className="robo-fluxo">
           {f.fluxo.map((b, n) => (
-            <li key={b.id} className={`robo-bloco bloco-${b.tipo}`}>
+            <li key={b.id} id={`bloco-${b.id}`} className={`robo-bloco bloco-${b.tipo}${destaque === b.id ? ' destacado' : ''}`}>
               <div className="robo-bloco-topo">
                 <span className="robo-bloco-num">{n + 1}</span>
                 <select value={b.tipo} aria-label={`Tipo do bloco ${n + 1}`} onChange={(e) => mudarBloco(n, { ...blocoVazio(e.target.value), id: b.id, nome: b.nome, texto: b.texto, ir: b.ir })}>

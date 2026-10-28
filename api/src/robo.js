@@ -40,12 +40,13 @@ export const ROBO_PADRAO = {
   ia_ativa: false,
   ia_instrucoes: '',
   fluxo: null,
+  botoes: true,
 };
 
 // ------------------------------------------------------------------ fluxo em blocos
 export const BLOCOS = {
   mensagem: 'Mensagem',
-  menu: 'Menu de opções',
+  menu: 'Menu com botões',
   pergunta: 'Pergunta',
   ia: 'Conversa com IA',
   venda: 'Abrir venda',
@@ -355,7 +356,14 @@ const textoUnidades = (lojas) => `Em qual unidade você deseja atendimento?\n${l
 const juntar = (falas) => falas.filter(Boolean).join('\n\n');
 const textoMenu = (b) => `${b.texto}\n${b.opcoes.map((o, i) => `${i + 1} - ${o.rotulo}`).join('\n')}`;
 
-async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
+// Resposta vinda de um botão ou da lista ("2. Agendar vistoria") vale como o número da opção
+export function normalizarResposta(texto) {
+  const t = String(texto || '');
+  if (/OUTROS HORARIOS/.test(semAcento(t))) return 'MAIS';
+  return t.replace(/^\s*(\d{1,2})\s*[.)–-]\s+[\s\S]*$/, '$1');
+}
+
+async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar = false }) {
   const ctx = await comoUsuario(null, async (db) => (await db.query('select app_robo_contexto($1) as c', [contatoId])).rows[0].c);
   if (!ctx) return; // robô desligado ou sem chamado aberto
   const ch = ctx.chamado;
@@ -364,12 +372,18 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   const iaPode = ctx.ia_liberada && iaConfigurada();
   const dados = { ...(ch.robo_dados || {}) };
   const lojas = ctx.lojas || [];
-  const ultima = ctx.mensagens.filter((m) => m.direcao === 'entrada').at(-1)?.texto || '';
+  const ultima = normalizarResposta(ctx.mensagens.filter((m) => m.direcao === 'entrada').at(-1)?.texto || '');
 
-  const falar = async (texto) => {
+  // botoes: { pergunta, opcoes: [{ titulo, descricao }] } manda as opções como botões de ação
+  // (se o robô estiver com os botões ligados); o texto completo, numerado, fica na conversa
+  const falar = async (texto, botoes = null) => {
     if (!texto) return;
     let envio = null, falha = null;
-    try { envio = await enviarTexto(ctx.phone_number_id, ctx.contato.telefone, texto); } catch (e) { falha = e; }
+    try {
+      envio = botoes && ctx.robo.botoes !== false && enviarOpcoes
+        ? await enviarOpcoes(ctx.phone_number_id, ctx.contato.telefone, texto, botoes.pergunta, botoes.opcoes)
+        : await enviarTexto(ctx.phone_number_id, ctx.contato.telefone, texto);
+    } catch (e) { falha = e; }
     await comoUsuario(null, (db) => db.query('select app_robo_registrar($1, $2, $3, $4, $5)',
       [ch.id, texto, falha ? 'falhou' : envio.status, falha?.message || null, envio?.id_externo || null]));
   };
@@ -381,6 +395,22 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     await estado('humano', null, dados);
     await atribuir();
     await falar(juntar([...falas, msg || 'Certo! Um atendente vai continuar a conversa com você em instantes.']));
+  };
+  // opções de cada tipo de pergunta, para os botões
+  const comFalas = (falas, botoes) => botoes && { ...botoes, pergunta: juntar([...falas, botoes.pergunta]) };
+  const botoesMenu = (b) => ({ pergunta: formatar(b.texto, dados), opcoes: b.opcoes.map((o) => ({ titulo: o.rotulo })) });
+  const botoesUnidades = () => ({ pergunta: 'Em qual unidade você deseja atendimento?',
+    opcoes: lojas.map((l) => ({ titulo: l.nome, descricao: [enderecoLoja(l), textoHorarios(l.horarios)].filter(Boolean).join(' · ') })) });
+  const botoesPergunta = (b) => {
+    const p = b.texto || CAMPOS[b.campo];
+    if (b.campo === 'tipo_veiculo') return { pergunta: p, opcoes: TIPOS.map(([, rot]) => ({ titulo: rot })) };
+    if (b.campo === 'servico' && ctx.servicos.length) return { pergunta: p, opcoes: ctx.servicos.map((x) => ({ titulo: x.nome })) };
+    if (b.campo === 'horario' && dados.opcoes_horario?.length) {
+      // "qua., 28/10, 10:00" cabe no título da lista
+      const curto = (t) => new Date(t).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      return { pergunta: p, opcoes: [...dados.opcoes_horario.map((t) => ({ titulo: curto(t) })), { titulo: 'Ver outros horários' }] };
+    }
+    return null;
   };
   const posicao = (id) => fluxo.findIndex((b) => b.id === id);
   const depois = (n, ir) => (ir ? posicao(ir) : n + 1);
@@ -422,12 +452,12 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
       const b = fluxo[n];
       if (!b) return passarParaAtendente(null, falas); // fim do fluxo sem desfecho: uma pessoa continua
       if (b.tipo === 'mensagem') { falas.push(formatar(b.texto, dados)); n = depois(n, b.ir); continue; }
-      if (b.tipo === 'menu') { await estado('coletando', n, dados); return falar(juntar([...falas, formatar(textoMenu(b), dados)])); }
+      if (b.tipo === 'menu') { await estado('coletando', n, dados); return falar(juntar([...falas, formatar(textoMenu(b), dados)]), comFalas(falas, botoesMenu(b))); }
       if (b.tipo === 'pergunta') {
         // cliente já cadastrado: não pergunta de novo o que já está no cadastro
         if (DO_CADASTRO.includes(b.campo) && dados[b.campo]) { n = depois(n, b.ir); continue; }
         const q = await perguntar(b);
-        if (q) { await estado('coletando', n, dados); return falar(juntar([...falas, q])); }
+        if (q) { await estado('coletando', n, dados); return falar(juntar([...falas, q]), comFalas(falas, botoesPergunta(b))); }
         dados.sem_horario = true; n = depois(n, b.ir); continue;
       }
       if (b.tipo === 'ia') {
@@ -493,15 +523,15 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
   };
 
   // atendente devolveu a conversa para o robô: repete de onde parou
-  if (retomar && dados.escolhendo_loja) return falar(textoUnidades(lojas));
+  if (retomar && dados.escolhendo_loja) return falar(textoUnidades(lojas), botoesUnidades());
   if (retomar) {
     const n = ch.robo_etapa || 0;
     const b = fluxo[n];
-    if (b?.tipo === 'menu') return falar(textoMenu(b));
+    if (b?.tipo === 'menu') return falar(textoMenu(b), botoesMenu(b));
     if (b?.tipo === 'pergunta') {
       const q = await perguntar(b);
       if (b.campo === 'horario') await estado('coletando', null, dados); // guarda os horários oferecidos
-      if (q) await falar(q);
+      if (q) await falar(q, botoesPergunta(b));
     }
     return;
   }
@@ -520,7 +550,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     if (lojas.length > 1) {
       dados.escolhendo_loja = true;
       await estado('coletando', 0, dados);
-      return falar(juntar([ola, textoUnidades(lojas)]));
+      return falar(juntar([ola, textoUnidades(lojas)]), comFalas([ola], botoesUnidades()));
     }
     if (lojas[0]) dados.loja_id = lojas[0].id;
     await estado('coletando', 0, dados);
@@ -531,7 +561,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     const s = semAcento(ultima);
     const k = Number(s.replace(/\D/g, '') || NaN);
     const loja = (Number.isInteger(k) && lojas[k - 1]) || lojas.find((l) => s.length >= 3 && semAcento(l.nome).includes(s));
-    if (!loja) return falar(`Responda com o número da unidade.\n\n${textoUnidades(lojas)}`);
+    if (!loja) return falar(`Responda com o número da unidade.\n\n${textoUnidades(lojas)}`, comFalas(['Responda com o número da unidade.'], botoesUnidades()));
     delete dados.escolhendo_loja;
     dados.loja_id = loja.id; dados.loja_nome = loja.nome;
     return executar(0, [`Certo, unidade ${loja.nome}.`]);
@@ -548,7 +578,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     const k = Number(s.replace(/\D/g, '') || NaN);
     const opcao = (Number.isInteger(k) && b.opcoes[k - 1]) || b.opcoes.find((o) => semAcento(o.rotulo) === s)
       || b.opcoes.find((o) => s.length >= 3 && semAcento(o.rotulo).includes(s));
-    if (!opcao) return falar(`Responda com o número de uma das opções.\n\n${textoMenu(b)}`);
+    if (!opcao) return falar(`Responda com o número de uma das opções.\n\n${textoMenu(b)}`, comFalas(['Responda com o número de uma das opções.'], botoesMenu(b)));
     dados.extras = [...(dados.extras || []), { pergunta: b.texto, resposta: opcao.rotulo }];
     return executar(depois(n, opcao.ir));
   }
@@ -559,12 +589,12 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     if (['MAIS', 'OUTROS', 'OUTRO'].includes(semAcento(ultima))) {
       const q = await perguntar(b, opcoes.at(-1));
       await estado('coletando', n, dados);
-      return falar(q || `Não há mais horários livres depois desses.\n\n${await perguntar(b)}`);
+      return falar(q || `Não há mais horários livres depois desses.\n\n${await perguntar(b)}`, botoesPergunta(b));
     }
     const k = Number(semAcento(ultima));
     const escolhido = Number.isInteger(k) ? opcoes[k - 1] : null;
     if (!escolhido && !(!b.obrigatorio && PULAR.includes(semAcento(ultima)))) {
-      return falar(`Responda com o número do horário (ou MAIS para ver outros).\n\n${listaHorarios(opcoes)}`);
+      return falar(`Responda com o número do horário (ou MAIS para ver outros).\n\n${listaHorarios(opcoes)}`, botoesPergunta(b));
     }
     if (escolhido) {
       const id = await reservar(ch, escolhido, dados, ctx.contato);
@@ -579,7 +609,7 @@ async function atender(contatoId, { enviarTexto, nacional, retomar = false }) {
     // pulou
   } else {
     const c = conferir(b.campo, ultima, ctx.servicos);
-    if (c.erro) return falar(`${c.erro}\n\n${await perguntar(b)}`);
+    if (c.erro) { const q = await perguntar(b); return falar(`${c.erro}\n\n${q}`, comFalas([c.erro], botoesPergunta(b))); }
     if (b.campo === 'livre') dados.extras = [...(dados.extras || []), { pergunta: b.texto, resposta: c.valor }];
     else if (b.campo === 'servico') { dados.servico_id = c.valor; dados.servico_nome = c.nome; }
     else dados[b.campo] = c.valor;
