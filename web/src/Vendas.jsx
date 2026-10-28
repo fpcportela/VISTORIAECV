@@ -49,7 +49,7 @@ function RelatorioConsulta({ dados: d }) {
     </details>
   );
 }
-const pagamentoVazio = (valor = '') => ({ chave: ++chaves, data_pagamento: hoje(), forma: 'pix', valor, detalhe: '', cv: '', bandeira: '' });
+const pagamentoVazio = (valor = '') => ({ chave: ++chaves, data_pagamento: hoje(), forma: 'faturado', valor, detalhe: '', cv: '', bandeira: '' });
 
 // ---------------------------------------------------------------------------
 // Lista de vendas e orçamentos
