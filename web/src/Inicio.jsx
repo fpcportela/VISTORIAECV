@@ -28,7 +28,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [tela, setTela] = useState('inicio');
   const [whatsAbre, setWhatsAbre] = useState({ chave: 0 }); // botão WhatsApp dos cadastros: abre a conversa
   const [agendaAbre, setAgendaAbre] = useState({ chave: 0 }); // o WhatsApp abre a agenda no dia do agendamento
-  const [financeiroAbre, setFinanceiroAbre] = useState({ aba: 'receber', novo: false, chave: 0 });
+  const [financeiroAbre, setFinanceiroAbre] = useState({ aba: 'receber', novo: false, filtro: '', chave: 0 });
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [oculto, setOculto] = useState(false);
@@ -116,9 +116,10 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     setAbasVenda((abas) => [...abas, { chave, id: null, veiculo: veiculo?.placa ? veiculo : null, agendamento, placa: veiculo?.placa || agendamento?.placa || '' }]);
     setAbaVenda(chave);
   };
-  const abrirFinanceiro = (aba, novo = false) => {
+  // filtro: 'vencidos' ou 'hoje' (atalhos dos cartões A receber / A pagar do início)
+  const abrirFinanceiro = (aba, novo = false, filtro = '') => {
     setMenuAberto(false); setTela('financeiro');
-    setFinanceiroAbre((f) => ({ aba, novo, chave: f.chave + 1 }));
+    setFinanceiroAbre((f) => ({ aba, novo, filtro, chave: f.chave + 1 }));
   };
   // cartões de vendas em aberto: abre a lista já filtrada pela situação
   const verVendas = (situacao) => { setMenuAberto(false); setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(''); setSituacaoVendas(situacao); };
@@ -279,15 +280,17 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
                   {tem(permissao) && <button className="botao-contorno pequeno" onClick={titulo === 'A pagar' ? () => abrirFinanceiro('pagar', true) : novaVenda}>{acao}</button>}
                 </div>
                 <div className="duas-colunas">
-                  <div className="cartao valor">
+                  <button type="button" className="cartao valor cartao-atalho" disabled={!tem('financeiro.ver')} title="Ver os lançamentos vencidos"
+                    onClick={() => abrirFinanceiro(titulo === 'A pagar' ? 'pagar' : 'receber', false, 'vencidos')}>
                     <span className={classe}><small>R$ </small>{valor(c?.vencidos)}</span>
                     <strong>Vencidos</strong>
-                  </div>
-                  <div className="cartao valor">
+                  </button>
+                  <button type="button" className="cartao valor cartao-atalho" disabled={!tem('financeiro.ver')} title="Ver os lançamentos que vencem hoje"
+                    onClick={() => abrirFinanceiro(titulo === 'A pagar' ? 'pagar' : 'receber', false, 'hoje')}>
                     <span className={classe}><small>R$ </small>{valor(c?.vencem_hoje)}</span>
                     <strong>Vencem hoje</strong>
                     <small className="cinza">Restante do mês: R$ {valor(c?.restante_mes)}</small>
-                  </div>
+                  </button>
                 </div>
               </section>
             ))}
@@ -417,7 +420,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
                 aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined}
                 aoAgendar={tem('agenda.gerenciar') ? (dados) => { setAgendaAbre((a) => ({ chave: a.chave + 1, agendarPara: dados })); setTela('agenda'); } : undefined} />
             : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo} />
-            : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} aoVenda={tem('vendas.ver') ? abrirVenda : undefined} />
+            : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} filtroInicial={financeiroAbre.filtro} aoVenda={tem('vendas.ver') ? abrirVenda : undefined} />
             : tela === 'servicos' ? (() => {
                 const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;

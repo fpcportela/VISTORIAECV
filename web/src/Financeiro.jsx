@@ -23,7 +23,7 @@ const CARTAO = ['cartao_credito', 'cartao_debito'];
 export const FORMAS = { dinheiro: 'Dinheiro', pix: 'Pix', cartao_credito: 'Cartão de crédito', cartao_debito: 'Cartão de débito', boleto: 'Boleto', transferencia: 'Transferência', faturado: 'Faturado' };
 const SITUACOES = { em_aberto: 'Em aberto', pago_parcial: 'Pago em parte', pago: 'Pago', cancelado: 'Cancelado' };
 
-export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoInicial = false, aoVenda }) {
+export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoInicial = false, filtroInicial = '', aoVenda }) {
   const pode = (p, l = loja) => criarTem(perfil, l)(p);
   const lojasLancar = perfil.lojas.filter((l) => pode('financeiro.lancar', l.id));
   const podePlano = perfil.lojas.some((l) => pode('financeiro.plano', l.id));
@@ -47,7 +47,7 @@ export default function Financeiro({ perfil, loja, abaInicial = 'receber', novoI
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {aba === 'receber' || aba === 'pagar' ? (
-        <Lancamentos key={aba} tipo={aba} loja={loja} perfil={perfil} lojasLancar={lojasLancar} plano={plano} centros={centros} novoInicial={novoInicial} aoVenda={aoVenda} />
+        <Lancamentos key={aba} tipo={aba} loja={loja} perfil={perfil} lojasLancar={lojasLancar} plano={plano} centros={centros} novoInicial={novoInicial} filtroInicial={aba === abaInicial ? filtroInicial : ''} aoVenda={aoVenda} />
       ) : aba === 'contas' ? (
         <ContasFinanceiras loja={lojaGrupo} perfil={perfil} lojasLancar={lojasLancar} />
       ) : aba === 'plano' ? (
@@ -73,9 +73,10 @@ function OpcoesCategoria({ plano, tipo, comGrupos = false }) {
 // ---------------------------------------------------------------------------
 // Lista de contas a receber / a pagar
 // ---------------------------------------------------------------------------
-function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInicial, aoVenda }) {
-  const [[de, ate], setIntervalo] = useState(mes());
-  const [situacao, setSituacao] = useState('');
+function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInicial, filtroInicial, aoVenda }) {
+  // atalhos do início: vencidos (qualquer data) ou os que vencem hoje
+  const [[de, ate], setIntervalo] = useState(filtroInicial === 'vencidos' ? ['', ''] : filtroInicial === 'hoje' ? [hoje(), hoje()] : mes());
+  const [situacao, setSituacao] = useState(filtroInicial === 'vencidos' ? 'vencido' : filtroInicial === 'hoje' ? 'aberto' : '');
   const [categoria, setCategoria] = useState('');
   const [centro, setCentro] = useState('');
   const [busca, setBusca] = useState('');

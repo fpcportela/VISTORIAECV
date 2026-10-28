@@ -1063,3 +1063,6 @@ a.botao-whatsapp { text-decoration: none; }
 .cartao-resumo small { font-weight: 700; color: #475569; }
 .cartao-resumo strong { font-size: 18px; }
 .cartao-resumo span { font-size: 12px; }
+button.cartao-atalho { font: inherit; text-align: center; cursor: pointer; border: 1px solid transparent; transition: border-color .15s, box-shadow .15s; }
+button.cartao-atalho:hover:not(:disabled) { border-color: var(--forte, #0774B8); box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+button.cartao-atalho:disabled { cursor: default; }
