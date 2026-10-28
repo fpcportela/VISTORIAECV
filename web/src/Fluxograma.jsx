@@ -1,6 +1,8 @@
 // Fluxograma do robô: desenha os blocos do fluxo em camadas (a partir do bloco 1), com as setas
 // de cada bloco e de cada opção do menu. Clicar num bloco leva ao bloco na lista para editar.
+// Para ligar um bloco a outro: clique na bolinha embaixo do bloco (no menu, uma por opção) e depois no destino.
 // Também traz os modelos prontos de fluxo.
+import { useEffect, useState } from 'react';
 
 const L = 210, A = 74, GX = 36, GY = 64, MARGEM = 16; // tamanho do bloco e espaços
 
@@ -19,12 +21,24 @@ function saidas(fluxo, b, n) {
     return n + 1 < fluxo.length ? n + 1 : 'fim';
   };
   if (b.tipo === 'menu') return (b.opcoes || []).map((o, k) => ({ para: alvo(o.ir), rotulo: `${k + 1}. ${o.rotulo || '…'}` }));
+  if (b.tipo === 'venda' && b.ir) return [{ para: alvo(b.ir), rotulo: 'depois da venda' }];
   if (b.tipo === 'transferir' && b.continuar) return [{ para: alvo(b.ir), rotulo: 'transferiu' }];
   if (['mensagem', 'pergunta', 'ia'].includes(b.tipo)) return [{ para: alvo(b.ir), rotulo: b.tipo === 'ia' ? 'terminou' : '' }];
   return [];
 }
 
-export function Fluxograma({ fluxo, unidades = 1, aoAbrir }) {
+// saídas que dá para ligar clicando: null = a seta do bloco; número = a opção do menu
+const pontas = (b) => (b.tipo === 'menu' ? (b.opcoes || []).map((_, k) => k)
+  : ['mensagem', 'pergunta', 'ia', 'venda', 'transferir'].includes(b.tipo) ? [null] : []);
+
+export function Fluxograma({ fluxo, unidades = 1, aoAbrir, aoLigar }) {
+  const [ligando, setLigando] = useState(null); // { de, opcao }
+  useEffect(() => {
+    if (!ligando) return undefined;
+    const sair = (e) => { if (e.key === 'Escape') setLigando(null); };
+    window.addEventListener('keydown', sair);
+    return () => window.removeEventListener('keydown', sair);
+  }, [ligando]);
   if (!fluxo?.length) return null;
   // camadas pela menor distância a partir do bloco 1
   const nivel = new Map([[0, 1]]);
@@ -87,18 +101,45 @@ export function Fluxograma({ fluxo, unidades = 1, aoAbrir }) {
       );
     }
     const b = fluxo[k];
-    return (
-      <button key={b.id} type="button" className={`fx-no${soltos.includes(k) ? ' fx-solto' : ''}`} onClick={() => aoAbrir?.(b.id)}
-        style={{ left: p.x, top: p.y, width: L, height: A, borderColor: COR[b.tipo] }} title="Clique para editar este bloco">
+    const alvo = ligando && ligando.de !== b.id;
+    const clicar = () => {
+      if (!ligando) return aoAbrir?.(b.id);
+      if (alvo) aoLigar?.(ligando.de, ligando.opcao, b.id);
+      setLigando(null);
+    };
+    const ps = aoLigar ? pontas(b) : [];
+    return [
+      <button key={b.id} type="button" className={`fx-no${soltos.includes(k) ? ' fx-solto' : ''}${alvo ? ' fx-alvo' : ''}`} onClick={clicar}
+        style={{ left: p.x, top: p.y, width: L, height: A, borderColor: COR[b.tipo] }}
+        title={ligando ? (alvo ? 'Clique para ligar a seta a este bloco' : 'Clique para cancelar') : 'Clique para editar este bloco'}>
         <span className="fx-tipo" style={{ color: COR[b.tipo] }}>{k + 1} · {NOME_TIPO[b.tipo]}</span>
         <strong>{b.nome || NOME_TIPO[b.tipo]}</strong>
         <small>{soltos.includes(k) ? 'nenhuma seta chega aqui' : (b.texto || '').slice(0, 60)}</small>
-      </button>
-    );
+      </button>,
+      ...ps.map((opcao, j) => {
+        const ativo = ligando?.de === b.id && ligando.opcao === opcao;
+        return (
+          <button key={`${b.id}-p${j}`} type="button" className={`fx-ponta${ativo ? ' ativo' : ''}`}
+            style={{ left: p.x + (L * (j + 1)) / (ps.length + 1) - 9, top: p.y + A - 9, '--c': COR[b.tipo] }}
+            title={opcao == null ? 'Ligar a seta deste bloco a outro bloco' : `Ligar a opção ${opcao + 1} (${b.opcoes[opcao].rotulo || '…'}) a um bloco`}
+            aria-label={opcao == null ? `Ligar o bloco ${k + 1} a outro bloco` : `Ligar a opção ${opcao + 1} do bloco ${k + 1}`}
+            onClick={() => setLigando(ativo ? null : { de: b.id, opcao })}>
+            {opcao == null ? '↓' : opcao + 1}
+          </button>
+        );
+      }),
+    ];
   };
 
   return (
-    <div className="fx-quadro" role="img" aria-label="Fluxograma do atendimento do robô">
+    <>
+    {aoLigar && (
+      <p className={`fx-ajuda${ligando ? ' ligando' : ''}`}>
+        {ligando ? 'Agora clique no bloco para onde a seta vai (Esc ou clique no mesmo bloco para cancelar).'
+          : 'Para ligar um bloco a outro, clique na bolinha embaixo dele (no menu, a bolinha com o número da opção) e depois no bloco de destino.'}
+      </p>
+    )}
+    <div className={`fx-quadro${ligando ? ' fx-ligando' : ''}`} aria-label="Fluxograma do atendimento do robô">
       <div className="fx-area" style={{ width: W + GX, height: H }}>
         <svg width={W + GX} height={H} className="fx-setas" aria-hidden="true">
           <defs>
@@ -121,6 +162,7 @@ export function Fluxograma({ fluxo, unidades = 1, aoAbrir }) {
         {[...pos.keys()].map(caixa)}
       </div>
     </div>
+    </>
   );
 }
 

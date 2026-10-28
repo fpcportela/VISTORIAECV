@@ -91,11 +91,11 @@ export function normalizarFluxo(lista) {
       r.campos = (Array.isArray(b.campos) ? b.campos : []).filter((c) => CAMPOS[c?.campo] && c.campo !== 'livre' && !vistos.has(c.campo) && vistos.add(c.campo))
         .map((c) => ({ campo: c.campo, obrigatorio: Boolean(c.obrigatorio) }));
     }
-    if (tipo === 'transferir') {
+    if (tipo === 'transferir' || tipo === 'atendente') {
       const uuid = (v) => (/^[0-9a-f-]{36}$/i.test(String(v ?? '')) ? String(v) : '');
       r.coluna_id = uuid(b.coluna_id);
       r.responsavel_id = uuid(b.responsavel_id);
-      r.continuar = Boolean(b.continuar);
+      if (tipo === 'transferir') r.continuar = Boolean(b.continuar);
     }
     return r;
   });
@@ -452,7 +452,13 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
     }
     await atribuir();
     await falar(juntar([...falas, fim]));
+    return true;
   };
+  // leva o chamado para a coluna e/ou o responsável do bloco
+  const transferir = (b) => ((b.coluna_id || b.responsavel_id)
+    ? comoUsuario(null, (db) => db.query('select app_robo_transferir($1, $2, $3)', [ch.id, b.coluna_id || null, b.responsavel_id || null]))
+      .catch((e) => console.error('[robô] transferir:', e.message))
+    : null);
 
   // Executa o fluxo a partir do bloco n até um bloco que espera resposta (ou que termina)
   const executar = async (n, falas = []) => {
@@ -473,11 +479,15 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
         if (!iaPode) return passarParaAtendente(null, falas);
         return conversarIA(n, b, falas);
       }
-      if (b.tipo === 'venda') return abrirVenda(b, falas);
-      if (b.tipo === 'atendente') return passarParaAtendente(b.texto ? formatar(b.texto, dados) : null, falas);
+      if (b.tipo === 'venda') {
+        // depois da venda pode seguir para outro bloco (ex.: transferir para uma coluna); sem seta, termina
+        const ok = await abrirVenda(b, falas);
+        if (!ok || !b.ir) return;
+        falas = []; n = posicao(b.ir); continue;
+      }
+      if (b.tipo === 'atendente') { await transferir(b); return passarParaAtendente(b.texto ? formatar(b.texto, dados) : null, falas); }
       if (b.tipo === 'transferir') {
-        await comoUsuario(null, (db) => db.query('select app_robo_transferir($1, $2, $3)', [ch.id, b.coluna_id || null, b.responsavel_id || null]))
-          .catch((e) => console.error('[robô] transferir:', e.message));
+        await transferir(b);
         // segue o fluxo, ou para e uma pessoa continua (a mensagem do bloco vai antes)
         if (b.continuar) { if (b.texto) falas.push(formatar(b.texto, dados)); n = depois(n, b.ir); continue; }
         return passarParaAtendente(b.texto ? formatar(b.texto, dados) : null, falas);

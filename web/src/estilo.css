@@ -1019,6 +1019,13 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .fx-tipo { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--cinza); }
 .fx-saida { border-style: dashed; background: transparent; }
 .fx-solto { border-style: dashed; opacity: .75; }
+.fx-ponta { position: absolute; width: 18px; height: 18px; padding: 0; border: 2px solid var(--c); border-radius: 50%; background: #fff; color: var(--c); font: 700 10px/1 inherit; display: flex; align-items: center; justify-content: center; cursor: crosshair; z-index: 2; }
+.fx-ponta:hover, .fx-ponta.ativo { background: var(--c); color: #fff; }
+.fx-ponta.ativo { box-shadow: 0 0 0 4px rgba(37,99,235,.25); }
+.fx-ligando button.fx-no.fx-alvo { cursor: copy; }
+.fx-ligando button.fx-no.fx-alvo:hover { box-shadow: 0 0 0 3px rgba(37,99,235,.45); }
+.fx-ajuda { margin: 4px 0; font-size: .85rem; color: var(--cinza); }
+.fx-ajuda.ligando { color: #1d4ed8; font-weight: 600; }
 .robo-modelos { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .robo-modelos label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; font-size: 14px; flex: 1 1 280px; }
 .robo-modelos small { flex: 1 1 100%; }

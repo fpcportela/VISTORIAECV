@@ -576,15 +576,16 @@ const blocoVazio = (tipo) => ({
   ...(tipo === 'menu' && { opcoes: [{ rotulo: '', ir: '' }, { rotulo: '', ir: '' }] }),
   ...(tipo === 'pergunta' && { campo: 'nome', obrigatorio: true }),
   ...(tipo === 'ia' && { campos: [] }),
-  ...(tipo === 'transferir' && { coluna_id: '', responsavel_id: '', continuar: false }),
+  ...((tipo === 'transferir' || tipo === 'atendente') && { coluna_id: '', responsavel_id: '' }),
+  ...(tipo === 'transferir' && { continuar: false }),
 });
 const DICA_BLOCO = {
   mensagem: 'Manda o texto e segue sem esperar resposta.',
   menu: 'Manda a pergunta com as opções como botões de ação (ou numeradas); cada opção leva para um bloco.',
   pergunta: 'Pergunta um dado do cliente e confere a resposta.',
   ia: 'A IA conversa usando o prompt e a base de conhecimento. Com dados marcados, ela junta esses dados; sem nenhum, só tira as dúvidas. Quando termina, segue o fluxo.',
-  venda: 'Abre a venda AGENDADO com os dados juntados e manda a mensagem final. Termina o robô.',
-  atendente: 'Manda o texto e passa a conversa para uma pessoa.',
+  venda: 'Abre a venda AGENDADO com os dados juntados e manda a mensagem final. Depois termina, ou segue para o bloco escolhido (ex.: transferir).',
+  atendente: 'Manda o texto e passa a conversa para uma pessoa. Pode levar o chamado para uma coluna e um responsável.',
   transferir: 'Leva o chamado para a coluna do quadro e/ou para o responsável escolhido. Depois para o robô (uma pessoa continua) ou segue o fluxo.',
   fim: 'Manda o texto e encerra o robô nesta conversa, sem abrir venda.',
 };
@@ -658,9 +659,9 @@ function Robo() {
       ...(b.opcoes && { opcoes: b.opcoes.map((o) => ({ ...o, ir: o.ir === id ? '' : o.ir })) }) })) });
   };
   const rotulo = (b, i) => `${i + 1} - ${b.nome || d.blocos[b.tipo]}`;
-  const destinos = (n) => (
+  const destinos = (n, vazio) => (
     <>
-      <option value="">{n === f.fluxo.length - 1 ? 'Fim do fluxo (passa para atendente)' : `Próximo bloco (${n + 2})`}</option>
+      <option value="">{vazio || (n === f.fluxo.length - 1 ? 'Fim do fluxo (passa para atendente)' : `Próximo bloco (${n + 2})`)}</option>
       {f.fluxo.map((b, i) => i !== n && <option key={b.id} value={b.id}>Ir para {rotulo(b, i)}</option>)}
     </>
   );
@@ -772,7 +773,12 @@ function Robo() {
           )}
         </div>
         <p className="cinza ajuda">O robô começa no bloco 1 e segue as setas. Clique num bloco do fluxograma para editar. Use {'{nome}'} para o primeiro nome, {'{numero}'} para o nº da venda, {'{placa}'} e {'{horario}'}.</p>
-        <Fluxograma fluxo={f.fluxo} unidades={f.unidades.length} aoAbrir={(id) => {
+        <Fluxograma fluxo={f.fluxo} unidades={f.unidades.length} aoLigar={(de, opcao, para) => {
+          const n = f.fluxo.findIndex((b) => b.id === de);
+          const b = f.fluxo[n];
+          if (opcao != null) mudarBloco(n, { opcoes: b.opcoes.map((o, k) => (k === opcao ? { ...o, ir: para } : o)) });
+          else mudarBloco(n, { ir: para, ...(b.tipo === 'transferir' && { continuar: true }) });
+        }} aoAbrir={(id) => {
           setDestaque(id);
           document.getElementById(`bloco-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }} />
@@ -839,7 +845,7 @@ function Robo() {
                   {!d.ia_liberada && <p className="aviso-zap">A IA não está liberada para este grupo: este bloco passa a conversa para um atendente.</p>}
                 </div>
               )}
-              {b.tipo === 'transferir' && (
+              {(b.tipo === 'transferir' || b.tipo === 'atendente') && (
                 <div className="robo-linha robo-transferir">
                   <label>Coluna
                     <select value={b.coluna_id} onChange={(e) => mudarBloco(n, { coluna_id: e.target.value })}>
@@ -853,12 +859,12 @@ function Robo() {
                       {(d.usuarios || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
                     </select>
                   </label>
-                  <label className="linha-check"><input type="checkbox" checked={Boolean(b.continuar)} onChange={(e) => mudarBloco(n, { continuar: e.target.checked })} /> Robô continua o fluxo depois</label>
+                  {b.tipo === 'transferir' && <label className="linha-check"><input type="checkbox" checked={Boolean(b.continuar)} onChange={(e) => mudarBloco(n, { continuar: e.target.checked })} /> Robô continua o fluxo depois</label>}
                 </div>
               )}
-              {(['mensagem', 'pergunta', 'ia'].includes(b.tipo) || (b.tipo === 'transferir' && b.continuar)) && (
-                <label className="robo-depois">{b.tipo === 'ia' ? 'Quando a IA terminar' : 'Depois'}
-                  <select value={b.ir} onChange={(e) => mudarBloco(n, { ir: e.target.value })}>{destinos(n)}</select>
+              {(['mensagem', 'pergunta', 'ia', 'venda'].includes(b.tipo) || (b.tipo === 'transferir' && b.continuar)) && (
+                <label className="robo-depois">{b.tipo === 'ia' ? 'Quando a IA terminar' : b.tipo === 'venda' ? 'Depois da venda' : 'Depois'}
+                  <select value={b.ir} onChange={(e) => mudarBloco(n, { ir: e.target.value })}>{destinos(n, b.tipo === 'venda' ? 'Termina o robô' : undefined)}</select>
                 </label>
               )}
             </li>
