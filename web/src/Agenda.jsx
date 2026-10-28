@@ -44,7 +44,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
   const lojas = perfil.lojas.filter((l) => criarTem(perfil, l.id)('agenda.ver'));
   const [filial, setFilial] = useState(lojaInicial || '');
   const lojaUsada = lojas.some((l) => l.id === filial) ? filial : lojas.some((l) => l.id === loja) ? loja : lojas[0]?.id || '';
-  const [modo, setModo] = useState(diaInicial ? 'dia' : 'semana'); // vindo do WhatsApp, abre no dia do agendamento
+  const [modo, setModo] = useState('dia');
   const [dia, setDia] = useState(diaInicial || hoje());
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
