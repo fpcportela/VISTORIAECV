@@ -54,6 +54,9 @@ clique num bloco para editá-lo na lista logo abaixo; setas tracejadas voltam pa
 Para ligar blocos pelo fluxograma, clique na bolinha embaixo do bloco (no menu, a bolinha com o número
 da opção) e depois no bloco de destino. **Abrir venda** pode seguir para outro bloco (ex.: transferir);
 **Passar para atendente** também pode levar o chamado para uma coluna e um responsável.
+Ao agendar, o robô manda só "Obrigado, {nome}! Registramos o seu pedido nº N. Em breve um atendente confirma
+com você." A data, o endereço e o link do Waze (encurtado por is.gd/tinyurl; `ENCURTADOR=0` no .env desliga) vão
+quando o agendamento é confirmado: o cliente responde SIM ou alguém marca Confirmado na agenda. Horários: 12 por vez.
 O bloco **Transferir (coluna / responsável)** leva o chamado para uma coluna do quadro e/ou para um
 responsável; depois o robô para (uma pessoa continua) ou, marcando "Robô continua o fluxo depois", segue.
 No quadro de chamados, o cartão com agendamento mostra um **ícone de agenda** ao lado do responsável, que

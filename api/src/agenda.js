@@ -1,8 +1,8 @@
 import { comoUsuario } from './db.js';
 import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './comum.js';
 import { normalizarPlaca } from './placas.js';
-import { enviarOpcoes, internacional } from './whatsapp.js';
-import { textoConfirmacao } from './agendaTexto.js';
+import { enviarOpcoes, enviarTexto, internacional } from './whatsapp.js';
+import { textoConfirmacao, textoConfirmado } from './agendaTexto.js';
 
 // Agenda de vistorias por loja: horários de atendimento, bloqueios e agendamentos.
 // O robô do WhatsApp agenda nos horários livres (ver robo.js); aqui ficam as telas.
@@ -105,6 +105,30 @@ async function mandarConfirmacao(usuarioId, agendamentoId) {
       [a.empresa_id, contato, a.chamado_id, corpo, falha ? 'falhou' : envio.status, falha?.message || null, envio?.id_externo || null, usuarioId]);
     // a resposta (SIM / NÃO) é tratada em confirmacaoAgenda.js
     if (!falha) await db.query("update agendamentos set confirmacao_em = now(), confirmacao_etapa = 'aguardando', confirmacao_dados = null where id = $1", [a.id]);
+  });
+  if (falha) throw new Recusa(502, falha.message);
+}
+
+// Confirmado na agenda: manda ao cliente a confirmação com o endereço e o link do Waze
+async function avisarConfirmado(usuarioId, agendamentoId) {
+  const a = await comoUsuario(usuarioId, async (db) => (await db.query(
+    `select a.*, to_jsonb(l) as loja, n.phone_number_id from agendamentos a join lojas l on l.id = a.loja_id
+       left join whatsapp_numeros n on n.empresa_id = a.empresa_id and n.ativo where a.id = $1`, [agendamentoId])).rows[0]);
+  if (!a?.telefone || !a.phone_number_id) return; // sem celular ou sem WhatsApp ligado: não manda nada
+  const para = internacional(a.telefone);
+  const corpo = await textoConfirmado(a, a.loja);
+  let envio, falha = null;
+  try { envio = await enviarTexto(a.phone_number_id, para, corpo); } catch (e) { falha = e; }
+  await comoUsuario(usuarioId, async (db) => {
+    const contato = (await db.query(
+      `insert into whatsapp_contatos (empresa_id, telefone, nome) values ($1, $2, $3)
+       on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome) returning id`,
+      [a.empresa_id, para, a.nome])).rows[0].id;
+    await db.query(
+      `insert into whatsapp_conversa (empresa_id, contato_id, chamado_id, direcao, texto, status, erro, id_externo, enviado_por)
+       values ($1, $2, $3, 'saida', $4, $5, $6, $7, $8)`,
+      [a.empresa_id, contato, a.chamado_id, corpo, falha ? 'falhou' : envio.status, falha?.message || null, envio?.id_externo || null, usuarioId]);
+    await db.query('update agendamentos set confirmacao_etapa = null, confirmacao_dados = null where id = $1', [a.id]);
   });
   if (falha) throw new Recusa(502, falha.message);
 }
@@ -247,8 +271,10 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
   // Altera dados, remarca (inicio) ou muda a situação
   app.put('/api/agenda/:id', exigeLogin, comRecusa(async (req, res) => {
     const b = req.body || {};
+    let confirmou = false;
     await comoUsuario(req.usuarioId, async (db) => {
       const a = await agendamentoDe(db, req.params.id);
+      confirmou = b.situacao === 'confirmado' && a.situacao !== 'confirmado';
       await exigir(db, a.loja_id, 'agenda.gerenciar', 'Seu perfil não pode mexer na agenda.');
       if (b.situacao !== undefined) {
         if (!SITUACOES.includes(b.situacao)) throw new Recusa(400, 'Situação inválida.');
@@ -283,6 +309,8 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
     let aviso = null;
     if (b.enviar_whatsapp) {
       try { await mandarConfirmacao(req.usuarioId, req.params.id); } catch (e) { aviso = `Salvo, mas a mensagem não foi pelo WhatsApp: ${e.message}`; }
+    } else if (confirmou) {
+      try { await avisarConfirmado(req.usuarioId, req.params.id); } catch (e) { aviso = `Confirmado, mas a mensagem não foi pelo WhatsApp: ${e.message}`; }
     }
     res.json({ ok: true, aviso });
   }));

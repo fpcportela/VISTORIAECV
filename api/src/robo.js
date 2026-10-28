@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { comoUsuario } from './db.js';
 import { cnpjValido, cpfValido } from './documentos.js';
 import { normalizarPlaca } from './placas.js';
-import { enderecoLoja, linkWaze, rotuloHorario, textoHorarios } from './agendaTexto.js';
+import { enderecoLoja, rotuloHorario, textoHorarios } from './agendaTexto.js';
 import { responderConfirmacao } from './confirmacaoAgenda.js';
 
 // Robô do WhatsApp: segue o fluxo de atendimento do grupo, em blocos (mensagem, menu com
@@ -36,7 +36,7 @@ export const ROBO_PADRAO = {
     { campo: 'servico', pergunta: 'Qual serviço você precisa?', obrigatorio: true },
     { campo: 'horario', pergunta: 'Escolha o melhor horário para a vistoria:', obrigatorio: true },
   ],
-  mensagem_final: 'Obrigado, {nome}! Registramos o seu pedido nº {numero}. Em instantes um atendente confirma com você.',
+  mensagem_final: 'Obrigado, {nome}! Registramos o seu pedido nº {numero}. Em breve um atendente confirma com você.',
   ia_ativa: false,
   ia_instrucoes: '',
   fluxo: null,
@@ -184,7 +184,7 @@ const formatar = (modelo, dados) => String(modelo || '')
   .replace(/\{horario\}/g, dados.horario ? rotuloHorario(dados.horario) : '');
 
 // ------------------------------------------------------------------ agenda
-const POR_VEZ = 6;
+const POR_VEZ = 12;
 const localSP = (ts) => new Date(ts).toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 16).replace(' ', 'T');
 
 // Próximos horários livres (a partir da data pedida, ou depois do último já oferecido)
@@ -441,13 +441,9 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
       return passarParaAtendente('Recebemos os seus dados! Um atendente vai continuar o atendimento em instantes.', falas);
     }
     const modelo = b?.texto || ctx.robo.mensagem_final;
-    let fim = modelo ? formatar(modelo, { ...dados, numero: v.numero }) : 'Recebemos o seu pedido! Em instantes um atendente confirma com você.';
-    if (dados.horario && !/\{horario\}/.test(modelo || '')) {
-      const loja = await comoUsuario(null, async (db) => (await db.query('select app_agenda_unidade_robo($1, $2) as l', [ctx.empresa_id, dados.loja_id || null])).rows[0].l);
-      const end = enderecoLoja(loja);
-      const waze = linkWaze(loja);
-      fim += `\n\nSua vistoria ficou agendada para ${rotuloHorario(dados.horario)}${loja?.nome ? `, na ${loja.nome}` : ''}.${end ? `\nEndereço: ${end}.` : ''}${waze ? `\nComo chegar (Waze): ${waze}` : ''}`;
-    } else if (dados.sem_horario) {
+    let fim = modelo ? formatar(modelo, { ...dados, numero: v.numero }) : 'Recebemos o seu pedido! Em breve um atendente confirma com você.';
+    // com horário: só o pedido registrado; a data, o endereço e o Waze vão quando o agendamento for confirmado
+    if (dados.sem_horario) {
       fim += '\n\nNo momento não há horário livre na agenda; o atendente vai combinar o horário com você.';
     }
     await atribuir();

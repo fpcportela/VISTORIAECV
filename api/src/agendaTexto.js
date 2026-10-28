@@ -36,16 +36,49 @@ export function textoHorarios(horarios) {
   return grupos.map((g) => `${DIAS[g.de]}${g.ate !== g.de ? ` a ${DIAS[g.ate]}` : ''}: ${g.t}`).join(' · ');
 }
 
+// Link curto (is.gd, senão tinyurl) para o WhatsApp ficar mais bonito; se não der, fica o link inteiro.
+// ENCURTADOR=0 no .env desliga.
+const curtos = new Map();
+export async function encurtar(url) {
+  if (!url || process.env.ENCURTADOR === '0') return url;
+  if (curtos.has(url)) return curtos.get(url);
+  const servicos = [
+    `https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`,
+    `https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`,
+  ];
+  for (const s of servicos) {
+    try {
+      const r = await fetch(s, { signal: AbortSignal.timeout(4000) });
+      const t = (await r.text()).trim();
+      if (r.ok && /^https:\/\/\S+$/.test(t) && t.length < url.length) { curtos.set(url, t); return t; }
+    } catch { /* tenta o próximo */ }
+  }
+  return url;
+}
+
+const primeiroNome = (nome) => { const p = String(nome || '').split(' ')[0]; return p ? p[0] + p.slice(1).toLowerCase() : ''; };
+
+// Pergunta da confirmação (sem endereço nem Waze: esses vão depois que o cliente confirma)
 export function textoConfirmacao({ nome, inicio, placa }, loja) {
-  const primeiro = String(nome || '').split(' ')[0];
-  const nomeBonito = primeiro ? primeiro[0] + primeiro.slice(1).toLowerCase() : '';
-  const end = enderecoLoja(loja);
+  const nomeBonito = primeiroNome(nome);
   return [
     `Olá${nomeBonito ? `, ${nomeBonito}` : ''}! Sua vistoria está agendada para ${rotuloHorario(inicio)}${loja?.nome ? `, na ${loja.nome}` : ''}.`,
-    end ? `Endereço: ${end}.` : null,
-    linkWaze(loja) ? `Como chegar (Waze): ${linkWaze(loja)}` : null,
     placa ? `Placa: ${placa}.` : null,
     '',
     'Confirma o agendamento? Responda SIM ou NÃO.',
+  ].filter((x) => x !== null).join('\n');
+}
+
+// Agendamento confirmado: data, unidade, endereço e o link (curto) do Waze
+export async function textoConfirmado({ nome, inicio, placa }, loja, titulo = 'Agendamento confirmado!') {
+  const nomeBonito = primeiroNome(nome);
+  const end = enderecoLoja(loja);
+  const waze = await encurtar(linkWaze(loja));
+  return [
+    `${titulo}${nomeBonito ? ` ${nomeBonito},` : ''} te esperamos ${rotuloHorario(inicio)}${loja?.nome ? `, na ${loja.nome}` : ''}.`,
+    end ? `Endereço: ${end}.` : null,
+    waze ? `Como chegar (Waze): ${waze}` : null,
+    placa ? `Placa: ${placa}.` : null,
+    'Até lá!',
   ].filter((x) => x !== null).join('\n');
 }

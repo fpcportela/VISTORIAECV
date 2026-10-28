@@ -1,5 +1,5 @@
 import { comoUsuario } from './db.js';
-import { rotuloHorario } from './agendaTexto.js';
+import { rotuloHorario, textoConfirmado } from './agendaTexto.js';
 
 // Resposta do cliente à confirmação do agendamento mandada pela agenda:
 //   SIM -> fica Confirmado
@@ -100,7 +100,7 @@ export async function responderConfirmacao(contatoId, { enviarTexto }) {
   if (a.confirmacao_etapa === 'aguardando') {
     if (SIM.test(s)) {
       await comoUsuario(null, (db) => db.query('select app_agenda_resposta_cliente($1, true)', [a.id]));
-      await falar(`Agendamento confirmado! Te esperamos ${rotuloHorario(a.inicio)}${p.loja?.nome ? `, na ${p.loja.nome}` : ''}. Até lá!`);
+      await falar(await textoConfirmado(a, p.loja));
       return true;
     }
     if (NAO.test(s)) {
@@ -149,7 +149,7 @@ export async function responderConfirmacao(contatoId, { enviarTexto }) {
       }
       return true;
     }
-    await falar(`Pronto! Seu agendamento foi remarcado para ${rotuloHorario(escolhido)}${p.loja?.nome ? `, na ${p.loja.nome}` : ''}. Te esperamos!`);
+    await falar(await textoConfirmado({ ...a, inicio: escolhido }, p.loja, 'Pronto, agendamento remarcado e confirmado!'));
     return true;
   }
   return false;

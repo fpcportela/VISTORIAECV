@@ -736,7 +736,7 @@ function Robo() {
 
         <h3>Endereço e horário de funcionamento</h3>
         <p className="cinza ajuda">
-          O robô mostra o endereço e o horário de cada unidade e manda o link do Waze (gerado pelo endereço) na confirmação do agendamento.
+          O robô mostra o endereço e o horário de cada unidade e manda o endereço com o link do Waze quando o agendamento é confirmado.
           O horário é o mesmo da Agenda (botão Horários): mudar aqui muda lá.
         </p>
         {f.unidades.map((u) => (
