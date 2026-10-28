@@ -14,6 +14,7 @@ import { rotasRecuperacao } from './recuperacao.js';
 import { rotasWhatsApp } from './whatsapp.js';
 import { rotasRelatorios } from './relatorios.js';
 import { rotasAgenda } from './agenda.js';
+import { rotasRoyalties, royaltiesDoMes } from './royalties.js';
 import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
@@ -137,11 +138,7 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
       `select count(*) filter (where situacao = 'aberta')::int as abertas, count(*) filter (where situacao = 'futuro')::int as agendadas
          from vendas v
         where v.situacao in ('aberta', 'futuro') and ($1::uuid is null or v.loja_id = $1) and pode(v.loja_id, 'vendas.ver')`, [loja])).rows[0];
-    const royalties = (await db.query(
-      `select coalesce(sum(valor_total), 0) as total
-         from apuracoes_royalty
-        where competencia = date_trunc('month', current_date)::date
-          and ($1::uuid is null or loja_id = $1) and pode(loja_id, 'royalties.ver')`, [loja])).rows[0].total;
+    const royalties = await royaltiesDoMes(db, loja);
 
     const vazio = { vencidos: 0, vencem_hoje: 0, restante_mes: 0 };
     const porTipo = (t) => contas.find((c) => c.tipo === t) || vazio;
@@ -239,5 +236,6 @@ rotasRelatorios(app, { exigeLogin, rota });
 rotasAgenda(app, { exigeLogin, rota });
 rotasGrupos(app, { exigeLogin, rota });
 rotasClientes(app, { exigeLogin, rota });
+rotasRoyalties(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));

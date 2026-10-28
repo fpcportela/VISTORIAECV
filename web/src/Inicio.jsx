@@ -18,6 +18,7 @@ import Clientes from './Clientes.jsx';
 import WhatsApp from './WhatsApp.jsx';
 import Relatorios from './Relatorios.jsx';
 import Agenda from './Agenda.jsx';
+import Royalties from './Royalties.jsx';
 import { Placa, PlacasDiversas } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
 
@@ -83,7 +84,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   function abrir(id) {
     setMenuAberto(false);
-    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config', 'lojas', 'clientes', 'whatsapp', 'relatorios', 'agenda'].includes(id)) {
+    if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config', 'lojas', 'clientes', 'whatsapp', 'relatorios', 'agenda', 'royalties'].includes(id)) {
       setTela(id); setVistoriaId(null); setBuscaVendas(''); setSituacaoVendas('');
       if (id === 'vendas') setAbaVenda('lista');
       if (id === 'agenda') setAgendaAbre((a) => ({ chave: a.chave + 1 }));
@@ -296,7 +297,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <section className="cartao painel">
             <h2>Royalties do mês</h2>
             <span className="destaque">R$ {valor(dados?.royaltiesMes)}</span>
-            <small className="cinza">Calculado sobre o faturamento das lojas da franquia.</small>
+            <small className="cinza">Serviços finalizados no mês, pelos valores dos fornecedores.</small>
+            <button className="botao-primario pequeno" onClick={() => abrir('royalties')}>Ver royalties</button>
           </section>
         )}
         {tem('maquininhas.ver') && (
@@ -398,6 +400,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'config' ? <Configuracoes perfil={perfil} />
             : tela === 'lojas' ? <Grupos />
             : tela === 'clientes' ? <Clientes perfil={perfil} loja={loja} />
+            : tela === 'royalties' ? <Royalties perfil={perfil} loja={loja} />
             : tela === 'agenda' ? <Agenda key={agendaAbre.chave} diaInicial={agendaAbre.dia} lojaInicial={agendaAbre.loja} agendarPara={agendaAbre.agendarPara} perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
             : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} aoVenda={abrirVenda}
                 aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined}
