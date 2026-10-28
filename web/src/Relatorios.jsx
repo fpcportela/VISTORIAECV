@@ -81,10 +81,11 @@ export default function Relatorios({ perfil, loja, empresa, logo }) {
       <div className="cabecalho"><h1>Relatórios</h1></div>
       <div className="abas" role="tablist">
         <button role="tab" aria-selected={aba === 'personalizado'} className={aba === 'personalizado' ? 'ativa' : ''} onClick={() => setAba('personalizado')}>Relatório personalizado</button>
+        <button role="tab" aria-selected={aba === 'responsavel'} className={aba === 'responsavel' ? 'ativa' : ''} onClick={() => setAba('responsavel')}>Por responsável</button>
         {podeFaturar && <button role="tab" aria-selected={aba === 'faturar'} className={aba === 'faturar' ? 'ativa' : ''} onClick={() => setAba('faturar')}>Faturar cliente</button>}
       </div>
-      {aba === 'personalizado'
-        ? <Personalizado loja={loja} empresa={empresa} logo={logo} podeFinanceiro={tem('financeiro.ver')} />
+      {aba === 'personalizado' ? <Personalizado loja={loja} empresa={empresa} logo={logo} podeFinanceiro={tem('financeiro.ver')} />
+        : aba === 'responsavel' ? <PorResponsavel perfil={perfil} loja={loja} empresa={empresa} logo={logo} />
         : <Faturar perfil={perfil} loja={loja} empresa={empresa} logo={logo} />}
     </>
   );
@@ -306,6 +307,109 @@ function GrupoLinhas({ titulo, lista, cols, soma }) {
       {titulo !== null && cols.some((c) => c.soma) && (
         <tr className="linha-subtotal">{cols.map((c, i) => <td key={c.id} className={c.soma ? 'num' : ''}>{c.soma ? moeda(soma(lista, c.id)) : i === 0 ? 'Subtotal' : ''}</td>)}</tr>
       )}
+    </>
+  );
+}
+
+// ------------------------------------------------------------ vendas por responsável
+// Vendas agrupadas pelo responsável da venda, com quantidade e total de cada um (canceladas ficam de fora, salvo se pedir)
+const PADRAO_RESP = ['numero', 'data_venda', 'cliente', 'placas', 'servicos', 'loja', 'formas', 'situacao', 'valor_total'];
+function PorResponsavel({ perfil, loja, empresa, logo }) {
+  const [f, setF] = useState({ de: inicioMes(), ate: hojeISO(), situacao: '', vendedor: '' });
+  const [responsaveis, setResponsaveis] = useState([]);
+  const [colunas, setColunas] = useState(PADRAO_RESP);
+  const [linhas, setLinhas] = useState(null);
+  const [erro, setErro] = useState('');
+  const [carregando, setCarregando] = useState(false);
+  const lojaLista = loja || perfil.lojas[0]?.id;
+  useEffect(() => {
+    if (lojaLista) api(`/vendas-responsaveis?loja=${lojaLista}`).then(setResponsaveis).catch(() => setResponsaveis([]));
+  }, [lojaLista]);
+
+  async function gerar(e) {
+    e?.preventDefault();
+    setCarregando(true); setErro('');
+    const q = new URLSearchParams();
+    if (loja) q.set('loja', loja);
+    if (f.de) q.set('de', f.de);
+    if (f.ate) q.set('ate', f.ate);
+    if (f.situacao) q.set('situacao', f.situacao);
+    if (f.vendedor) q.set('vendedor', f.vendedor);
+    try {
+      const l = await api(`/relatorios/vendas?${q}`);
+      setLinhas(f.situacao ? l : l.filter((v) => v.situacao !== 'cancelada'));
+    } catch (falha) { setErro(falha.message); } finally { setCarregando(false); }
+  }
+
+  const cols = COLUNAS.vendas.filter((c) => colunas.includes(c.id));
+  const grupos = useMemo(() => {
+    const mapa = new Map();
+    for (const v of linhas || []) { const k = v.vendedor || 'SEM RESPONSÁVEL'; (mapa.get(k) || mapa.set(k, []).get(k)).push(v); }
+    return [...mapa.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [linhas]);
+  const soma = (lista, id) => lista.reduce((t, v) => t + Number(v[id] || 0), 0);
+
+  async function pdf() {
+    const { gerarPdfRelatorio } = await import('./relatorioPersonalizado.js');
+    const nome = responsaveis.find((r) => r.id === f.vendedor)?.nome;
+    const filtros = [f.de || f.ate ? `Período: ${dataBR(f.de) || '...'} a ${dataBR(f.ate) || '...'}` : '', `Responsável: ${nome || 'TODOS'}`,
+      f.situacao ? `Situação: ${SIT_VENDA[f.situacao]}` : 'Sem as canceladas'].filter(Boolean);
+    await gerarPdfRelatorio({ titulo: 'Vendas por responsável', empresa, logo, filtros, cols, grupos, agrupado: true });
+  }
+
+  return (
+    <>
+      <form className="relatorio-config" onSubmit={gerar}>
+        <div className="linha-config">
+          <label>Responsável
+            <select value={f.vendedor} onChange={(e) => setF({ ...f, vendedor: e.target.value })}>
+              <option value="">Todos</option>
+              {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+            </select>
+          </label>
+          <label>De<CampoData value={f.de} onChange={(e) => setF({ ...f, de: e.target.value })} /></label>
+          <label>Até<CampoData value={f.ate} onChange={(e) => setF({ ...f, ate: e.target.value })} /></label>
+          <label>Situação
+            <select value={f.situacao} onChange={(e) => setF({ ...f, situacao: e.target.value })}>
+              <option value="">Todas (sem canceladas)</option>
+              {Object.entries(SIT_VENDA).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+            </select>
+          </label>
+        </div>
+        <fieldset className="colunas-relatorio">
+          <legend>Colunas</legend>
+          {COLUNAS.vendas.map((c) => (
+            <label key={c.id} className="linha-check">
+              <input type="checkbox" checked={colunas.includes(c.id)}
+                onChange={(e) => setColunas(e.target.checked ? COLUNAS.vendas.map((x) => x.id).filter((id) => id === c.id || colunas.includes(id)) : colunas.filter((x) => x !== c.id))} />
+              {c.nome}
+            </label>
+          ))}
+        </fieldset>
+        <div className="acoes-relatorio">
+          <button className="botao-primario" disabled={carregando}>{carregando ? 'Gerando…' : 'Gerar'}</button>
+          <button type="button" className="botao-contorno" disabled={!linhas?.length} onClick={pdf}>Gerar PDF</button>
+        </div>
+      </form>
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      {linhas && (linhas.length === 0 ? <p className="cinza vazio">Nenhuma venda com esses filtros.</p> : (
+        <>
+          <div className="resumo-responsaveis">
+            {grupos.map(([k, lista]) => (
+              <div key={k} className="cartao-resumo"><small>{k}</small><strong>{real(soma(lista, 'valor_total'))}</strong><span className="cinza">{lista.length} venda(s)</span></div>
+            ))}
+          </div>
+          <div className="tabela-relatorio-caixa">
+            <table className="tabela-relatorio">
+              <thead><tr>{cols.map((c) => <th key={c.id} className={c.soma ? 'num' : ''}>{c.nome}</th>)}</tr></thead>
+              <tbody>{grupos.map(([k, lista]) => <GrupoLinhas key={k} titulo={k} lista={lista} cols={cols} soma={soma} />)}</tbody>
+              <tfoot>
+                <tr>{cols.map((c, i) => <td key={c.id} className={c.soma ? 'num' : ''}>{c.soma ? moeda(soma(linhas, c.id)) : i === 0 ? 'TOTAL' : ''}</td>)}</tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
+      ))}
     </>
   );
 }

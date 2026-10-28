@@ -1058,3 +1058,8 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 a.botao-whatsapp { text-decoration: none; }
 .links-venda { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; color: var(--cinza, #64748b); font-size: 14px; }
 .links-venda .botao-texto { font-weight: 700; padding: 0; }
+.resumo-responsaveis { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.cartao-resumo { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; background: #fff; border: 1px solid #e5e9f0; border-radius: 10px; min-width: 160px; }
+.cartao-resumo small { font-weight: 700; color: #475569; }
+.cartao-resumo strong { font-size: 18px; }
+.cartao-resumo span { font-size: 12px; }
