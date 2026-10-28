@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, moeda, sessao } from './api.js';
 import { paraMoeda } from './entrada.js';
 import { Icone } from './icones.jsx';
@@ -85,20 +85,25 @@ function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInic
   const [aberto, setAberto] = useState(novoInicial ? null : undefined); // undefined = fechado; null = novo; id
   const receita = tipo === 'receber';
 
+  // só vale a resposta do último filtro (uma busca antiga que chega depois não troca a lista nem os totais)
+  const pedido = useRef(0);
   const carregar = () => {
     const q = new URLSearchParams({ tipo, ...(loja && { loja }), ...(de && { de }), ...(ate && { ate }), ...(situacao && { situacao }),
       ...(categoria && { categoria }), ...(centro && { centro }), ...(busca.trim() && { busca: busca.trim() }) });
-    api(`/financeiro/lancamentos?${q}`).then((l) => { setLista(l); setErro(''); }).catch((f) => setErro(f.message));
+    const n = ++pedido.current;
+    api(`/financeiro/lancamentos?${q}`).then((l) => { if (n === pedido.current) { setLista(l); setErro(''); } })
+      .catch((f) => { if (n === pedido.current) setErro(f.message); });
   };
   useEffect(() => { const t = setTimeout(carregar, busca ? 300 : 0); return () => clearTimeout(t); }, [tipo, loja, de, ate, situacao, categoria, centro, busca]);
 
-  const validos = (lista || []).filter((l) => l.status !== 'cancelado');
+  // os totais são sempre da lista filtrada; cancelados só contam quando o filtro é "Cancelados"
+  const validos = (lista || []).filter((l) => situacao === 'cancelado' || l.status !== 'cancelado');
   const soma = (f) => validos.filter(f).reduce((t, l) => t + (l.valor - l.valor_pago), 0);
   const resumo = [
     ['Vencidos', soma((l) => l.vencido), 'negativo'],
-    ['Em aberto', soma((l) => l.status !== 'pago'), ''],
+    ['Em aberto', soma((l) => ['em_aberto', 'pago_parcial'].includes(l.status)), ''],
     [receita ? 'Recebido' : 'Pago', validos.reduce((t, l) => t + l.valor_pago, 0), 'positivo'],
-    ['Total do período', validos.reduce((t, l) => t + l.valor, 0), ''],
+    [`Total (${validos.length} lançamento${validos.length === 1 ? '' : 's'})`, validos.reduce((t, l) => t + l.valor, 0), ''],
   ];
   const periodos = [['Este mês', mes()], ['Mês passado', mes(-1)], ['Próximo mês', mes(1)], ['Todos', ['', '']]];
 
