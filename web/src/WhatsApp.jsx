@@ -30,7 +30,7 @@ const quando = (iso) => {
 };
 const STATUS = { simulada: 'modo teste', enviada: 'enviada', entregue: 'entregue', lida: 'lida', falhou: 'não enviada' };
 
-export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda }) {
+export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar }) {
   const [aba, setAba] = useState('chamados');
   const [situacao, setSituacao] = useState(null);
   const [erro, setErro] = useState('');
@@ -67,12 +67,12 @@ export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda }) {
         <button role="tab" aria-selected={aba === 'robo'} className={aba === 'robo' ? 'ativa' : ''} onClick={() => setAba('robo')}>Robô de atendimento</button>
       </div>
       {aba === 'chamados' ? <Quadro recarga={recarga} aoAbrir={setAberto} aoAgenda={aoAgenda} />
-        : aba === 'conversas' ? <Conversas recarga={recarga} perfil={perfil} loja={loja} aoMudar={recarregar} aoVenda={aoVenda} />
+        : aba === 'conversas' ? <Conversas recarga={recarga} perfil={perfil} loja={loja} aoMudar={recarregar} aoVenda={aoVenda} aoAgendar={aoAgendar} />
         : <Robo />}
       {aberto && (
         <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && setAberto(null)}>
           <section className="modal largo modal-conversa" role="dialog" aria-modal="true" aria-label="Conversa">
-            <Conversa contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => { setAberto(null); recarregar(); }} aoMudar={recarregar} aoVenda={aoVenda} />
+            <Conversa contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => { setAberto(null); recarregar(); }} aoMudar={recarregar} aoVenda={aoVenda} aoAgendar={aoAgendar} />
           </section>
         </div>
       )}
@@ -245,7 +245,7 @@ function RenomearColuna({ coluna, aoFechar, aoSalvar }) {
 }
 
 // ------------------------------------------------------------ conversas
-function Conversas({ recarga, perfil, loja, aoMudar, aoVenda }) {
+function Conversas({ recarga, perfil, loja, aoMudar, aoVenda, aoAgendar }) {
   const [lista, setLista] = useState(null);
   const [busca, setBusca] = useState('');
   const [aberto, setAberto] = useState(null);
@@ -279,14 +279,14 @@ function Conversas({ recarga, perfil, loja, aoMudar, aoVenda }) {
         )}
       </aside>
       <section className="conversas-painel">
-        {aberto ? <Conversa key={aberto} contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => setAberto(null)} aoMudar={aoMudar} aoVenda={aoVenda} />
+        {aberto ? <Conversa key={aberto} contatoId={aberto} perfil={perfil} loja={loja} aoFechar={() => setAberto(null)} aoMudar={aoMudar} aoVenda={aoVenda} aoAgendar={aoAgendar} />
           : <p className="cinza conversas-vazio">Escolha uma conversa.</p>}
       </section>
     </div>
   );
 }
 
-function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
+function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgendar }) {
   const [k, setK] = useState(null);
   const [colunas, setColunas] = useState([]);
   const [responsaveis, setResponsaveis] = useState([]);
@@ -294,6 +294,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [cadastrar, setCadastrar] = useState(false);
+  const [agendarDepois, setAgendarDepois] = useState(false); // sem cadastro: cadastra e depois vai para a agenda
   const fim = useRef(null);
 
   const carregar = (ler) => api(`/whatsapp/contatos/${contatoId}${ler ? '?ler=1' : ''}`).then((d) => { setK(d); }).catch((f) => setErro(f.message));
@@ -328,8 +329,18 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
 
   async function ligarCliente(clienteId) {
     setErro('');
-    try { await api(`/whatsapp/contatos/${k.id}`, { metodo: 'PUT', corpo: { cliente_id: clienteId } }); setCadastrar(false); carregar(); aoMudar?.(); }
-    catch (f) { setErro(f.message); }
+    try {
+      await api(`/whatsapp/contatos/${k.id}`, { metodo: 'PUT', corpo: { cliente_id: clienteId } }); setCadastrar(false); aoMudar?.();
+      const novo = await api(`/whatsapp/contatos/${k.id}`);
+      setK(novo);
+      if (agendarDepois) { setAgendarDepois(false); agendar(novo); }
+    } catch (f) { setErro(f.message); }
+  }
+
+  // Agendar: vai para a agenda com os dados do cliente; sem cadastro, pede o cadastro antes
+  function agendar(c = k) {
+    if (!c.cliente_id) { setAgendarDepois(true); setCadastrar(true); return; }
+    aoAgendar({ cliente: { id: c.cliente_id, nome: c.cliente, cpf_cnpj: c.cpf_cnpj }, nome: c.cliente || c.nome || '', telefone: c.telefone });
   }
 
   const lojasCliente = perfil.lojas.filter((l) => l.empresa_id === k.empresa_id && criarTem(perfil, l.id)('clientes.editar'));
@@ -350,6 +361,11 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
             </>
           )}
         </div>
+        {aoAgendar && (k.cliente_id || lojasCliente.length > 0) && (
+          <button type="button" className="botao-contorno pequeno conversa-agendar" onClick={() => agendar()} title="Agendar na agenda com os dados deste cliente">
+            <Icone nome="agenda" tamanho={16} /> Agendar
+          </button>
+        )}
         <button className="fechar" onClick={aoFechar} aria-label="Fechar conversa">×</button>
       </header>
       {k.chamado && (
@@ -411,7 +427,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda }) {
       {cadastrar && (
         <EditorCliente lojas={lojasCliente} lojaInicial={lojasCliente.some((l) => l.id === loja) ? loja : lojasCliente[0]?.id}
           inicial={{ nome: k.nome || '', whatsapp: telefoneBR(k.telefone) }}
-          aoAbrir={() => {}} aoFechar={() => setCadastrar(false)} aoSalvar={(id) => ligarCliente(id)} />
+          aoAbrir={() => {}} aoFechar={() => { setCadastrar(false); setAgendarDepois(false); }} aoSalvar={(id) => ligarCliente(id)} />
       )}
     </div>
   );

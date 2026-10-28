@@ -40,7 +40,7 @@ export const SITUACOES_AGENDA = {
   agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado',
 };
 
-export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial, lojaInicial }) {
+export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial, lojaInicial, agendarPara: paraInicial }) {
   const lojas = perfil.lojas.filter((l) => criarTem(perfil, l.id)('agenda.ver'));
   const [filial, setFilial] = useState(lojaInicial || '');
   const lojaUsada = lojas.some((l) => l.id === filial) ? filial : lojas.some((l) => l.id === loja) ? loja : lojas[0]?.id || '';
@@ -52,6 +52,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
   const [aviso, setAviso] = useState('');
   const [recarga, setRecarga] = useState(0);
   const [buscaVenda, setBuscaVenda] = useState('');
+  const [agendarPara, setAgendarPara] = useState(paraInicial || null); // vindo da conversa do WhatsApp: cliente já escolhido
   const [destaque, setDestaque] = useState(null); // agendamento achado pela busca da venda
 
   // mês: semanas inteiras (de domingo a sábado) que cobrem o mês do dia escolhido
@@ -135,6 +136,12 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
           <button type="submit" className="botao-contorno" aria-label="Buscar venda">🔍</button>
         </form>
       </div>
+      {agendarPara && (
+        <div className="agenda-agendar-para" role="status">
+          <span>📅 Agendando para <strong>{agendarPara.nome}</strong>: escolha o dia e clique num horário livre (ou em + Agendar).</span>
+          <button type="button" className="botao-texto" onClick={() => setAgendarPara(null)}>Cancelar</button>
+        </div>
+      )}
       <h2 className="agenda-titulo">{titulo}</h2>
       {aviso && <p className={/enviada|Agendado\b(?!,)/.test(aviso) ? 'sucesso' : 'erro'} role="status">{aviso}</p>}
       {erro && <p className="erro" role="alert">{erro}</p>}
@@ -148,8 +155,8 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
           <Semana de={de} dias={Math.round((new Date(`${ate}T12:00:00`) - new Date(`${de}T12:00:00`)) / 864e5) + 1} mes={primeiroMes.slice(0, 7)}
             d={d} aoDia={(x) => { setDia(x); setModo('dia'); }} />
         )}
-      {janela?.tipo === 'novo' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} colunas={d?.colunas || []} inicial={{ dia: janela.dia, hora: janela.hora }}
-        aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
+      {janela?.tipo === 'novo' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} colunas={d?.colunas || []} inicial={{ dia: janela.dia, hora: janela.hora, ...(agendarPara || {}) }}
+        aoFechar={() => setJanela(null)} aoSalvar={(msg) => { setAgendarPara(null); recarregar(msg); }} />}
       {janela?.tipo === 'editar' && <Editor perfil={perfil} loja={lojaUsada} servicos={d?.servicos || []} agendamento={janela.a}
         aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
       {janela?.tipo === 'config' && d && <Configurar loja={lojaUsada} config={d.config} aoFechar={() => setJanela(null)} aoSalvar={recarregar} />}
@@ -276,13 +283,15 @@ function Semana({ de, d, aoDia, dias: total = 7, mes = null }) {
 function Editor({ perfil, loja, servicos, colunas = [], agendamento, inicial, aoFechar, aoSalvar }) {
   const a = agendamento;
   const [f, setF] = useState({
-    nome: a?.nome || '', telefone: a?.telefone ? mascaraTelefone(String(a.telefone).replace(/^55/, '')) : '', placa: a?.placa || '',
+    nome: a?.nome || inicial?.nome || '', placa: a?.placa || '',
+    telefone: (a?.telefone || inicial?.telefone) ? mascaraTelefone(String(a?.telefone || inicial.telefone).replace(/^55/, '')) : '',
     servico_id: a?.servico_id || '', observacao: a?.observacao || '',
     dia: a ? diaSP(a.inicio) : inicial?.dia || hoje(), hora: a ? horaSP(a.inicio) : inicial?.hora || '',
-    encaixe: false, enviar_whatsapp: false, cpf_cnpj: a?.cliente_doc ? formatarDoc(a.cliente_doc) : '',
+    encaixe: false, enviar_whatsapp: false,
+    cpf_cnpj: a?.cliente_doc ? formatarDoc(a.cliente_doc) : inicial?.cliente?.cpf_cnpj ? formatarDoc(inicial.cliente.cpf_cnpj) : '',
   });
   // cliente do cadastro: achado pelo CPF/CNPJ ou escolhido na busca pelo nome (nunca cadastra duplicado)
-  const [cliente, setCliente] = useState(a?.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : null);
+  const [cliente, setCliente] = useState(a?.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : inicial?.cliente || null);
   const [docAviso, setDocAviso] = useState('');
   const [sugestoes, setSugestoes] = useState([]);
   const [cadastrando, setCadastrando] = useState(false); // tela completa de cadastro de cliente (com preços especiais)

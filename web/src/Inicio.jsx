@@ -398,9 +398,10 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'config' ? <Configuracoes perfil={perfil} />
             : tela === 'lojas' ? <Grupos />
             : tela === 'clientes' ? <Clientes perfil={perfil} loja={loja} />
-            : tela === 'agenda' ? <Agenda key={agendaAbre.chave} diaInicial={agendaAbre.dia} lojaInicial={agendaAbre.loja} perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
+            : tela === 'agenda' ? <Agenda key={agendaAbre.chave} diaInicial={agendaAbre.dia} lojaInicial={agendaAbre.loja} agendarPara={agendaAbre.agendarPara} perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
             : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} aoVenda={abrirVenda}
-                aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined} />
+                aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined}
+                aoAgendar={tem('agenda.gerenciar') ? (dados) => { setAgendaAbre((a) => ({ chave: a.chave + 1, agendarPara: dados })); setTela('agenda'); } : undefined} />
             : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo} />
             : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} />
             : tela === 'servicos' ? (() => {
