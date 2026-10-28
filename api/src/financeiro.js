@@ -147,7 +147,7 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
   app.get('/api/financeiro/lancamentos', exigeLogin, comRecusa(async (req, res) => {
     const tipo = TIPOS.includes(req.query.tipo) ? req.query.tipo : null;
     const loja = UUID.test(req.query.loja || '') ? req.query.loja : null;
-    const situacao = ['aberto', 'vencido', 'pago', 'cancelado'].includes(req.query.situacao) ? req.query.situacao : null;
+    const situacao = ['aberto', 'vencido', 'pago', 'cancelado', 'faturado'].includes(req.query.situacao) ? req.query.situacao : null;
     const categoria = UUID.test(req.query.categoria || '') ? req.query.categoria : null;
     const centro = UUID.test(req.query.centro || '') ? req.query.centro : null;
     const de = dataValida(req.query.de);
@@ -169,7 +169,9 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
                or ($3 = 'aberto' and l.status in ('em_aberto', 'pago_parcial'))
                or ($3 = 'vencido' and l.status in ('em_aberto', 'pago_parcial') and l.vencimento < (now() at time zone '${FUSO}')::date)
                or ($3 = 'pago' and l.status = 'pago')
-               or ($3 = 'cancelado' and l.status = 'cancelado'))
+               or ($3 = 'cancelado' and l.status = 'cancelado')
+               -- faturas do Faturar cliente (qualquer situação, menos canceladas)
+               or ($3 = 'faturado' and l.status <> 'cancelado' and exists (select 1 from lancamento_vendas lv where lv.lancamento_id = l.id)))
           and ($4::uuid is null or l.categoria_id = $4 or c.pai_id = $4)
           and ($5::uuid is null or l.centro_custo_id = $5)
           and ($6::date is null or l.vencimento >= $6)

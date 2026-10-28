@@ -128,7 +128,7 @@ function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInic
         <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação">
           <option value="">Todas as situações</option>
           <option value="aberto">Em aberto</option><option value="vencido">Vencidos</option>
-          <option value="pago">{receita ? 'Recebidos' : 'Pagos'}</option><option value="cancelado">Cancelados</option>
+          <option value="pago">{receita ? 'Recebidos' : 'Pagos'}</option>{receita && <option value="faturado">Faturados</option>}<option value="cancelado">Cancelados</option>
         </select>
         <select value={categoria} onChange={(e) => setCategoria(e.target.value)} aria-label="Categoria">
           <option value="">Todas as categorias</option>
