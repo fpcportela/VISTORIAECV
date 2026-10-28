@@ -140,6 +140,15 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     return v;
   }
 
+  // Colaboradores ativos da unidade, para trocar o responsável da venda
+  app.get('/api/vendas/responsaveis', exigeLogin, comRecusa(async (req, res) => {
+    if (!UUID.test(req.query.loja || '')) throw new Recusa(400, 'Escolha a unidade.');
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      await exigir(db, req.query.loja, 'vendas.responsavel', 'Seu perfil não pode trocar o responsável da venda.');
+      return (await db.query('select * from app_responsaveis_loja($1)', [req.query.loja])).rows;
+    }));
+  }));
+
   app.get('/api/vendas/:id', exigeLogin, comRecusa(async (req, res) => {
     const dados = await comoUsuario(req.usuarioId, async (db) => {
       const v = await buscarVenda(db, req.params.id);
@@ -164,7 +173,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       const pode = (await db.query(
         `select pode($1, 'vendas.criar') as editar, pode($1, 'vendas.finalizar') as finalizar,
                 pode($1, 'vendas.cancelar') as cancelar, pode($1, 'vendas.desconto') as desconto,
-                pode($1, 'vendas.autorizar') as autorizar`, [v.loja_id])).rows[0];
+                pode($1, 'vendas.autorizar') as autorizar, pode($1, 'vendas.responsavel') as responsavel`, [v.loja_id])).rows[0];
       // agendamento da venda (o atual ou o que teve), para o selo ao lado do número
       const agendamentos = (await db.query(
         `select id, loja_id, inicio, situacao from agendamentos where venda_id = $1
@@ -275,6 +284,16 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       "select id from categorias_financeiras where empresa_id = $1 and tipo = 'receber' and ativo order by nome = 'Receitas de Serviços' desc, nome limit 1",
       [empresa])).rows[0]?.id || null;
 
+    // responsável escolhido na tela (só com a permissão e entre os colaboradores ativos da unidade)
+    let responsavel = null;
+    if (UUID.test(b.vendedor_id || '') && b.vendedor_id !== (existente?.vendedor_id || req.usuarioId)) {
+      await exigir(db, loja, 'vendas.responsavel', 'Seu perfil não pode trocar o responsável da venda.');
+      if (!(await db.query('select 1 from app_responsaveis_loja($1) where id = $2', [loja, b.vendedor_id])).rowCount) {
+        throw new Recusa(400, 'Escolha um colaborador ativo da unidade.');
+      }
+      responsavel = b.vendedor_id;
+    }
+
     let id = existente?.id;
     if (id) {
       await db.query(
@@ -288,6 +307,11 @@ export function rotasVendas(app, { exigeLogin, rota }) {
                              vendedor_id, desconto, observacoes, criado_por)
          values ($1, $2, 0, $3, 'aberta', $4, $5, $6, $7, $8, $9, $7) returning id`,
         [loja, empresa, tipo, cliente, data, categoria, req.usuarioId, desconto, texto(b.observacoes, 2000)])).rows[0].id;
+    }
+    if (responsavel) {
+      await db.query('update vendas set vendedor_id = $2 where id = $1', [id, responsavel]);
+      const nome = (await db.query('select nome from usuarios where id = $1', [responsavel])).rows[0]?.nome;
+      await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, 'responsavel', $3)", [id, req.usuarioId, `Responsável: ${nome}`]);
     }
     for (const p of prontos) {
       await db.query(
@@ -318,8 +342,8 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     await db.query(
       `update agendamentos set situacao = 'compareceu', confirmacao_etapa = null, atualizado_em = now()
         where venda_id = $1 and situacao in ('agendado', 'confirmado') and inicio::date <= current_date`, [id]);
-    // quem salvou a venda passa a ser o responsável pelo chamado do WhatsApp dela
-    await db.query('select app_venda_responsavel_chamado($1, $2)', [id, req.usuarioId]);
+    // quem salvou a venda (ou o responsável escolhido) passa a ser o responsável pelo chamado do WhatsApp dela
+    await db.query('select app_venda_responsavel_chamado($1, $2)', [id, responsavel || req.usuarioId]);
     return id;
   }
 

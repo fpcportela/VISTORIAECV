@@ -12,7 +12,7 @@ import { EditorCliente } from './Clientes.jsx';
 const SITUACAO_AG = { agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado' };
 
 export const SITUACOES = { aberta: 'Aberta', futuro: 'Agendado', finalizada: 'Finalizada', cancelada: 'Cancelada' };
-const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda agendada', cancelada: 'Cancelou', desconto: 'Deu desconto', preco: 'Alterou preço' };
+const ACOES = { criada: 'Criou', alterada: 'Alterou', finalizada: 'Finalizou', reaberta: 'Reabriu para edição', confirmada: 'Confirmou a venda agendada', cancelada: 'Cancelou', desconto: 'Deu desconto', preco: 'Alterou preço', responsavel: 'Trocou o responsável' };
 const BANDEIRAS = ['VISA', 'MASTERCARD', 'ELO', 'HIPERCARD', 'AMERICAN EXPRESS', 'CABAL', 'OUTRA'];
 const ehCartao = (forma) => forma === 'cartao_credito' || forma === 'cartao_debito';
 const hoje = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -278,7 +278,15 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
 
   const acessos = perfil.master ? null : perfil.acessos[venda?.loja_id || loja] || [];
   const podeLoja = (p) => !acessos || acessos.includes(p);
-  const pode = venda?.pode || { editar: podeLoja('vendas.criar'), finalizar: podeLoja('vendas.finalizar'), cancelar: podeLoja('vendas.cancelar'), desconto: podeLoja('vendas.desconto'), autorizar: podeLoja('vendas.autorizar') };
+  const pode = venda?.pode || { editar: podeLoja('vendas.criar'), finalizar: podeLoja('vendas.finalizar'), cancelar: podeLoja('vendas.cancelar'), desconto: podeLoja('vendas.desconto'), autorizar: podeLoja('vendas.autorizar'), responsavel: podeLoja('vendas.responsavel') };
+  // responsável da venda: quem tem a permissão escolhe entre os colaboradores ativos da unidade
+  const [responsavel, setResponsavel] = useState(perfil.usuario.id);
+  const [responsaveis, setResponsaveis] = useState(null);
+  useEffect(() => { if (venda?.vendedor_id) setResponsavel(venda.vendedor_id); }, [venda?.vendedor_id]);
+  useEffect(() => {
+    if (!pode.responsavel || !loja) return;
+    api(`/vendas/responsaveis?loja=${loja}`).then(setResponsaveis).catch(() => setResponsaveis(null));
+  }, [loja, pode.responsavel]);
   const editavel = (!venda || ['aberta', 'futuro'].includes(venda.situacao)) && pode.editar;
 
   async function carregar() {
@@ -405,6 +413,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
         ...(modoCliente === 'avulso' && { cliente_avulso: true }),
         ...((modoCliente === 'buscar' || modoCliente === 'atual') && cliente && { cliente_id: cliente.id }),
         ...(!venda && agendamento && { agendamento_id: agendamento.id }),
+        ...(pode.responsavel && { vendedor_id: responsavel }),
       };
       let vid = venda?.id;
       if (vid) await api(`/vendas/${vid}`, { metodo: 'PUT', corpo });
@@ -496,7 +505,14 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
               </select>
             )}
           </div>
-          <label className="campo">Responsável<input value={venda?.vendedor || perfil.usuario.nome} readOnly className="somente-leitura" /></label>
+          {pode.responsavel && responsaveis ? (
+            <label className="campo">Responsável
+              <select value={responsavel} onChange={(e) => setResponsavel(e.target.value)}>
+                {!responsaveis.some((r) => r.id === responsavel) && <option value={responsavel}>{venda?.vendedor || perfil.usuario.nome}</option>}
+                {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+              </select>
+            </label>
+          ) : <label className="campo">Responsável<input value={venda?.vendedor || perfil.usuario.nome} readOnly className="somente-leitura" /></label>}
           <div className="campo">
             <span className="rotulo-campo">Placa</span>
             <button type="button" className="botao-contorno" onClick={() => setConsulta({ indice: null, placa: '' })} disabled={!podeLoja('placa.consultar')}>
