@@ -138,7 +138,7 @@ function Lancamentos({ tipo, loja, perfil, lojasLancar, plano, centros, novoInic
           <option value="">Todos os centros de custo</option>
           {centros.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
         </select>
-        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Descrição ou documento" aria-label="Buscar" />
+        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Descrição, documento, CV ou nº da venda" aria-label="Buscar" />
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {lista === null ? <p className="cinza">Carregando…</p> : lista.length === 0 ? (

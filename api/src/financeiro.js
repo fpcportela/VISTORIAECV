@@ -174,7 +174,11 @@ export function rotasFinanceiro(app, { exigeLogin, rota }) {
           and ($5::uuid is null or l.centro_custo_id = $5)
           and ($6::date is null or l.vencimento >= $6)
           and ($7::date is null or l.vencimento <= $7)
-          and ($8::text is null or l.descricao ilike '%' || $8 || '%' or l.documento ilike '%' || $8 || '%')
+          and ($8::text is null or l.descricao ilike '%' || $8 || '%' or l.documento ilike '%' || $8 || '%'
+               or l.observacoes ilike '%' || $8 || '%' or l.cv ilike '%' || $8 || '%'
+               -- nº da venda: a própria venda do lançamento ou uma das vendas da fatura
+               or ($8 ~ '^\\d+$' and exists (select 1 from vendas v where v.numero::text = $8
+                     and (v.id = l.venda_id or v.id in (select venda_id from lancamento_vendas where lancamento_id = l.id)))))
         order by l.vencimento, l.descricao
         limit 2000`, [tipo, loja, situacao, categoria, centro, de, ate, busca])).rows));
   }));
