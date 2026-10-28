@@ -160,7 +160,7 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
           await db.query("insert into venda_historico (venda_id, usuario_id, acao, detalhe) values ($1, $2, 'alterada', $3)",
             [v.id, req.usuarioId, `Faturada: conta a receber de ${vencimento.split('-').reverse().join('/')}`]);
         }
-        novos.push(lid);
+        novos.push({ id: lid, loja_id: loja });
       }
       return novos;
     }).catch((e) => { if (e.code === '23505') throw new Recusa(400, 'Alguma venda já foi faturada agora há pouco. Atualize a lista.'); throw e; });

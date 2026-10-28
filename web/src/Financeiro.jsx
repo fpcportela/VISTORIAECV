@@ -298,7 +298,7 @@ function EditorLancamento({ id, tipo, loja, perfil, lojasLancar, plano, centros,
                 )}
                 <label>Observações<textarea rows={2} value={f.observacoes} onChange={muda('observacoes')} /></label>
               </fieldset>
-              <Documentos id={id} arquivos={l?.arquivos || []} podeEditar={editavel} novos={novosArquivos} aoNovos={setNovosArquivos}
+              <Documentos id={id} arquivos={l?.arquivos || []} podeEditar={editavel} temCliente={Boolean(l?.cliente_id)} novos={novosArquivos} aoNovos={setNovosArquivos}
                 aoMudar={carregar} aoErro={setErro} />
               {erro && <p className="erro" role="alert">{erro}</p>}
               <div className="acoes-modal">
@@ -537,8 +537,10 @@ async function enviarArquivo(lancamentoId, { arquivo, nome }) {
 const tamanho = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 // Documentos do lançamento: nome dado por quem anexa, abrir, baixar, renomear e excluir
-function Documentos({ id, arquivos, podeEditar, novos, aoNovos, aoMudar, aoErro }) {
+function Documentos({ id, arquivos, podeEditar, temCliente, novos, aoNovos, aoMudar, aoErro }) {
   const [arquivo, setArquivo] = useState(null);
+  const [marcados, setMarcados] = useState([]);
+  const [zap, setZap] = useState({ enviando: false, ok: '' });
   const [nome, setNome] = useState('');
   const [chave, setChave] = useState(0);
   const [enviando, setEnviando] = useState(false);
@@ -566,6 +568,15 @@ function Documentos({ id, arquivos, podeEditar, novos, aoNovos, aoMudar, aoErro 
   }
   const acao = async (fn) => { aoErro(''); try { await fn(); aoMudar(); } catch (falha) { aoErro(falha.message); } };
   const renomear = () => acao(async () => { await api(`/financeiro/arquivos/${renomeando.id}`, { metodo: 'PUT', corpo: { nome: renomeando.nome } }); setRenomeando(null); });
+  // documentos marcados vão para o WhatsApp do cliente, com a saudação e a competência
+  async function enviarWhatsApp() {
+    aoErro(''); setZap({ enviando: true, ok: '' });
+    try {
+      const r = await api('/whatsapp/lancamento-documentos', { metodo: 'POST', corpo: { lancamento_id: id, arquivos: marcados } });
+      setMarcados([]); setZap({ enviando: false, ok: `${r.documentos} documento(s) enviado(s) para o WhatsApp de ${r.cliente}.` });
+    } catch (falha) { setZap({ enviando: false, ok: '' }); aoErro(falha.message); }
+  }
+  const marcar = (aid, sim) => setMarcados((m) => (sim ? [...m, aid] : m.filter((x) => x !== aid)));
 
   return (
     <fieldset className="grupo-permissoes documentos-fin">
@@ -584,6 +595,7 @@ function Documentos({ id, arquivos, podeEditar, novos, aoNovos, aoMudar, aoErro 
                 </span>
               ) : (
                 <>
+                  {temCliente && <input type="checkbox" checked={marcados.includes(a.id)} onChange={(e) => marcar(a.id, e.target.checked)} aria-label={`Marcar ${a.nome}`} />}
                   <button type="button" className="botao-texto" onClick={() => abrirArquivo(`/financeiro/arquivos/${a.id}`).catch((f) => aoErro(f.message))}>📎 {a.nome}</button>
                   <small className="cinza">{a.nome_arquivo} · {tamanho(a.tamanho)}{a.enviado_por && ` · ${a.enviado_por}`}</small>
                   <button type="button" className="botao-contorno pequeno" onClick={() => baixar(a)}>Baixar</button>
@@ -595,6 +607,16 @@ function Documentos({ id, arquivos, podeEditar, novos, aoNovos, aoMudar, aoErro 
             </li>
           ))}
         </ul>
+      )}
+      {temCliente && arquivos.length > 0 && (
+        <div className="envio-whatsapp-docs">
+          <button type="button" className="botao-whatsapp" disabled={!marcados.length || zap.enviando} onClick={enviarWhatsApp}
+            title="Envia os documentos marcados para o WhatsApp do cliente">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.5l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3Z" /></svg>
+            {zap.enviando ? 'Enviando…' : `Enviar no WhatsApp${marcados.length ? ` (${marcados.length})` : ''}`}
+          </button>
+          <small className={zap.ok ? 'aviso-ok' : 'cinza'}>{zap.ok || 'Marque os documentos e envie para o chamado do cliente.'}</small>
+        </div>
       )}
       {novos.map((a, i) => (
         <small key={i} className="cinza">Vai anexar ao lançar: <strong>{a.nome || a.arquivo.name}</strong> ({a.arquivo.name})

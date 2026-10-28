@@ -3,7 +3,8 @@
 
 const moeda = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export async function gerarPdfRelatorio({ titulo, empresa, logo, filtros, cols, grupos, agrupado }) {
+// baixar = false devolve o PDF (Blob) em vez de baixar, para anexar em outro lugar
+export async function gerarPdfRelatorio({ titulo, empresa, logo, filtros, cols, grupos, agrupado, baixar = true }) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const cor = getComputedStyle(document.documentElement).getPropertyValue('--forte').trim() || '#0774B8';
@@ -62,5 +63,7 @@ export async function gerarPdfRelatorio({ titulo, empresa, logo, filtros, cols, 
     doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120);
     doc.text(`Página ${i} de ${paginas}`, 283, 203, { align: 'right' });
   }
+  if (!baixar) return doc.output('blob');
   doc.save(`relatorio-${new Date().toISOString().slice(0, 10)}.pdf`);
+  return null;
 }

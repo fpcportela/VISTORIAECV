@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, moeda } from './api.js';
+import { api, moeda, sessao } from './api.js';
 import { criarTem } from './modulos.js';
 import { formatarDoc } from './documentos.js';
 import { CampoData } from './Data.jsx';
@@ -260,7 +260,7 @@ function Personalizado({ loja, empresa, logo, podeFinanceiro }) {
         </fieldset>
         <div className="acoes-relatorio">
           <button className="botao-primario" disabled={carregando}>{carregando ? 'Gerando…' : 'Gerar'}</button>
-          <button type="button" className="botao-contorno" disabled={!linhas?.length} onClick={pdf}>Gerar PDF</button>
+          <button type="button" className="botao-contorno" disabled={!linhas?.length} onClick={() => pdf()}>Gerar PDF</button>
           <button type="button" className="botao-contorno" onClick={salvarModelo}>Salvar modelo</button>
           {modelos.length > 0 && (
             <select value="" onChange={(e) => usarModelo(e.target.value)} aria-label="Modelos salvos">
@@ -311,7 +311,7 @@ function GrupoLinhas({ titulo, lista, cols, soma }) {
 }
 
 // ------------------------------------------------------------ faturar cliente
-const PADRAO_FATURAR = ['numero', 'data_venda', 'cliente', 'placas', 'veiculos', 'servicos', 'loja', 'formas', 'valor_total', 'a_faturar'];
+const PADRAO_FATURAR = ['numero', 'data_venda', 'cliente', 'placas', 'veiculos', 'servicos', 'loja', 'formas', 'situacao', 'desconto', 'valor_total', 'a_faturar'];
 function Faturar({ perfil, loja, empresa, logo }) {
   const [cliente, setCliente] = useState(null);
   const [f, setF] = useState({ de: '', ate: '', situacao: '' });
@@ -382,11 +382,13 @@ function Faturar({ perfil, loja, empresa, logo }) {
     carregarModelos();
   }
   // PDF das vendas marcadas, com as colunas escolhidas
-  async function pdf() {
+  // (sem baixar: devolve o arquivo, que o "Gerar recebimento" anexa ao lançamento)
+  async function pdf(lista = escolhidas, baixar = true) {
     const { gerarPdfRelatorio } = await import('./relatorioPersonalizado.js');
+    const soma = lista.reduce((t, v) => t + Number(v.a_faturar), 0);
     const filtros = [`Cliente: ${cliente.nome}`, f.de || f.ate ? `Período: ${dataBR(f.de) || '...'} a ${dataBR(f.ate) || '...'}` : '',
-      `${escolhidas.length} venda(s) · a receber ${real(total)}`].filter(Boolean);
-    await gerarPdfRelatorio({ titulo: 'Faturamento do cliente', empresa, logo, filtros, cols, grupos: [['', escolhidas]], agrupado: false });
+      `${lista.length} venda(s) · a receber ${real(soma)}`].filter(Boolean);
+    return gerarPdfRelatorio({ titulo: 'Faturamento do cliente', empresa, logo, filtros, cols, grupos: [['', lista]], agrupado: false, baixar });
   }
 
   return (
@@ -416,7 +418,7 @@ function Faturar({ perfil, loja, empresa, logo }) {
         </fieldset>
         <div className="acoes-relatorio">
           <button className="botao-primario" disabled={!cliente}>Gerar</button>
-          <button type="button" className="botao-contorno" disabled={!escolhidas.length} onClick={pdf}>Gerar PDF</button>
+          <button type="button" className="botao-contorno" disabled={!escolhidas.length} onClick={() => pdf()}>Gerar PDF</button>
           <button type="button" className="botao-contorno" onClick={salvarModelo}>Salvar modelo</button>
           {modelos.length > 0 && (
             <select value="" onChange={(e) => usarModelo(e.target.value)} aria-label="Modelos salvos">
@@ -467,15 +469,19 @@ function Faturar({ perfil, loja, empresa, logo }) {
         </div>
       ))}
       {gerando && (
-        <GerarRecebimento perfil={perfil} cliente={cliente} vendas={escolhidas} total={total}
+        <GerarRecebimento perfil={perfil} cliente={cliente} vendas={escolhidas} total={total} gerarPdf={(lista) => pdf(lista, false)}
           aoFechar={() => setGerando(false)}
-          aoGerar={(n) => { setGerando(false); setAviso(`Recebimento gerado: ${n} conta(s) a receber no Financeiro, total ${real(total)}.`); buscar(); }} />
+          aoGerar={(n, falhaPdf) => {
+            setGerando(false);
+            setAviso(`Recebimento gerado: ${n} conta(s) a receber no Financeiro, total ${real(total)}.${falhaPdf ? ` O PDF não foi anexado: ${falhaPdf}` : ' O PDF do relatório ficou anexado em Documentos.'}`);
+            buscar();
+          }} />
       )}
     </>
   );
 }
 
-function GerarRecebimento({ perfil, cliente, vendas, total, aoFechar, aoGerar }) {
+function GerarRecebimento({ perfil, cliente, vendas, total, gerarPdf, aoFechar, aoGerar }) {
   const lojaGrupo = vendas[0]?.loja_id;
   const [categorias, setCategorias] = useState([]);
   const [f, setF] = useState({ vencimento: somarDias(hojeISO(), 30), categoria_id: '', descricao: `FATURA ${cliente.nome}`, documento: '' });
@@ -498,7 +504,19 @@ function GerarRecebimento({ perfil, cliente, vendas, total, aoFechar, aoGerar })
     setSalvando(true); setErro('');
     try {
       const r = await api('/relatorios/faturar', { metodo: 'POST', corpo: { ...f, vendas: vendas.map((v) => v.id) } });
-      aoGerar(r.lancamentos.length);
+      // PDF das vendas de cada conta criada (uma por loja), anexado em Documentos do lançamento
+      let falhaPdf = '';
+      for (const l of r.lancamentos) {
+        try {
+          const blob = await gerarPdf(vendas.filter((v) => v.loja_id === l.loja_id));
+          const q = new URLSearchParams({ arquivo: `${semAcento(`faturamento ${cliente.nome}`).replace(/[^\w-]+/g, '-').toLowerCase()}.pdf`, nome: 'RELATORIO DE FATURAMENTO', mime: 'application/pdf' });
+          const resp = await fetch(`/api/financeiro/lancamentos/${l.id}/arquivos?${q}`, {
+            method: 'POST', body: blob, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+          });
+          if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).erro || 'Não foi possível anexar o PDF.');
+        } catch (falha) { falhaPdf = falha.message; }
+      }
+      aoGerar(r.lancamentos.length, falhaPdf);
     } catch (falha) { setErro(falha.message); setSalvando(false); }
   }
 

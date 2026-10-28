@@ -997,4 +997,61 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     if (falha) throw falha;
     res.json(msg);
   }));
+  // Documentos do lançamento (financeiro) para o WhatsApp do cliente: saudação + "fechamos o mês"
+  // com a competência, e os arquivos marcados. Fica registrado no chamado do cliente.
+  app.post('/api/whatsapp/lancamento-documentos', exigeLogin, comErroZap(async (req, res) => {
+    const lid = req.body?.lancamento_id;
+    const ids = [...new Set((Array.isArray(req.body?.arquivos) ? req.body.arquivos : []).filter((i) => UUID.test(String(i))))].slice(0, 10);
+    if (!UUID.test(lid || '')) throw new Recusa(404, 'Lançamento não encontrado.');
+    if (!ids.length) throw new Recusa(400, 'Marque os documentos que vão para o WhatsApp.');
+    const d = await comoUsuario(req.usuarioId, async (db) => {
+      const l = (await db.query(
+        `select l.id, l.loja_id, to_char(l.competencia, 'MM/YYYY') as comp, lj.empresa_id, c.id as cliente_id, c.nome as cliente, coalesce(nullif(c.whatsapp, ''), c.telefone) as tel
+           from lancamentos l join lojas lj on lj.id = l.loja_id left join clientes c on c.id = l.cliente_id
+          where l.id = $1 and pode(l.loja_id, 'financeiro.ver')`, [lid])).rows[0];
+      if (!l) throw new Recusa(404, 'Lançamento não encontrado.');
+      if (!l.cliente_id) throw new Recusa(400, 'Este lançamento não tem cliente.');
+      const tel = internacional(l.tel);
+      if (tel.length < 12) throw new Recusa(400, `O cadastro de ${l.cliente} não tem WhatsApp com DDD.`);
+      await exigirEnvio(db, l.empresa_id);
+      const arquivos = (await db.query(
+        'select nome, nome_arquivo, mime, conteudo from lancamento_arquivos where lancamento_id = $1 and id = any($2) order by criado_em', [l.id, ids])).rows;
+      if (!arquivos.length) throw new Recusa(400, 'Documento não encontrado.');
+      const contato = (await db.query(
+        `insert into whatsapp_contatos (empresa_id, telefone, nome, cliente_id) values ($1, $2, $3, $4)
+         on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome),
+                                                         cliente_id = coalesce(whatsapp_contatos.cliente_id, excluded.cliente_id)
+         returning id`, [l.empresa_id, tel, l.cliente, l.cliente_id])).rows[0].id;
+      const numero = (await db.query('select phone_number_id from whatsapp_numeros where empresa_id = $1 and ativo', [l.empresa_id])).rows[0]?.phone_number_id || null;
+      return { ...l, tel, contato, numero, arquivos };
+    });
+    const hora = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date()));
+    const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+    const corpo = `${saudacao}, fechamos o mês, em anexo segue relatório do mês de competência ${d.comp}.`;
+    // envia fora da transação e grava cada mensagem no chamado do cliente
+    const enviadas = [];
+    let falha = null;
+    try { enviadas.push({ texto: corpo, ...(await enviarTexto(d.numero, d.tel, corpo)) }); } catch (e) { falha = e; enviadas.push({ texto: corpo, falha: e }); }
+    for (const a of falha ? [] : d.arquivos) {
+      const ext = (/\.[\w]+$/.exec(a.nome_arquivo) || [''])[0];
+      const nome = `${a.nome}${ext && !a.nome.toLowerCase().endsWith(ext.toLowerCase()) ? ext : ''}`;
+      try { enviadas.push({ texto: `📎 ${nome}`, ...(await enviarDocumento(d.numero, d.tel, { bytes: a.conteudo, nome, mime: a.mime, legenda: nome })) }); }
+      catch (e) { falha = e; enviadas.push({ texto: `📎 ${nome}`, falha: e }); break; }
+    }
+    await comoUsuario(req.usuarioId, async (db) => {
+      const ch = (await db.query('select app_whatsapp_chamado_do_contato($1, $2, $3) as id', [d.empresa_id, d.contato, req.usuarioId])).rows[0].id;
+      await db.query(`update whatsapp_chamados set atualizado_em = now(), responsavel_id = coalesce(responsavel_id, $2),
+                             robo_estado = case when venda_id is null and coalesce(robo_estado, 'coletando') = 'coletando' then 'humano' else robo_estado end
+                       where id = $1`, [ch, req.usuarioId]);
+      await db.query('update whatsapp_contatos set ultima_em = now() where id = $1', [d.contato]);
+      for (const m of enviadas) {
+        await db.query(
+          `insert into whatsapp_conversa (empresa_id, contato_id, chamado_id, direcao, texto, status, erro, id_externo, enviado_por)
+           values ($1, $2, $3, 'saida', $4, $5, $6, $7, $8)`,
+          [d.empresa_id, d.contato, ch, m.texto, m.falha ? 'falhou' : m.status || 'enviada', m.falha?.message || null, m.id_externo || null, req.usuarioId]);
+      }
+    });
+    if (falha) throw falha;
+    res.json({ ok: true, cliente: d.cliente, contato_id: d.contato, documentos: d.arquivos.length });
+  }));
 }

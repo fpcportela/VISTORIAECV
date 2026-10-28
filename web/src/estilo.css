@@ -1051,3 +1051,7 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .busca-chamado { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow: auto; }
 .busca-chamado button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 8px; background: #fff; font: inherit; cursor: pointer; }
 .busca-chamado button:hover { border-color: var(--primaria, #0b6fb6); }
+.botao-whatsapp:disabled { opacity: .5; cursor: default; background: #f0fdf4; color: #15803d; }
+.envio-whatsapp-docs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.envio-whatsapp-docs .aviso-ok { margin: 0; padding: 4px 8px; }
+.lista-arquivos li input[type=checkbox] { width: 16px; height: 16px; flex: none; margin: 0; }
