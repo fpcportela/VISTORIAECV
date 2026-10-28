@@ -51,6 +51,10 @@ conversa do chamado.
 
 O **Fluxo de atendimento** do robô aparece como **fluxograma** (blocos e setas a partir das boas-vindas;
 clique num bloco para editá-lo na lista logo abaixo; setas tracejadas voltam para um bloco anterior).
+O bloco **Transferir (coluna / responsável)** leva o chamado para uma coluna do quadro e/ou para um
+responsável; depois o robô para (uma pessoa continua) ou, marcando "Robô continua o fluxo depois", segue.
+No quadro de chamados, o cartão com agendamento mostra um **ícone de agenda** ao lado do responsável, que
+abre a Agenda na unidade e no dia do agendamento.
 **Começar de um modelo pronto** troca o fluxo por um modelo: Agendamento de vistoria (menu com botões),
 Atendimento com IA, Menu com botões + IA para dúvidas, Orçamento rápido e Triagem para o atendente
 (só muda de verdade ao Salvar). **Opções como botões de ação** manda menus, unidades, tipo de veículo,

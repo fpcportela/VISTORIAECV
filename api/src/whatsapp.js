@@ -505,11 +505,21 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
         `select h.id, h.coluna_id, h.titulo, h.ordem, h.aberto, h.criado_em, h.atualizado_em, h.responsavel_id, u.nome as responsavel,
                 h.robo_estado, h.venda_id, (select v.numero from vendas v where v.id = h.venda_id) as venda_numero,
                 k.id as contato_id, coalesce(k.nome, k.telefone) as contato, k.telefone, k.nao_lidas, k.cliente_id, cl.nome as cliente,
-                (select m.texto from whatsapp_conversa m where m.contato_id = k.id order by m.criado_em desc limit 1) as ultima
+                (select m.texto from whatsapp_conversa m where m.contato_id = k.id order by m.criado_em desc limit 1) as ultima,
+                ag.id as agendamento_id, ag.loja_id as agenda_loja, ag.inicio as agenda_inicio,
+                to_char(ag.inicio at time zone 'America/Sao_Paulo', 'YYYY-MM-DD') as agenda_dia
            from whatsapp_chamados h
            join whatsapp_contatos k on k.id = h.contato_id
            left join usuarios u on u.id = h.responsavel_id
            left join clientes cl on cl.id = k.cliente_id
+           -- agendamento do chamado (ou do mesmo celular): o ligado ao chamado, senão o próximo
+           left join lateral (
+             select a.id, a.loja_id, a.inicio from agendamentos a
+              where a.empresa_id = h.empresa_id and a.situacao <> 'cancelado'
+                and (a.chamado_id = h.id or tel_chave(a.telefone) = tel_chave(k.telefone))
+              order by (a.chamado_id = h.id) desc nulls last, (a.inicio >= now() - interval '12 hours') desc,
+                       abs(extract(epoch from a.inicio - now()))
+              limit 1) ag on true
           where h.empresa_id = $1 and (h.aberto or h.concluido_em > now() - interval '30 days')
           order by h.ordem, h.atualizado_em desc`, [empresa])).rows;
       const responsaveis = (await db.query('select * from app_responsaveis($1)', [empresa]).catch(() => ({ rows: [] }))).rows;
@@ -654,9 +664,11 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
           where l.empresa_id = $1 and l.ativo order by l.nome`, [empresa])).rows;
       const servicos = (await db.query('select id, nome from servicos where empresa_id = $1 and ativo order by nome', [empresa])).rows;
       const usuarios = (await db.query('select * from app_responsaveis($1)', [empresa])).rows;
+      await db.query('select app_whatsapp_colunas_padrao($1)', [empresa]);
+      const colunas = (await db.query('select id, nome from whatsapp_colunas where empresa_id = $1 and not finaliza order by ordem, nome', [empresa])).rows;
       const robo = { ...ROBO_PADRAO, ...(salvo || {}) };
       return {
-        robo: { ...robo, fluxo: fluxoDe(robo) }, campos: CAMPOS, blocos: BLOCOS, lojas, servicos, usuarios,
+        robo: { ...robo, fluxo: fluxoDe(robo) }, campos: CAMPOS, blocos: BLOCOS, lojas, servicos, usuarios, colunas,
         ia_liberada: g.ia_liberada, ia_configurada: iaDisponivel(), master: g.master, pode_enviar: await podeEnviar(db, empresa),
       };
     }));

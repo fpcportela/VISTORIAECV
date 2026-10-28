@@ -5,6 +5,7 @@ import { mascaraTelefone } from './documentos.js';
 import { EditorCliente } from './Clientes.jsx';
 import { CamposEndereco, mascaraCep } from './Grupos.jsx';
 import { Fluxograma, MODELOS } from './Fluxograma.jsx';
+import { Icone } from './icones.jsx';
 
 // Módulo WhatsApp: chamados em kanban (colunas do grupo) e as conversas.
 // Um chamado é aberto sozinho quando um contato manda mensagem e não tem chamado aberto.
@@ -19,6 +20,7 @@ const nacional = (tel) => {
   return d;
 };
 const telefoneBR = (tel) => mascaraTelefone(nacional(tel));
+const quandoAgenda = (iso) => new Date(iso).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const quando = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -28,7 +30,7 @@ const quando = (iso) => {
 };
 const STATUS = { simulada: 'modo teste', enviada: 'enviada', entregue: 'entregue', lida: 'lida', falhou: 'não enviada' };
 
-export default function WhatsApp({ perfil, loja, aoVenda }) {
+export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda }) {
   const [aba, setAba] = useState('chamados');
   const [situacao, setSituacao] = useState(null);
   const [erro, setErro] = useState('');
@@ -64,7 +66,7 @@ export default function WhatsApp({ perfil, loja, aoVenda }) {
         <button role="tab" aria-selected={aba === 'conversas'} className={aba === 'conversas' ? 'ativa' : ''} onClick={() => setAba('conversas')}>Conversas</button>
         <button role="tab" aria-selected={aba === 'robo'} className={aba === 'robo' ? 'ativa' : ''} onClick={() => setAba('robo')}>Robô de atendimento</button>
       </div>
-      {aba === 'chamados' ? <Quadro recarga={recarga} aoAbrir={setAberto} />
+      {aba === 'chamados' ? <Quadro recarga={recarga} aoAbrir={setAberto} aoAgenda={aoAgenda} />
         : aba === 'conversas' ? <Conversas recarga={recarga} perfil={perfil} loja={loja} aoMudar={recarregar} aoVenda={aoVenda} />
         : <Robo />}
       {aberto && (
@@ -82,7 +84,7 @@ export default function WhatsApp({ perfil, loja, aoVenda }) {
 }
 
 // ------------------------------------------------------------ kanban
-function Quadro({ recarga, aoAbrir }) {
+function Quadro({ recarga, aoAbrir, aoAgenda }) {
   const [q, setQ] = useState(null);
   const [erro, setErro] = useState('');
   const [arrastando, setArrastando] = useState(null);
@@ -169,11 +171,19 @@ function Quadro({ recarga, aoAbrir }) {
                       {c.venda_numero && <span className="selo-robo venda">Venda nº {c.venda_numero} aberta pelo robô</span>}
                       <small className="cinza">{telefoneBR(c.telefone)}{c.cliente ? ' · cliente' : ''}</small>
                       {c.ultima && <span className="kanban-ultima">{c.ultima}</span>}
-                      <small className="cinza kanban-rodape">
-                        <span>{c.responsavel ? `👤 ${c.responsavel}` : 'Sem responsável'}</span>
-                        <span>{quando(c.atualizado_em)}</span>
-                      </small>
                     </button>
+                    <small className="cinza kanban-rodape">
+                      <span className="kanban-resp">
+                        <span>{c.responsavel ? `👤 ${c.responsavel}` : 'Sem responsável'}</span>
+                        {c.agenda_dia && aoAgenda && (
+                          <button type="button" className="kanban-agenda" title={`Agendamento: ${quandoAgenda(c.agenda_inicio)}. Abrir na agenda`}
+                            aria-label={`Abrir a agenda em ${quandoAgenda(c.agenda_inicio)}`} onClick={() => aoAgenda(c.agenda_dia, c.agenda_loja)}>
+                            <Icone nome="agenda" tamanho={14} />
+                          </button>
+                        )}
+                      </span>
+                      <span>{quando(c.atualizado_em)}</span>
+                    </small>
                     {q.pode_enviar && (
                       <select className="kanban-mover so-celular-ou-teclado" value={c.coluna_id} aria-label={`Mover chamado de ${c.contato}`}
                         onChange={(e) => mover(c, e.target.value, null)}>
@@ -566,6 +576,7 @@ const blocoVazio = (tipo) => ({
   ...(tipo === 'menu' && { opcoes: [{ rotulo: '', ir: '' }, { rotulo: '', ir: '' }] }),
   ...(tipo === 'pergunta' && { campo: 'nome', obrigatorio: true }),
   ...(tipo === 'ia' && { campos: [] }),
+  ...(tipo === 'transferir' && { coluna_id: '', responsavel_id: '', continuar: false }),
 });
 const DICA_BLOCO = {
   mensagem: 'Manda o texto e segue sem esperar resposta.',
@@ -574,6 +585,7 @@ const DICA_BLOCO = {
   ia: 'A IA conversa usando o prompt e a base de conhecimento. Com dados marcados, ela junta esses dados; sem nenhum, só tira as dúvidas. Quando termina, segue o fluxo.',
   venda: 'Abre a venda AGENDADO com os dados juntados e manda a mensagem final. Termina o robô.',
   atendente: 'Manda o texto e passa a conversa para uma pessoa.',
+  transferir: 'Leva o chamado para a coluna do quadro e/ou para o responsável escolhido. Depois para o robô (uma pessoa continua) ou segue o fluxo.',
   fim: 'Manda o texto e encerra o robô nesta conversa, sem abrir venda.',
 };
 
@@ -791,7 +803,7 @@ function Robo() {
               )}
               {b.tipo !== 'ia' && (
                 <textarea rows={b.tipo === 'pergunta' ? 1 : 2} data-livre value={b.texto} aria-label={`Texto do bloco ${n + 1}`}
-                  placeholder={b.tipo === 'venda' ? 'Mensagem final (em branco: a mensagem final padrão, abaixo)' : b.tipo === 'menu' ? 'Pergunta do menu. Ex.: Como posso ajudar?' : 'Texto que o robô manda'}
+                  placeholder={b.tipo === 'transferir' ? 'Mensagem ao transferir (opcional). Ex.: Vou te passar para o setor de vendas.' : b.tipo === 'venda' ? 'Mensagem final (em branco: a mensagem final padrão, abaixo)' : b.tipo === 'menu' ? 'Pergunta do menu. Ex.: Como posso ajudar?' : 'Texto que o robô manda'}
                   onChange={(e) => mudarBloco(n, { texto: e.target.value })} />
               )}
               {b.tipo === 'menu' && (
@@ -827,7 +839,24 @@ function Robo() {
                   {!d.ia_liberada && <p className="aviso-zap">A IA não está liberada para este grupo: este bloco passa a conversa para um atendente.</p>}
                 </div>
               )}
-              {['mensagem', 'pergunta', 'ia'].includes(b.tipo) && (
+              {b.tipo === 'transferir' && (
+                <div className="robo-linha robo-transferir">
+                  <label>Coluna
+                    <select value={b.coluna_id} onChange={(e) => mudarBloco(n, { coluna_id: e.target.value })}>
+                      <option value="">Não muda</option>
+                      {(d.colunas || []).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </label>
+                  <label>Responsável
+                    <select value={b.responsavel_id} onChange={(e) => mudarBloco(n, { responsavel_id: e.target.value })}>
+                      <option value="">Não muda</option>
+                      {(d.usuarios || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                    </select>
+                  </label>
+                  <label className="linha-check"><input type="checkbox" checked={Boolean(b.continuar)} onChange={(e) => mudarBloco(n, { continuar: e.target.checked })} /> Robô continua o fluxo depois</label>
+                </div>
+              )}
+              {(['mensagem', 'pergunta', 'ia'].includes(b.tipo) || (b.tipo === 'transferir' && b.continuar)) && (
                 <label className="robo-depois">{b.tipo === 'ia' ? 'Quando a IA terminar' : 'Depois'}
                   <select value={b.ir} onChange={(e) => mudarBloco(n, { ir: e.target.value })}>{destinos(n)}</select>
                 </label>

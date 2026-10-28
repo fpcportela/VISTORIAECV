@@ -40,12 +40,12 @@ export const SITUACOES_AGENDA = {
   agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado',
 };
 
-export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda }) {
+export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial, lojaInicial }) {
   const lojas = perfil.lojas.filter((l) => criarTem(perfil, l.id)('agenda.ver'));
-  const [filial, setFilial] = useState('');
+  const [filial, setFilial] = useState(lojaInicial || '');
   const lojaUsada = lojas.some((l) => l.id === filial) ? filial : lojas.some((l) => l.id === loja) ? loja : lojas[0]?.id || '';
   const [modo, setModo] = useState('dia');
-  const [dia, setDia] = useState(hoje());
+  const [dia, setDia] = useState(diaInicial || hoje());
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
   const [janela, setJanela] = useState(null);

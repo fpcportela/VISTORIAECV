@@ -718,7 +718,10 @@ button.tf-linha:hover { border-color: var(--forte); }
 .kanban-nome strong { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kanban-titulo { font-size: 12px; font-weight: 700; color: var(--forte); }
 .kanban-ultima { font-size: 13px; color: #374151; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.kanban-rodape { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; }
+.kanban-rodape { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11px; padding: 0 12px 10px; margin-top: -4px; }
+.kanban-resp { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.kanban-agenda { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 22px; padding: 0; border: 1px solid var(--borda); border-radius: 6px; background: #fff; color: var(--primaria, #0b6fb6); cursor: pointer; }
+.kanban-agenda:hover { background: var(--primaria, #0b6fb6); color: #fff; }
 .kanban-mover { width: calc(100% - 20px); margin: 0 10px 10px; font-size: 12px; padding: 4px 6px; border: 1px solid var(--borda); border-radius: 6px; background: #fff; display: none; }
 .kanban-vazio { font-size: 13px; text-align: center; margin: 6px 0; }
 .kanban-nova { flex: 0 0 180px; border: 2px dashed #cdd4df; background: none; border-radius: 10px; min-height: 48px; color: var(--cinza); font-weight: 700; cursor: pointer; }
@@ -929,6 +932,9 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .robo-bloco.bloco-ia { border-left-color: #16a34a; }
 .robo-bloco.bloco-venda { border-left-color: #ca8a04; }
 .robo-bloco.bloco-atendente, .robo-bloco.bloco-fim { border-left-color: #64748b; }
+.robo-bloco.bloco-transferir { border-left-color: #ca8a04; }
+.robo-transferir { flex-wrap: wrap; align-items: flex-end; }
+.robo-transferir > label:not(.linha-check) { display: flex; flex-direction: column; gap: 2px; font-size: .85rem; }
 .robo-bloco-topo, .robo-linha { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .robo-bloco-topo input { flex: 1 1 200px; min-width: 0; }
 .robo-bloco-num, .robo-opcao-num { display: inline-grid; place-items: center; min-width: 28px; height: 28px; border-radius: 50%; background: #eef1f6; font-weight: 700; font-size: 13px; }

@@ -6,10 +6,10 @@ const L = 210, A = 74, GX = 36, GY = 64, MARGEM = 16; // tamanho do bloco e espa
 
 const COR = {
   inicio: '#0f766e', mensagem: '#2563eb', menu: '#7c3aed', pergunta: '#0891b2', ia: '#db2777',
-  venda: '#16a34a', atendente: '#ea580c', fim: '#64748b', saida: '#94a3b8',
+  venda: '#16a34a', atendente: '#ea580c', transferir: '#ca8a04', fim: '#64748b', saida: '#94a3b8',
 };
 const NOME_TIPO = {
-  mensagem: 'Mensagem', menu: 'Menu (botões)', pergunta: 'Pergunta', ia: 'IA', venda: 'Abre a venda', atendente: 'Atendente', fim: 'Encerra',
+  mensagem: 'Mensagem', menu: 'Menu (botões)', pergunta: 'Pergunta', ia: 'IA', venda: 'Abre a venda', atendente: 'Atendente', transferir: 'Transferir', fim: 'Encerra',
 };
 
 // Para onde cada bloco vai: [{ para: índice | 'fim', rotulo }]
@@ -19,6 +19,7 @@ function saidas(fluxo, b, n) {
     return n + 1 < fluxo.length ? n + 1 : 'fim';
   };
   if (b.tipo === 'menu') return (b.opcoes || []).map((o, k) => ({ para: alvo(o.ir), rotulo: `${k + 1}. ${o.rotulo || '…'}` }));
+  if (b.tipo === 'transferir' && b.continuar) return [{ para: alvo(b.ir), rotulo: 'transferiu' }];
   if (['mensagem', 'pergunta', 'ia'].includes(b.tipo)) return [{ para: alvo(b.ir), rotulo: b.tipo === 'ia' ? 'terminou' : '' }];
   return [];
 }

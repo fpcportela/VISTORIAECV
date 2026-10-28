@@ -24,6 +24,7 @@ import Pesquisa from './Pesquisa.jsx';
 export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [loja, setLoja] = useState('');
   const [tela, setTela] = useState('inicio');
+  const [agendaAbre, setAgendaAbre] = useState({ chave: 0 }); // o WhatsApp abre a agenda no dia do agendamento
   const [financeiroAbre, setFinanceiroAbre] = useState({ aba: 'receber', novo: false, chave: 0 });
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
@@ -90,6 +91,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config', 'lojas', 'clientes', 'whatsapp', 'relatorios', 'agenda'].includes(id)) {
       setTela(id); setVistoriaId(null); setBuscaVendas(''); setSituacaoVendas('');
       if (id === 'vendas') setAbaVenda('lista');
+      if (id === 'agenda') setAgendaAbre((a) => ({ chave: a.chave + 1 }));
       if (id === 'financeiro') setFinanceiroAbre((f) => ({ aba: 'receber', novo: false, chave: f.chave + 1 }));
     }
     else if (id === 'busca') setConsulta('');
@@ -429,8 +431,9 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'config' ? <Configuracoes perfil={perfil} />
             : tela === 'lojas' ? <Grupos />
             : tela === 'clientes' ? <Clientes perfil={perfil} loja={loja} />
-            : tela === 'agenda' ? <Agenda perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
-            : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} aoVenda={abrirVenda} />
+            : tela === 'agenda' ? <Agenda key={agendaAbre.chave} diaInicial={agendaAbre.dia} lojaInicial={agendaAbre.loja} perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
+            : tela === 'whatsapp' ? <WhatsApp perfil={perfil} loja={loja} aoVenda={abrirVenda}
+                aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined} />
             : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo} />
             : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} />
             : tela === 'servicos' ? (() => {
