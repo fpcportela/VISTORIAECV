@@ -217,6 +217,7 @@ const paraVenda = (a) => ({
 });
 
 function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoVenda, aoNovaVenda, destaque }) {
+  const encerrado = ['compareceu', 'faltou'].includes(a.situacao);   // não muda mais
   return (
     <div id={`ag-${a.id}`} className={`agenda-cartao ag-${a.situacao}${destaque ? ' destacado' : ''}`}>
       <div className="agenda-cartao-topo">
@@ -235,16 +236,16 @@ function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoVenda, aoNovaVen
       )}
       {a.observacao && <div className="cinza agenda-detalhe">{a.observacao}</div>}
       <div className="agenda-acoes">
-        {pode ? (
+        {pode && !encerrado ? (
           <select value={a.situacao} onChange={(e) => aoMudar(a, { situacao: e.target.value })} aria-label="Situação">
             {Object.entries(SITUACOES_AGENDA).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
           </select>
         ) : <span className={`selo-sit ag-${a.situacao}`}>{SITUACOES_AGENDA[a.situacao]}</span>}
         {a.venda_id && <button className="botao-link" onClick={() => aoVenda?.(a.venda_id)}>Venda nº {a.venda_numero}</button>}
-        {!a.venda_id && aoNovaVenda && a.situacao !== 'cancelado' && <button className="botao-link" onClick={() => aoNovaVenda(paraVenda(a))}>Abrir venda</button>}
+        {!a.venda_id && aoNovaVenda && !['cancelado', 'faltou'].includes(a.situacao) && <button className="botao-link" onClick={() => aoNovaVenda(paraVenda(a))}>Abrir venda</button>}
         {(a.telefone || a.chamado_id) && <BotaoWhatsApp telefone={a.telefone} nome={a.nome} clienteId={a.cliente_id} loja={a.loja_id} chamadoId={a.chamado_id}
           rotulo="" titulo={a.chamado_id ? 'Abrir a conversa deste agendamento' : 'Abrir a conversa no WhatsApp'} />}
-        {pode && <button className="botao-link" onClick={() => aoEditar(a)}>Editar / remarcar</button>}
+        {pode && !encerrado && <button className="botao-link" onClick={() => aoEditar(a)}>Editar / remarcar</button>}
         {a.responsavel && <span className="agenda-responsavel" title="Responsável pelo atendimento">👤 {a.responsavel}</span>}
       </div>
     </div>

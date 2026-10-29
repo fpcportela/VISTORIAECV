@@ -133,6 +133,11 @@ export async function avisarConfirmado(usuarioId, agendamentoId) {
   if (falha) throw new Recusa(502, falha.message);
 }
 
+// A cada 5 minutos: robô para quando o cliente não confirmou até a hora; 24 h depois, sem venda, vira FALTOU
+setInterval(() => {
+  comoUsuario(null, (db) => db.query('select app_agenda_rotina()')).catch((e) => console.error('Rotina da agenda:', e.message));
+}, 5 * 60 * 1000).unref();
+
 export function rotasAgenda(app, { exigeLogin, rota }) {
   const comRecusa = criarComRecusa(rota);
   const lojaDe = async (db, id) => {
@@ -274,6 +279,10 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
     let confirmou = false;
     await comoUsuario(req.usuarioId, async (db) => {
       const a = await agendamentoDe(db, req.params.id);
+      // COMPARECEU e FALTOU encerram o agendamento: não muda mais
+      if (['compareceu', 'faltou'].includes(a.situacao)) {
+        throw new Recusa(400, `Este agendamento já está como ${a.situacao === 'faltou' ? 'FALTOU' : 'COMPARECEU'} e não pode mais ser alterado.`);
+      }
       confirmou = b.situacao === 'confirmado' && a.situacao !== 'confirmado';
       await exigir(db, a.loja_id, 'agenda.gerenciar', 'Seu perfil não pode mexer na agenda.');
       if (b.situacao !== undefined) {

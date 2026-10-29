@@ -359,6 +359,9 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
   }
 
   const lojasCliente = perfil.lojas.filter((l) => l.empresa_id === k.empresa_id && criarTem(perfil, l.id)('clientes.editar'));
+  // Encerrar: leva o chamado para a 1ª coluna que finaliza (ex.: CONCLUÍDO)
+  const finalizadoras = colunas.filter((c) => c.finaliza);
+  const encerrar = k.chamado && k.pode_enviar && !finalizadoras.some((c) => c.id === k.chamado.coluna_id) ? finalizadoras[0] : null;
 
   return (
     <div className="conversa">
@@ -381,6 +384,10 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
             <Icone nome="agenda" tamanho={16} /> Agendar
           </button>
         )}
+        {encerrar && (
+          <button type="button" className="botao-contorno pequeno perigo" title="Encerra o atendimento: o chamado vai para a coluna de concluídos e o robô para"
+            onClick={() => window.confirm('Encerrar este atendimento?') && mudarChamado({ coluna_id: encerrar.id })}>Encerrar</button>
+        )}
         <button className="fechar" onClick={aoFechar} aria-label="Fechar conversa">×</button>
       </header>
       {k.chamado && (
@@ -398,7 +405,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
           </label>
           {k.agendamento && (
             <label>Agendamento · {quandoAgenda(k.agendamento.inicio)}
-              <select value={k.agendamento.situacao} disabled={!k.agendamento.pode} onChange={(e) => mudarAgendamento(e.target.value)}
+              <select value={k.agendamento.situacao} disabled={!k.agendamento.pode || ['compareceu', 'faltou'].includes(k.agendamento.situacao)} onChange={(e) => mudarAgendamento(e.target.value)}
                 className={`sit-agenda ag-${k.agendamento.situacao}`}>
                 {Object.entries(SITUACAO_AG).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
               </select>
