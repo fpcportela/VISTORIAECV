@@ -172,7 +172,7 @@ export function conferir(campo, resposta, servicos) {
 function pergunta(etapa, servicos) {
   let p = etapa.pergunta || CAMPOS[etapa.campo] || '';
   if (etapa.campo === 'tipo_veiculo') p += `\n${TIPOS.map(([, rot], i) => `${i + 1} - ${rot}`).join('\n')}`;
-  if (etapa.campo === 'servico') p += `\n${servicos.map((s, i) => `${i + 1} - ${s.nome}`).join('\n')}`;
+  if (etapa.campo === 'servico') p += `\n${servicos.map((s, i) => `${i + 1} - ${s.nome}${s.preco ? ` - ${s.preco}` : ''}`).join('\n')}`;
   if (!etapa.obrigatorio) p += '\n(se não quiser informar, responda PULAR)';
   return p;
 }
@@ -259,6 +259,34 @@ async function baseDeConhecimento(empresa) {
   return docs;
 }
 export const esquecerConhecimento = (empresa) => conhecimentos.delete(empresa);
+
+// Preço de cada serviço: a linha da base de conhecimento (texto) com o nome do serviço e um valor
+// (ex.: "CAUTELAR - R$ 150,00"); sem ela, o valor padrão do cadastro de serviços
+const VALOR = /R\$\s*\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\b\d{1,3}(?:\.\d{3})*,\d{2}\b/;
+const real = (n) => `R$ ${Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export function precoNoTexto(nome, textos) {
+  const alvo = semAcento(nome).replace(/[^A-Z0-9]+/g, ' ').trim();
+  if (!alvo) return null;
+  const achado = new RegExp(`(^|[^A-Z0-9])${alvo.replace(/ /g, '[^A-Z0-9]+')}([^A-Z0-9]|$)`);
+  for (const t of textos) {
+    for (const linha of String(t || '').split(/\r?\n/)) {
+      if (!achado.test(semAcento(linha))) continue;
+      const v = VALOR.exec(linha);
+      if (v) return real(Number(v[0].replace(/R\$\s*/, '').replace(/\./g, '').replace(',', '.')));
+    }
+  }
+  return null;
+}
+async function servicosComPreco(ctx) {
+  try {
+    const textos = (await baseDeConhecimento(ctx.empresa_id)).filter((k) => k.tipo !== 'pdf').map((k) => k.conteudo);
+    const cadastro = new Map((await comoUsuario(null, (db) => db.query('select * from app_robo_precos($1)', [ctx.empresa_id]))).rows.map((x) => [x.id, Number(x.valor)]));
+    return ctx.servicos.map((x) => ({ ...x, preco: precoNoTexto(x.nome, textos) || (cadastro.get(x.id) > 0 ? real(cadastro.get(x.id)) : null) }));
+  } catch (e) {
+    console.error('[robô] preços:', e.message);
+    return ctx.servicos;
+  }
+}
 
 // Bloco "Conversa com IA": campos = dados a coletar (vazio = só tira dúvidas e segue o fluxo)
 async function perguntarIA(ctx, dados, livres, bloco) {
@@ -355,6 +383,10 @@ function saudarPeloNome(saudacao, nome) {
   return m ? `${m[1]}, ${p}!${texto.slice(m[0].length)}` : `Olá, ${p}! Que bom falar com você de novo.\n\n${texto}`;
 }
 
+// Primeira pergunta do robô (antes da unidade) e as respostas do caminho "Dúvidas"
+const textoTriagem = () => 'Como posso ajudar?\n1 - Dúvidas\n2 - Agendar vistoria';
+const MSG_DUVIDA = 'Certo! Em breve um atendente vai falar com você.';
+const MSG_MOVIMENTO = 'Estamos com um movimento acima do normal, mas não deixaremos de atendê-lo. Em breve um atendente fala com você.';
 const textoUnidades = (lojas) => `Em qual unidade você deseja atendimento?\n${lojas
   .map((l, i) => {
     const end = enderecoLoja(l), hor = textoHorarios(l.horarios);
@@ -408,7 +440,25 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
   const ctx = await comoUsuario(null, async (db) => (await db.query('select app_robo_contexto($1) as c', [contatoId])).rows[0].c);
   if (!ctx) return; // robô desligado ou sem chamado aberto
   const ch = ctx.chamado;
+  // esperando um atendente (o cliente pediu): se escrever de novo antes de uma pessoa responder,
+  // avisa que o movimento está acima do normal (no máximo a cada 10 minutos)
+  if (ch.robo_estado === 'humano' && ch.robo_dados?.esperando_atendente && !ch.venda_id && !pareceRobo(ctx.mensagens)) {
+    const desde = new Date(ch.robo_dados.esperando_atendente);
+    const pessoa = ctx.mensagens.some((m) => m.direcao === 'saida' && !m.robo && new Date(m.em) > desde);
+    const ultimoAviso = ctx.mensagens.filter((m) => m.direcao === 'saida' && m.robo && m.texto === MSG_MOVIMENTO).at(-1);
+    const ultimaCliente = ctx.mensagens.filter((m) => m.direcao === 'entrada').at(-1);
+    if (!pessoa && ultimaCliente && new Date(ultimaCliente.em) > desde
+        && (!ultimoAviso || new Date(ultimaCliente.em) - new Date(ultimoAviso.em) > 10 * 60000)) {
+      const texto = MSG_MOVIMENTO;
+      let envio = null, falha = null;
+      try { envio = await enviarTexto(ctx.phone_number_id, ctx.contato.telefone, texto); } catch (e) { falha = e; }
+      await comoUsuario(null, (db) => db.query('select app_robo_registrar($1, $2, $3, $4, $5)',
+        [ch.id, texto, falha ? 'falhou' : envio.status, falha?.message || null, envio?.id_externo || null]));
+    }
+    return;
+  }
   if (ch.venda_id || ch.robo_estado === 'concluido' || ch.robo_estado === 'humano') return;
+  ctx.servicos = await servicosComPreco(ctx);
   const fluxo = fluxoDe(ctx.robo);
   const iaPode = ctx.ia_liberada && iaConfigurada();
   const dados = { ...(ch.robo_dados || {}) };
@@ -433,6 +483,7 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
   const atribuir = () => comoUsuario(null, (db) => db.query('select app_robo_atribuir($1, $2)', [ch.id, dados.loja_id || null]))
     .catch((e) => console.error('[robô] responsável:', e.message));
   const passarParaAtendente = async (msg, falas = []) => {
+    dados.esperando_atendente = new Date().toISOString();
     await estado('humano', null, dados);
     await atribuir();
     await falar(juntar([...falas, msg || 'Certo! Um atendente vai continuar a conversa com você em instantes.']));
@@ -448,12 +499,13 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
   // opções de cada tipo de pergunta, para os botões
   const comFalas = (falas, botoes) => botoes && { ...botoes, pergunta: juntar([...falas, botoes.pergunta]) };
   const botoesMenu = (b) => ({ pergunta: formatar(b.texto, dados), opcoes: b.opcoes.map((o) => ({ titulo: o.rotulo })) });
+  const botoesTriagem = () => ({ pergunta: 'Como posso ajudar?', opcoes: [{ titulo: 'Dúvidas' }, { titulo: 'Agendar vistoria' }] });
   const botoesUnidades = () => ({ pergunta: 'Em qual unidade você deseja atendimento?',
     opcoes: lojas.map((l) => ({ titulo: l.nome, descricao: [enderecoLoja(l), textoHorarios(l.horarios)].filter(Boolean).join(' · ') })) });
   const botoesPergunta = (b) => {
     const p = b.texto || CAMPOS[b.campo];
     if (b.campo === 'tipo_veiculo') return { pergunta: p, opcoes: TIPOS.map(([, rot]) => ({ titulo: rot })) };
-    if (b.campo === 'servico' && ctx.servicos.length) return { pergunta: p, opcoes: ctx.servicos.map((x) => ({ titulo: x.nome })) };
+    if (b.campo === 'servico' && ctx.servicos.length) return { pergunta: p, opcoes: ctx.servicos.map((x) => ({ titulo: x.nome, descricao: x.preco || undefined })) };
     if (b.campo === 'horario' && dados.opcoes_horario?.length) {
       // "qua., 28/10, 10:00" cabe no título da lista
       const curto = (t) => new Date(t).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -595,6 +647,7 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
   };
 
   // atendente devolveu a conversa para o robô: repete de onde parou
+  if (retomar && dados.triagem) return falar(textoTriagem(), botoesTriagem());
   if (retomar && dados.escolhendo_loja) return falar(textoUnidades(lojas), botoesUnidades());
   if (retomar) {
     const n = ch.robo_etapa || 0;
@@ -618,15 +671,28 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
       for (const campo of DO_CADASTRO) if (cli[campo] && !dados[campo]) dados[campo] = cli[campo];
     }
     const ola = cli ? saudarPeloNome(ctx.robo.saudacao, cli.nome) : ctx.robo.saudacao;
+    // antes de tudo: dúvidas (vai para uma pessoa) ou agendar vistoria (segue o fluxo)
+    dados.triagem = true;
+    await estado('coletando', 0, dados);
+    return falar(juntar([ola, textoTriagem()]), comFalas([ola], botoesTriagem()));
+  }
+
+  if (dados.triagem) {
+    const s = semAcento(ultima);
+    const k = Number(s.replace(/\D/g, '') || NaN);
+    const escolha = k === 1 || /DUVIDA/.test(s) ? 'duvida' : k === 2 || /AGEND/.test(s) ? 'agendar' : null;
+    if (!escolha) return falar(`Responda com o número de uma das opções.\n\n${textoTriagem()}`, comFalas(['Responda com o número de uma das opções.'], botoesTriagem()));
+    delete dados.triagem;
+    if (escolha === 'duvida') return passarParaAtendente(MSG_DUVIDA);
     // grupo com mais de uma unidade: primeiro o cliente escolhe a unidade (com o endereço de cada uma)
     if (lojas.length > 1) {
       dados.escolhendo_loja = true;
       await estado('coletando', 0, dados);
-      return falar(juntar([ola, textoUnidades(lojas)]), comFalas([ola], botoesUnidades()));
+      return falar(textoUnidades(lojas), botoesUnidades());
     }
     if (lojas[0]) dados.loja_id = lojas[0].id;
     await estado('coletando', 0, dados);
-    return executar(0, [ola]);
+    return executar(0);
   }
 
   if (dados.escolhendo_loja) {
