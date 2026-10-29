@@ -662,10 +662,11 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       await db.query(
         `update whatsapp_chamados set coluna_id = $2, aberto = $3, concluido_em = $4, ordem = $5, titulo = $6, responsavel_id = $7, atualizado_em = now()
           where id = $1`, [ch.id, coluna, aberto, concluido, ordem, titulo, resp]);
-      // etapa CONFIRMAR / AGENDADO muda a situação do agendamento (agendado / confirmado)
+      // etapa CONFIRMAR (se o grupo ainda tiver) volta o agendamento para agendado
       if (coluna !== ch.coluna_id) {
         const nome = (await db.query('select upper(nome) as n from whatsapp_colunas where id = $1', [coluna])).rows[0]?.n || '';
-        const nova = /^CONFIRMAR/.test(semAcentoNome(nome)) ? 'agendado' : /^AGENDADO/.test(semAcentoNome(nome)) ? 'confirmado' : null;
+        // AGENDADO não confirma mais sozinho (o robô pergunta ao cliente; a pessoa muda a situação no agendamento)
+        const nova = /^CONFIRMAR/.test(semAcentoNome(nome)) ? 'agendado' : null;
         const ag = nova && (await db.query(
           `select a.id, a.situacao from agendamentos a where a.id = app_agendamento_do_chamado($1)
               and a.situacao in ('agendado', 'confirmado') and pode(a.loja_id, 'agenda.gerenciar')`, [ch.id])).rows[0];

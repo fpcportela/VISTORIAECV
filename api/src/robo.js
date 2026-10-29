@@ -36,7 +36,7 @@ export const ROBO_PADRAO = {
     { campo: 'servico', pergunta: 'Qual serviço você precisa?', obrigatorio: true },
     { campo: 'horario', pergunta: 'Escolha o melhor horário para a vistoria:', obrigatorio: true },
   ],
-  mensagem_final: 'Obrigado, {nome}! Registramos o seu pedido nº {numero}. Em breve um atendente confirma com você.',
+  mensagem_final: 'Obrigado, {nome}! Registramos o seu pedido nº {numero}.',
   ia_ativa: false,
   ia_instrucoes: '',
   fluxo: null,
@@ -398,9 +398,9 @@ export function pareceRobo(mensagens = []) {
       if (rapidas >= 3) return 'respostas instantâneas';
     }
   }
-  // conversa em ciclo: mais de 16 mensagens em 3 minutos
+  // conversa em ciclo: mais de 12 mensagens DO CLIENTE em 2 minutos (um agendamento normal tem umas 9 respostas)
   const agora = mensagens.at(-1)?.em ? new Date(mensagens.at(-1).em) : null;
-  if (agora && mensagens.filter((m) => m.em && agora - new Date(m.em) < 180000).length > 16) return 'conversa em ciclo';
+  if (agora && entradas.filter((m) => m.em && agora - new Date(m.em) < 120000).length > 12) return 'conversa em ciclo';
   return null;
 }
 
@@ -488,6 +488,16 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
       fim += '\n\nNo momento não há horário livre na agenda; o atendente vai combinar o horário com você.';
     }
     await atribuir();
+    // com agendamento: o robô já pergunta se o cliente confirma (SIM manda endereço + Waze e marca CONFIRMADO)
+    const ag = dados.sem_horario ? null
+      : await comoUsuario(null, async (db) => (await db.query('select app_robo_agendamento($1) as a', [ch.id])).rows[0].a).catch(() => null);
+    if (ag) {
+      fim = fim.replace(/\s*Em (breve|instantes) um atendente confirma com voc[eê]\.?/i, '');
+      const pergunta = `Sua vistoria ficou para ${rotuloHorario(ag.inicio)}${ag.loja?.nome ? `, na ${ag.loja.nome}` : ''}${ag.placa ? ` (placa ${ag.placa})` : ''}.\n\nConfirma o agendamento? Responda SIM ou NÃO.`;
+      await falar(juntar([...falas, fim, pergunta]), { pergunta: juntar([...falas, fim, pergunta.replace(/ Responda SIM ou NÃO\.$/, '')]), opcoes: [{ titulo: 'SIM' }, { titulo: 'NÃO' }] });
+      await comoUsuario(null, (db) => db.query("select app_agenda_confirmacao_passo($1, 'aguardando', null)", [ag.id])).catch((e) => console.error('[robô] confirmação:', e.message));
+      return true;
+    }
     await falar(juntar([...falas, fim]));
     return true;
   };
