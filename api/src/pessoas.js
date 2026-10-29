@@ -236,6 +236,20 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     }));
   }));
 
+  // Ponto do próprio usuário (botão do início): o colaborador ligado ao login, numa filial em que ele registra ponto
+  app.get('/api/ponto/meu', exigeLogin, comRecusa(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
+      `select c.id, c.nome, c.cargo, l.loja_id,
+              coalesce((select jsonb_agg(jsonb_build_object('tipo', r.tipo, 'hora', r.hora) order by r.hora)
+                          from ponto_registros r
+                         where r.colaborador_id = c.id and r.ativo and r.data = (now() at time zone '${FUSO}')::date), '[]') as hoje
+         from colaboradores c
+         cross join lateral (select x.loja_id from (select c.loja_id, 0 as o union all
+                                                     select cl.loja_id, 1 from colaborador_lojas cl where cl.colaborador_id = c.id) x
+                              where x.loja_id is not null and pode(x.loja_id, 'ponto.registrar') order by x.o limit 1) l
+        where c.usuario_id = $1 and c.ativo limit 1`, [req.usuarioId])).rows[0] || null));
+  }));
+
   app.post('/api/ponto/registrar', exigeLogin, comRecusa(async (req, res) => {
     const foto = lerFoto(req.body?.foto);
     const r = await comoUsuario(req.usuarioId, async (db) => {

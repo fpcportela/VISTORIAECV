@@ -10,7 +10,7 @@ import { ExecutarVistoria, ListaVistorias, NovaVistoria } from './Vistorias.jsx'
 import { EditorVenda, ListaVendas, SITUACOES } from './Vendas.jsx';
 import Servicos from './Servicos.jsx';
 import Colaboradores from './Colaboradores.jsx';
-import Ponto from './Ponto.jsx';
+import Ponto, { PontoRapido } from './Ponto.jsx';
 import Financeiro from './Financeiro.jsx';
 import Configuracoes from './Configuracoes.jsx';
 import Grupos from './Grupos.jsx';
@@ -26,6 +26,7 @@ import { AbrirWhatsApp } from './botaoWhatsApp.jsx';
 export default function Inicio({ perfil, setPerfil, aoSair }) {
   const [loja, setLoja] = useState('');
   const [tela, setTela] = useState('inicio');
+  const [pontoRapido, setPontoRapido] = useState(false); // Registrar ponto do início: câmera direto
   const [whatsAbre, setWhatsAbre] = useState({ chave: 0 }); // botão WhatsApp dos cadastros: abre a conversa
   const [agendaAbre, setAgendaAbre] = useState({ chave: 0 }); // o WhatsApp abre a agenda no dia do agendamento
   const [financeiroAbre, setFinanceiroAbre] = useState({ aba: 'receber', novo: false, filtro: '', chave: 0 });
@@ -318,7 +319,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
           <section className="cartao painel">
             <h2>Ponto de hoje</h2>
             <small className="cinza">Entrada, almoço e saída, com foto.</small>
-            <button className="botao-primario pequeno" onClick={() => abrir('ponto')}>Registrar ponto</button>
+            <button className="botao-primario pequeno" onClick={() => setPontoRapido(true)}>Registrar ponto</button>
+            {pontoRapido && <PontoRapido aoFechar={() => setPontoRapido(false)} aoTelaPonto={() => { setPontoRapido(false); abrir('ponto'); }} />}
           </section>
         )}
       </div>

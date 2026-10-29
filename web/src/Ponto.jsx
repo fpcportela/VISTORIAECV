@@ -112,6 +112,45 @@ function Registrar({ loja }) {
   );
 }
 
+// Botão "Registrar ponto" do início: já abre a câmera do colaborador ligado ao usuário (próxima marcação do dia)
+export function PontoRapido({ aoFechar, aoTelaPonto }) {
+  const [eu, setEu] = useState(undefined);
+  const [feito, setFeito] = useState(null);
+  const [erro, setErro] = useState('');
+  useEffect(() => { api('/ponto/meu').then(setEu).catch((f) => { setErro(f.message); setEu(null); }); }, []);
+  const tipo = eu && ORDEM.find((t) => !eu.hoje.some((m) => m.tipo === t));
+  const aviso = (texto) => (
+    <div className="cartao camera-ponto">
+      <p>{texto}</p>
+      <div className="acoes-modal">
+        <button className="botao-contorno" onClick={aoTelaPonto}>Ir para o Controle de ponto</button>
+        <button className="botao-primario" onClick={aoFechar}>Fechar</button>
+      </div>
+    </div>
+  );
+  let corpo;
+  if (eu === undefined) corpo = <p className="cinza">Carregando…</p>;
+  else if (feito) {
+    corpo = (
+      <div className="cartao camera-ponto">
+        <div className="ponto-feito" role="status">
+          <strong>{MARCACOES[feito.tipo]} registrada às {horaBR(feito.hora)}</strong>
+          <span>{eu.nome}</span>
+          {feito.comprovante && <small>O comprovante do dia vai para o seu WhatsApp.</small>}
+        </div>
+        <div className="acoes-modal"><button className="botao-primario" onClick={aoFechar}>Fechar</button></div>
+      </div>
+    );
+  } else if (!eu) corpo = aviso(erro || 'Seu usuário não está ligado a um colaborador com ponto. Peça para ligar em Colaboradores, ou registre pelo Controle de ponto.');
+  else if (!tipo) corpo = aviso(`${eu.nome}: as quatro marcações de hoje já foram feitas.`);
+  else corpo = <Camera loja={eu.loja_id} colaborador={eu} tipo={tipo} aoVoltar={aoFechar} aoRegistrar={setFeito} />;
+  return (
+    <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-label="Registrar ponto">{corpo}</section>
+    </div>
+  );
+}
+
 // Reduz a foto para no máximo 480 px de largura (JPEG) antes de enviar
 function reduzir(fonte, largura, altura) {
   const escala = Math.min(1, 480 / largura);
