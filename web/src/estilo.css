@@ -1066,3 +1066,4 @@ a.botao-whatsapp { text-decoration: none; }
 button.cartao-atalho { font: inherit; text-align: center; cursor: pointer; border: 1px solid transparent; transition: border-color .15s, box-shadow .15s; }
 button.cartao-atalho:hover:not(:disabled) { border-color: var(--forte, #0774B8); box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 button.cartao-atalho:disabled { cursor: default; }
+.agenda-acoes .botao-whatsapp { padding: 4px 8px; }

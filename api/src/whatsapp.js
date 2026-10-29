@@ -597,6 +597,12 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
   // Chamado novo pelo atendente (ex.: cliente ligou ou veio na loja)
   // Abre a conversa com um celular (botão WhatsApp do cliente, do fornecedor ou da venda)
   app.post('/api/whatsapp/abrir', exigeLogin, comRecusa(async (req, res) => {
+    // agendamento com chamado: abre a conversa desse chamado
+    if (UUID.test(req.body?.chamado_id || '')) {
+      const contato = await comoUsuario(req.usuarioId, async (db) =>
+        (await db.query('select contato_id from whatsapp_chamados where id = $1', [req.body.chamado_id])).rows[0]?.contato_id);
+      if (contato) return res.json({ contato_id: contato });
+    }
     const tel = internacional(req.body?.telefone);
     if (tel.length < 12) throw new Recusa(400, 'Este cadastro não tem WhatsApp com DDD.');
     const id = await comoUsuario(req.usuarioId, async (db) => {

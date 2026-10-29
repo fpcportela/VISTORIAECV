@@ -5,6 +5,7 @@ import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTel
 import { CampoData } from './Data.jsx';
 import { Placa } from './Placa.jsx';
 import { EditorCliente } from './Clientes.jsx';
+import { BotaoWhatsApp } from './botaoWhatsApp.jsx';
 
 // Agenda de vistorias por loja: dia ou semana, com os horários livres, os agendamentos
 // (feitos na tela ou pelo robô do WhatsApp) e a configuração do horário de atendimento.
@@ -92,10 +93,6 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
     setAviso('');
     try { const r = await api(`/agenda/${a.id}`, { metodo: 'PUT', corpo }); recarregar(r.aviso); } catch (f) { setAviso(f.message); }
   };
-  const confirmar = async (a) => {
-    setAviso('');
-    try { await api(`/agenda/${a.id}/confirmacao`, { metodo: 'POST' }); recarregar('Confirmação enviada pelo WhatsApp.'); } catch (f) { setAviso(f.message); }
-  };
 
   if (!lojas.length) return <><div className="cabecalho"><h1>Agenda</h1></div><p className="cinza">Seu perfil não tem acesso à agenda.</p></>;
   const pode = d?.pode_gerenciar;
@@ -148,7 +145,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
       {!d ? <p className="cinza">Carregando…</p>
         : modo === 'dia' ? (
           <Dia dia={dia} d={d} pode={pode} aoNovo={(hora) => setJanela({ tipo: 'novo', dia, hora })}
-            aoEditar={(a) => setJanela({ tipo: 'editar', a })} aoMudar={mudar} aoConfirmar={confirmar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} destaque={destaque} />
+            aoEditar={(a) => setJanela({ tipo: 'editar', a })} aoMudar={mudar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} destaque={destaque} />
         ) : modo === 'semana' ? (
           <Semana de={de} d={d} aoDia={(x) => { setDia(x); setModo('dia'); }} />
         ) : (
@@ -165,7 +162,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
 }
 
 // ------------------------------------------------------------ dia
-function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda, destaque }) {
+function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoVenda, aoNovaVenda, destaque }) {
   const doDia = d.agendamentos.filter((a) => diaSP(a.inicio) === dia);
   const livres = d.livres.filter((l) => diaSP(l.inicio) === dia);
   const bloqueios = d.bloqueios;
@@ -189,7 +186,7 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoConfirmar, aoVenda, ao
             <span className="agenda-hora">{h}</span>
             <div className="agenda-itens">
               {aqui.map((a) => <Cartao key={a.id} a={a} destaque={destaque === a.id} historico={(d.historico || []).filter((h) => h.agendamento_id === a.id)}
-                pode={pode} aoEditar={aoEditar} aoMudar={aoMudar} aoConfirmar={aoConfirmar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} />)}
+                pode={pode} aoEditar={aoEditar} aoMudar={aoMudar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} />)}
               {saiu.filter((x) => horaSP(x.de_inicio) === h).map((x) => (
                 <div key={x.id} className="agenda-cartao agenda-remarcado">
                   <div className="agenda-cartao-topo">
@@ -219,7 +216,7 @@ const paraVenda = (a) => ({
     a.observacao].filter(Boolean).join(' · '),
 });
 
-function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVenda, aoNovaVenda, destaque }) {
+function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoVenda, aoNovaVenda, destaque }) {
   return (
     <div id={`ag-${a.id}`} className={`agenda-cartao ag-${a.situacao}${destaque ? ' destacado' : ''}`}>
       <div className="agenda-cartao-topo">
@@ -245,7 +242,8 @@ function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoConfirmar, aoVen
         ) : <span className={`selo-sit ag-${a.situacao}`}>{SITUACOES_AGENDA[a.situacao]}</span>}
         {a.venda_id && <button className="botao-link" onClick={() => aoVenda?.(a.venda_id)}>Venda nº {a.venda_numero}</button>}
         {!a.venda_id && aoNovaVenda && a.situacao !== 'cancelado' && <button className="botao-link" onClick={() => aoNovaVenda(paraVenda(a))}>Abrir venda</button>}
-        {pode && a.telefone && a.situacao !== 'cancelado' && <button className="botao-link" onClick={() => aoConfirmar(a)}>Mandar confirmação</button>}
+        {(a.telefone || a.chamado_id) && <BotaoWhatsApp telefone={a.telefone} nome={a.nome} clienteId={a.cliente_id} loja={a.loja_id} chamadoId={a.chamado_id}
+          rotulo="" titulo={a.chamado_id ? 'Abrir a conversa deste agendamento' : 'Abrir a conversa no WhatsApp'} />}
         {pode && <button className="botao-link" onClick={() => aoEditar(a)}>Editar / remarcar</button>}
         {a.responsavel && <span className="agenda-responsavel" title="Responsável pelo atendimento">👤 {a.responsavel}</span>}
       </div>
