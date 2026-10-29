@@ -385,7 +385,7 @@ function saudarPeloNome(saudacao, nome) {
 
 // Primeira pergunta do robô (antes da unidade) e as respostas do caminho "Dúvidas"
 const textoTriagem = () => 'Como posso ajudar?\n1 - Dúvidas\n2 - Agendar vistoria';
-const MSG_DUVIDA = 'Certo! Em breve um atendente vai falar com você.';
+const MSG_DUVIDA = 'Certo, aguarde que um humano irá atendê-lo.';
 const MSG_MOVIMENTO = 'Estamos com um movimento acima do normal, mas não deixaremos de atendê-lo. Em breve um atendente fala com você.';
 const textoUnidades = (lojas) => `Em qual unidade você deseja atendimento?\n${lojas
   .map((l, i) => {
@@ -648,6 +648,7 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
 
   // atendente devolveu a conversa para o robô: repete de onde parou
   if (retomar && dados.triagem) return falar(textoTriagem(), botoesTriagem());
+  if (retomar && dados.duvida) return falar('Como posso ajudar?');
   if (retomar && dados.escolhendo_loja) return falar(textoUnidades(lojas), botoesUnidades());
   if (retomar) {
     const n = ch.robo_etapa || 0;
@@ -683,7 +684,13 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
     const escolha = k === 1 || /DUVIDA/.test(s) ? 'duvida' : k === 2 || /AGEND/.test(s) ? 'agendar' : null;
     if (!escolha) return falar(`Responda com o número de uma das opções.\n\n${textoTriagem()}`, comFalas(['Responda com o número de uma das opções.'], botoesTriagem()));
     delete dados.triagem;
-    if (escolha === 'duvida') return passarParaAtendente(MSG_DUVIDA);
+    if (escolha === 'duvida') {
+      // pergunta a dúvida, deixa o chamado em AGUARDANDO e passa para uma pessoa depois da resposta
+      dados.duvida = true;
+      await estado('coletando', 0, dados);
+      await comoUsuario(null, (db) => db.query("select app_robo_mover_coluna($1, 'AGUARDANDO')", [ch.id])).catch((e) => console.error('[robô] coluna:', e.message));
+      return falar('Como posso ajudar?');
+    }
     // grupo com mais de uma unidade: primeiro o cliente escolhe a unidade (com o endereço de cada uma)
     if (lojas.length > 1) {
       dados.escolhendo_loja = true;
@@ -693,6 +700,11 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
     if (lojas[0]) dados.loja_id = lojas[0].id;
     await estado('coletando', 0, dados);
     return executar(0);
+  }
+
+  if (dados.duvida) {
+    delete dados.duvida;
+    return passarParaAtendente(MSG_DUVIDA);
   }
 
   if (dados.escolhendo_loja) {
