@@ -26,7 +26,8 @@ function minutosDia(m) {
 export default function Ponto({ perfil, loja }) {
   const pode = (l, p) => criarTem(perfil, l)(p);
   const lojasRegistro = perfil.lojas.filter((l) => pode(l.id, 'ponto.registrar'));
-  const lojasEspelho = perfil.lojas.filter((l) => pode(l.id, 'ponto.ver_equipe'));
+  // sem "ver o espelho dos colaboradores", o espelho mostra só o próprio ponto (o servidor filtra)
+  const lojasEspelho = perfil.lojas.filter((l) => pode(l.id, 'ponto.ver_equipe') || pode(l.id, 'ponto.registrar'));
   const [aba, setAba] = useState(lojasRegistro.length ? 'registrar' : 'espelho');
   const lojas = aba === 'registrar' ? lojasRegistro : lojasEspelho;
   const [filial, setFilial] = useState('');

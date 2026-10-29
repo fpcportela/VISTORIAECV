@@ -34,6 +34,12 @@ async function exigirColab(db, c, permissao, mensagem) {
   if (!ok) throw new Recusa(403, mensagem);
 }
 
+// Ponto de outra pessoa: só com "Ver o espelho de ponto dos colaboradores"; o próprio ponto, sempre
+async function exigirVerPonto(db, c, usuarioId) {
+  if (c.usuario_id && c.usuario_id === usuarioId) return;
+  await exigirColab(db, c, 'ponto.ver_equipe', 'Seu perfil só pode ver o seu próprio ponto.');
+}
+
 export function rotasPessoas(app, { exigeLogin, rota }) {
   const comRecusa = criarComRecusa(rota);
 
@@ -223,8 +229,9 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
   app.get('/api/ponto/colaboradores', exigeLogin, comRecusa(async (req, res) => {
     if (!UUID.test(req.query.loja || '')) throw new Recusa(400, 'Escolha a filial.');
     res.json(await comoUsuario(req.usuarioId, async (db) => {
-      const ok = (await db.query("select pode($1, 'ponto.registrar') or pode($1, 'ponto.ver_equipe') as ok", [req.query.loja])).rows[0].ok;
-      if (!ok) throw new Recusa(403, 'Seu perfil não pode usar o ponto nesta filial.');
+      const ok = (await db.query("select pode($1, 'ponto.registrar') or pode($1, 'ponto.ver_equipe') as ok, pode($1, 'ponto.ver_equipe') as equipe",
+        [req.query.loja])).rows[0];
+      if (!ok.ok) throw new Recusa(403, 'Seu perfil não pode usar o ponto nesta filial.');
       return (await db.query(
         `select c.id, c.nome, c.cargo,
                 coalesce((select jsonb_agg(jsonb_build_object('tipo', r.tipo, 'hora', r.hora) order by r.hora)
@@ -232,7 +239,10 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
                            where r.colaborador_id = c.id and r.ativo and r.data = (now() at time zone '${FUSO}')::date), '[]') as hoje
            from colaboradores c
           where (c.loja_id = $1 or exists (select 1 from colaborador_lojas cl where cl.colaborador_id = c.id and cl.loja_id = $1))
-            and (c.ativo or $2) order by c.nome`, [req.query.loja, req.query.inativos === '1'])).rows;
+            and (c.ativo or $2)
+            -- sem "ver o espelho dos colaboradores": só o próprio colaborador
+            and ($3 or c.usuario_id = $4)
+          order by c.nome`, [req.query.loja, req.query.inativos === '1', ok.equipe, req.usuarioId])).rows;
     }));
   }));
 
@@ -260,6 +270,9 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
         && (await db.query('select 1 from colaborador_lojas where colaborador_id = $1 and loja_id = $2', [c.id, req.body.loja_id])).rowCount
         ? req.body.loja_id : c.loja_id;
       await exigir(db, lojaPonto, 'ponto.registrar', 'Seu perfil não pode registrar ponto nesta unidade.');
+      if (c.usuario_id !== req.usuarioId && !(await db.query("select pode($1, 'ponto.ver_equipe') as ok", [lojaPonto])).rows[0].ok) {
+        throw new Recusa(403, 'Seu perfil só pode registrar o seu próprio ponto.');
+      }
       const feitos = (await db.query(
         `select tipo from ponto_registros where colaborador_id = $1 and ativo and data = (now() at time zone '${FUSO}')::date`, [c.id]))
         .rows.map((x) => x.tipo);
@@ -281,7 +294,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!mes) throw new Recusa(400, 'Mês inválido.');
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.query.colaborador);
-      await exigirColab(db, c, 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
+      await exigirVerPonto(db, c, req.usuarioId);
       const registros = (await db.query(
         `select r.id, r.data, r.tipo, r.hora, r.origem, r.motivo, r.ativo, r.ajuste_de, r.foto is not null as tem_foto,
                 u.nome as registrado_por, r.criado_em
@@ -305,9 +318,9 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
   app.get('/api/ponto/registros/:id/foto', exigeLogin, comRecusa(async (req, res) => {
     if (!UUID.test(req.params.id)) throw new Recusa(404, 'Foto não encontrada.');
     const f = await comoUsuario(req.usuarioId, async (db) => {
-      const r = (await db.query('select loja_id, foto, foto_mime from ponto_registros where id = $1', [req.params.id])).rows[0];
+      const r = (await db.query('select r.loja_id, r.foto, r.foto_mime, c.usuario_id from ponto_registros r join colaboradores c on c.id = r.colaborador_id where r.id = $1', [req.params.id])).rows[0];
       if (!r?.foto) throw new Recusa(404, 'Foto não encontrada.');
-      await exigir(db, r.loja_id, 'ponto.ver_equipe', 'Seu perfil não pode ver as fotos do ponto.');
+      if (r.usuario_id !== req.usuarioId) await exigir(db, r.loja_id, 'ponto.ver_equipe', 'Seu perfil não pode ver as fotos do ponto.');
       return r;
     });
     res.set('Content-Type', f.foto_mime || 'image/jpeg');
@@ -366,7 +379,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!data) throw new Recusa(400, 'Data inválida.');
     const p = await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.query.colaborador);
-      await exigirColab(db, c, 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
+      await exigirVerPonto(db, c, req.usuarioId);
       return (await db.query('select pdf from ponto_comprovantes where colaborador_id = $1 and data = $2', [c.id, data])).rows[0];
     });
     if (!p) throw new Recusa(404, 'Comprovante não encontrado.');
@@ -426,7 +439,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
   app.get('/api/ponto/justificativa/arquivos/:id', exigeLogin, comRecusa(async (req, res) => {
     const a = await comoUsuario(req.usuarioId, async (db) => {
       const x = await arquivoJustificativa(db, req.params.id);
-      await exigirColab(db, await colaborador(db, x.colaborador_id), 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
+      await exigirVerPonto(db, await colaborador(db, x.colaborador_id), req.usuarioId);
       return x;
     });
     res.set('Content-Type', a.mime);
