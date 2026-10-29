@@ -1,16 +1,36 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { comoUsuario } from './db.js';
+import { comoUsuario, contexto } from './db.js';
+import { rotasGrupos } from './grupos.js';
+import { rotasClientes } from './clientes.js';
+import { rotasAcessos } from './acessos.js';
+import { rotasVistorias } from './vistorias.js';
+import { rotasVendas } from './vendas.js';
+import { rotasPessoas } from './pessoas.js';
+import { rotasFipe } from './fipe.js';
+import { rotasFinanceiro } from './financeiro.js';
+import { rotasBackup } from './backup.js';
+import { rotasRecuperacao } from './recuperacao.js';
+import { rotasWhatsApp } from './whatsapp.js';
+import { rotasRelatorios } from './relatorios.js';
+import { rotasAgenda } from './agenda.js';
+import { rotasRoyalties, royaltiesDoMes } from './royalties.js';
+import { CACHE_DIAS, ErroPlaca, consultarApiPlacas, mapearVeiculo, normalizarPlaca } from './placas.js';
 
 const app = express();
-app.use(express.json());
+// a foto do ponto vem em base64; o corpo bruto fica guardado para conferir a assinatura do webhook do WhatsApp
+app.use(express.json({ limit: '3mb', verify: (req, res, buf) => { if (req.url.startsWith('/api/whatsapp/webhook')) req.corpoBruto = buf; } }));
 
 const SEGREDO = process.env.JWT_SECRET || 'troque-este-segredo-em-producao';
 const PORTA = Number(process.env.PORT || 3001);
 const UUID = /^[0-9a-f-]{36}$/i;
 
+// Erros do banco viram respostas claras; o resto é erro interno
 const rota = (fn) => (req, res) =>
   fn(req, res).catch((erro) => {
+    if (erro.code === '42501') return res.status(403).json({ erro: 'Você não tem permissão para isso.' });
+    if (erro.code === '23505') return res.status(400).json({ erro: 'Já existe um cadastro com esses dados (e-mail ou nome repetido).' });
+    if (erro.code === '22023' || erro.code === '23503') return res.status(400).json({ erro: erro.message });
     console.error(erro);
     res.status(500).json({ erro: 'Erro interno. Veja o terminal da API.' });
   });
@@ -19,10 +39,12 @@ function exigeLogin(req, res, next) {
   const token = (req.headers.authorization || '').replace(/^Bearer /, '');
   try {
     req.usuarioId = jwt.verify(token, SEGREDO).sub;
-    next();
   } catch {
-    res.status(401).json({ erro: 'Faça login novamente.' });
+    return res.status(401).json({ erro: 'Faça login novamente.' });
   }
+  // O grupo só filtra o que o master vê; para os demais o banco ignora (eles já só têm o próprio grupo)
+  const grupo = String(req.headers['x-grupo'] || '');
+  contexto.run({ grupo: /^[0-9a-f-]{36}$/i.test(grupo) ? grupo : '' }, next);
 }
 
 app.get('/api/saude', (req, res) => res.json({ ok: true }));
@@ -41,10 +63,38 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
   const dados = await comoUsuario(req.usuarioId, async (db) => {
     const usuario = (await db.query('select id, nome, email, admin_rede from usuarios where id = $1', [req.usuarioId])).rows[0];
     const lojas = (await db.query('select * from app_minhas_lojas()')).rows;
-    const cor = (await db.query('select app_cor_tema() as cor')).rows[0].cor;
-    return { usuario, lojas, cor };
+    const { cor, pode_cor: podeCor, grupo_cor: grupoCor } = (await db.query('select app_cor_tema() as cor, app_pode_cor_tema() as pode_cor, app_grupo_da_cor() as grupo_cor')).rows[0];
+    const atalhos = (await db.query('select app_meus_atalhos() as a')).rows[0].a;
+    const menu = (await db.query('select app_meu_menu() as m')).rows[0].m;
+    // { loja_id: ["vistorias.ver", ...] }: o app mostra só os módulos liberados
+    const acessos = {};
+    for (const { loja_id, permissao } of (await db.query('select * from app_meus_acessos()')).rows) {
+      (acessos[loja_id] ||= []).push(permissao);
+    }
+    // Grupos que a pessoa enxerga: o master vê todos (e escolhe um no topo), os demais só o seu
+    const grupos = usuario.admin_rede
+      ? (await db.query('select id, coalesce(nome_fantasia, razao_social) as nome from empresas where ativo order by 2')).rows
+      : [...new Map(lojas.map((l) => [l.empresa_id, { id: l.empresa_id, nome: l.empresa }])).values()];
+    const grupo = usuario.admin_rede ? (await db.query('select grupo_ativo() as g')).rows[0].g : null;
+    // logo do grupo em uso (o master só vê quando escolhe um grupo no topo)
+    const grupoLogo = grupo || (!usuario.admin_rede && grupos.length === 1 ? grupos[0].id : null);
+    const logo = grupoLogo ? (await db.query('select logo from empresas where id = $1', [grupoLogo])).rows[0]?.logo || null : null;
+    return { usuario, lojas, cor, pode_cor: podeCor, cor_do_grupo: Boolean(grupoCor), atalhos, menu, acessos, grupos, grupo, logo, master: usuario.admin_rede };
   });
   res.json(dados);
+}));
+
+app.put('/api/atalhos', exigeLogin, rota(async (req, res) => {
+  const atalhos = Array.isArray(req.body?.atalhos) ? req.body.atalhos.map(String).slice(0, 30) : null;
+  if (!atalhos) return res.status(400).json({ erro: 'Lista de atalhos inválida.' });
+  await comoUsuario(req.usuarioId, (db) => db.query('select app_salvar_atalhos($1)', [atalhos]));
+  res.json({ atalhos });
+}));
+
+app.put('/api/menu', exigeLogin, rota(async (req, res) => {
+  const menu = Array.isArray(req.body?.menu) ? req.body.menu.map(String).slice(0, 40) : null;
+  await comoUsuario(req.usuarioId, (db) => db.query('select app_salvar_menu($1)', [menu]));
+  res.json({ menu });
 }));
 
 app.put('/api/tema', exigeLogin, rota(async (req, res) => {
@@ -64,34 +114,128 @@ app.get('/api/inicio', exigeLogin, rota(async (req, res) => {
               coalesce(sum(vencem_hoje), 0)  as vencem_hoje,
               coalesce(sum(restante_mes), 0) as restante_mes
          from resumo_contas
-        where $1::uuid is null or loja_id = $1
+        where ($1::uuid is null or loja_id = $1) and pode(loja_id, 'financeiro.ver')
         group by tipo`, [loja])).rows;
+    // A vistoria é feita no sistema do Detran; aqui conta o que foi vendido:
+    // itens de serviço que geram vistoria, nas vendas finalizadas, por tipo de veículo.
+    // Mês corrente zera sozinho na virada do mês.
     const vistorias = (await db.query(
-      `select v.tipo, count(vi.id)::int as total
-         from unnest(enum_range(null::tipo_veiculo)) as v(tipo)
-         left join veiculos ve on ve.tipo = v.tipo
-         left join vistorias vi on vi.veiculo_id = ve.id
-              and vi.status <> 'cancelada'
-              and coalesce(vi.agendada_para, vi.criado_em)::date = current_date
-              and ($1::uuid is null or vi.loja_id = $1)
-        group by v.tipo`, [loja])).rows;
-    const royalties = (await db.query(
-      `select coalesce(sum(valor_total), 0) as total
-         from apuracoes_royalty
-        where competencia = date_trunc('month', current_date)::date
-          and ($1::uuid is null or loja_id = $1)`, [loja])).rows[0].total;
+      `select t.tipo,
+              coalesce(sum(i.quantidade) filter (where v.data_venda = current_date), 0)::int as hoje,
+              coalesce(sum(i.quantidade), 0)::int as mes
+         from unnest(enum_range(null::tipo_veiculo)) as t(tipo)
+         left join veiculos ve on ve.tipo = t.tipo
+         left join venda_itens i on i.veiculo_id = ve.id
+              and exists (select 1 from servicos s where s.id = i.servico_id and s.gera_vistoria)
+         left join vendas v on v.id = i.venda_id
+              and v.situacao = 'finalizada' and v.tipo = 'venda_avulsa'
+              and v.data_venda >= date_trunc('month', current_date)
+              and ($1::uuid is null or v.loja_id = $1) and pode(v.loja_id, 'vendas.ver')
+        where v.id is not null or i.id is null
+        group by t.tipo`, [loja])).rows;
+    // vendas ainda em aberto (qualquer data): abertas e agendadas pelo robô do WhatsApp
+    const abertas = (await db.query(
+      `select count(*) filter (where situacao = 'aberta')::int as abertas, count(*) filter (where situacao = 'futuro')::int as agendadas
+         from vendas v
+        where v.situacao in ('aberta', 'futuro') and ($1::uuid is null or v.loja_id = $1) and pode(v.loja_id, 'vendas.ver')`, [loja])).rows[0];
+    const royalties = await royaltiesDoMes(db, loja);
 
     const vazio = { vencidos: 0, vencem_hoje: 0, restante_mes: 0 };
     const porTipo = (t) => contas.find((c) => c.tipo === t) || vazio;
-    const qtd = (t) => vistorias.find((v) => v.tipo === t)?.total || 0;
+    const qtd = (t, campo) => vistorias.find((v) => v.tipo === t)?.[campo] || 0;
+    const porVeiculo = (campo) => ({ carros: qtd('carro', campo), motos: qtd('moto', campo), caminhoes: qtd('caminhao', campo) });
     return {
       receber: porTipo('receber'),
       pagar: porTipo('pagar'),
-      vistoriasHoje: { carros: qtd('carro'), motos: qtd('moto'), caminhoes: qtd('caminhao') },
+      vistoriasHoje: porVeiculo('hoje'),
+      vistoriasMes: porVeiculo('mes'),
       royaltiesMes: royalties,
+      vendasAbertas: abertas,
     };
   });
   res.json(dados);
 }));
+
+// Consulta de placa: usa o que já está no banco (até CACHE_DIAS dias) e só
+// chama a API Placas, que é paga, quando não tem ou quando pedem para atualizar.
+app.get('/api/placa/:placa', exigeLogin, rota(async (req, res) => {
+  const placa = normalizarPlaca(req.params.placa);
+  if (!placa) return res.status(400).json({ erro: 'Placa inválida. Use o formato ABC1234 ou ABC1D23.' });
+  const atualizar = req.query.atualizar === '1';
+
+  const resultado = await comoUsuario(req.usuarioId, async (db) => {
+    const loja = UUID.test(req.query.loja || '')
+      ? req.query.loja
+      : (await db.query('select id from app_minhas_lojas() limit 1')).rows[0]?.id;
+    if (!loja) return { status: 403, erro: 'Você não tem acesso a nenhuma loja.' };
+    const pode = (await db.query("select pode($1, 'placa.consultar') as ok", [loja])).rows[0].ok;
+    if (!pode) return { status: 403, erro: 'Seu perfil não tem permissão para consultar placas.' };
+
+    const salvo = (await db.query(
+      `select *, consultado_em > now() - make_interval(days => $2) as recente
+         from veiculos where placa = $1`, [placa, CACHE_DIAS])).rows[0];
+
+    if (salvo?.recente && !atualizar) {
+      await db.query(
+        `insert into consultas_placa (loja_id, usuario_id, placa, origem, sucesso, veiculo_id)
+         values ($1, $2, $3, 'cache', true, $4)`, [loja, req.usuarioId, placa, salvo.id]);
+      return { veiculo: salvo, origem: 'cache' };
+    }
+
+    let resposta;
+    try {
+      resposta = await consultarApiPlacas(placa);
+    } catch (erro) {
+      if (!(erro instanceof ErroPlaca)) throw erro;
+      await db.query(
+        `insert into consultas_placa (loja_id, usuario_id, placa, origem, sucesso, resposta)
+         values ($1, $2, $3, 'api_placas', false, $4)`,
+        [loja, req.usuarioId, placa, { erro: erro.message, status: erro.status, request_id: erro.requestId }]);
+      // Sem a API, devolve o último dado já consultado, se houver. Veículo criado só
+      // pela digitação da placa numa venda (sem consulta) não conta como dado guardado.
+      if (salvo?.consultado_em && erro.status !== 404) return { veiculo: salvo, origem: 'cache', aviso: erro.message };
+      return { status: erro.status === 404 ? 404 : 502, erro: erro.message };
+    }
+
+    const v = mapearVeiculo(resposta);
+    const veiculo = (await db.query(
+      `insert into veiculos (placa, tipo, marca, modelo, versao, ano_fabricacao, ano_modelo, cor, combustivel,
+                             chassi, renavam, motor, municipio, uf, dados_consulta, consultado_em)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+       on conflict (placa) do update set
+         tipo = excluded.tipo, marca = excluded.marca, modelo = excluded.modelo, versao = excluded.versao,
+         ano_fabricacao = excluded.ano_fabricacao, ano_modelo = excluded.ano_modelo, cor = excluded.cor,
+         combustivel = excluded.combustivel,
+         chassi = coalesce(excluded.chassi, veiculos.chassi), renavam = coalesce(excluded.renavam, veiculos.renavam),
+         motor = coalesce(excluded.motor, veiculos.motor), municipio = excluded.municipio, uf = excluded.uf,
+         dados_consulta = excluded.dados_consulta, consultado_em = now()
+       returning *`,
+      [placa, v.tipo, v.marca, v.modelo, v.versao, v.ano_fabricacao, v.ano_modelo, v.cor, v.combustivel,
+       v.chassi, v.renavam, v.motor, v.municipio, v.uf, resposta])).rows[0];
+    await db.query(
+      `insert into consultas_placa (loja_id, usuario_id, placa, origem, sucesso, resposta, veiculo_id)
+       values ($1, $2, $3, 'api_placas', true, $4, $5)`, [loja, req.usuarioId, placa, resposta, veiculo.id]);
+    return { veiculo, origem: 'api_placas' };
+  });
+
+  if (resultado.erro) return res.status(resultado.status).json({ erro: resultado.erro });
+  const { dados_consulta: _bruto, recente: _r, ...veiculo } = resultado.veiculo;
+  res.json({ veiculo, origem: resultado.origem, aviso: resultado.aviso });
+}));
+
+rotasAcessos(app, { exigeLogin, rota });
+rotasVistorias(app, { exigeLogin, rota });
+rotasVendas(app, { exigeLogin, rota });
+rotasPessoas(app, { exigeLogin, rota });
+rotasFipe(app, { exigeLogin, rota });
+rotasFinanceiro(app, { exigeLogin, rota });
+rotasBackup(app, { exigeLogin, rota });
+rotasRecuperacao(app, { exigeLogin, rota });
+rotasWhatsApp(app, { exigeLogin, rota });
+rotasRelatorios(app, { exigeLogin, rota });
+rotasAgenda(app, { exigeLogin, rota });
+rotasGrupos(app, { exigeLogin, rota });
+rotasClientes(app, { exigeLogin, rota });
+rotasRoyalties(app, { exigeLogin, rota });
 
 app.listen(PORTA, () => console.log(`API do Vistoria ECV rodando em http://localhost:${PORTA}`));
