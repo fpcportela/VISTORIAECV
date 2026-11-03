@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, grupoEscolhido, moeda } from './api.js';
 import { aplicarTema, COR_PADRAO, PALETA } from './tema.js';
 import { Icone } from './icones.jsx';
@@ -56,9 +56,11 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   useEffect(() => {
     if (tela !== 'inicio') return;
     setErro('');
+    let valido = true; // resposta de uma loja anterior que chegue atrasada é descartada
     api(`/inicio${loja ? `?loja=${loja}` : ''}`)
-      .then(setDados)
-      .catch((falha) => (falha.status === 401 ? aoSair() : setErro(falha.message)));
+      .then((d) => valido && setDados(d))
+      .catch((falha) => valido && (falha.status === 401 ? aoSair() : setErro(falha.message)));
+    return () => { valido = false; };
   }, [loja, tela]);
 
   // Números do WhatsApp na barra lateral (conversas não lidas e chamados em aberto)
@@ -186,15 +188,30 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     </div>
   );
 
+  // Trocar de loja (ou ir para Todas as lojas) recarrega a tela aberta do zero, para não ficar
+  // nada da loja anterior: fecha as vendas abertas em abas, janelas e filtros, e busca tudo de novo.
+  function trocarLoja(id) {
+    if (id === loja) return;
+    if (abasVenda.some((a) => !a.id) && !confirm('Há venda nova ainda não salva. Trocar de loja e descartar?')) return;
+    setLoja(id);
+    setDados(null); setErro('');
+    setAbasVenda([]); setAbaVenda('lista');
+    setVistoriaId(null); setBuscaVendas(''); setSituacaoVendas('');
+    setNovaVistoria(false); setConsulta(null); setPontoRapido(false); setMenuAberto(false);
+    setAgendaAbre((a) => ({ chave: a.chave + 1 }));
+    setWhatsAbre((w) => ({ chave: w.chave + 1 }));
+    setFinanceiroAbre((f) => ({ aba: f.aba, novo: false, filtro: '', chave: f.chave + 1 }));
+  }
+
   const seletorLoja = (
-    <select value={loja} onChange={(e) => setLoja(e.target.value)} aria-label="Loja">
+    <select value={loja} onChange={(e) => trocarLoja(e.target.value)} aria-label="Loja">
       {perfil.lojas.length > 1 && <option value="">Todas as lojas</option>}
       {perfil.lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
     </select>
   );
 
   const pesquisa = (classe) => (tem('vistorias.ver') || tem('vendas.ver') || tem('clientes.ver') || tem('placa.consultar')) && (
-    <Pesquisa classe={classe} loja={loja} podeConsultarPlaca={tem('placa.consultar')}
+    <Pesquisa key={`${classe}|${loja}`} classe={classe} loja={loja} podeConsultarPlaca={tem('placa.consultar')}
       aoVistoria={abrirVistoria} aoVenda={abrirVenda} aoConsultarPlaca={(p) => setConsulta(p)}
       aoCliente={(c) => { setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(c.cpf_cnpj || c.nome); }} />
   );
@@ -410,6 +427,8 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               {tem('vendas.criar') && <button className="nova-aba" onClick={novaVenda} title="Nova venda" aria-label="Nova venda em outra aba">+</button>}
             </div>
           )}
+          {/* a chave com a loja faz a tela inteira ser montada de novo (e buscar os dados) ao trocar de loja */}
+          <Fragment key={`loja-${loja}`}>
           {tela === 'usuarios' ? <UsuariosPermissoes perfil={perfil} />
             : tela === 'colaboradores' ? <Colaboradores perfil={perfil} loja={loja} />
             : tela === 'ponto' ? <Ponto perfil={perfil} loja={loja} />
@@ -433,6 +452,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)
             : painelInicio}
+          </Fragment>
           {/* As vendas abertas ficam montadas (escondidas) para não perder o que foi digitado ao trocar de aba ou de tela */}
           {abasVenda.length > 0 && (
             <div className="area-vendas" hidden={tela !== 'vendas'}>
