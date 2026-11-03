@@ -7,7 +7,7 @@ import { SeletorVeiculo } from './Veiculo.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
 import { formatarDoc, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
-import { EditorCliente } from './Clientes.jsx';
+import { EditorCliente, FilialCliente } from './Clientes.jsx';
 import { BotaoWhatsApp } from './botaoWhatsApp.jsx';
 
 const SITUACAO_AG = { agendado: 'Agendado', confirmado: 'Confirmado', compareceu: 'Compareceu', faltou: 'Faltou', cancelado: 'Cancelado' };
@@ -581,7 +581,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
         </div>
         {(modoCliente === 'atual' || modoCliente === 'buscar') && cliente && (
           <div className="dados-cliente">
-            <span><small className="cinza">Nome completo</small><strong>{cliente.nome}</strong></span>
+            <span><small className="cinza">Nome completo</small><strong>{cliente.nome}<FilialCliente cliente={cliente} /></strong></span>
             <span><small className="cinza">{String(cliente.cpf_cnpj || '').replace(/\D/g, '').length === 14 ? 'CNPJ' : 'CPF'}</small><strong>{cliente.cpf_cnpj ? formatarDoc(cliente.cpf_cnpj) : 'NÃO INFORMADO'}</strong></span>
             {cliente.grupo_nome && <span><small className="cinza">Grupo</small><strong>{cliente.grupo_nome}</strong></span>}
             {cliente.whatsapp && <span><small className="cinza">WhatsApp</small><strong>{mascaraTelefone(cliente.whatsapp)}</strong></span>}
@@ -596,7 +596,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
                 <li key={c.id}>
                   <label className={cliente?.id === c.id ? 'opcao marcada' : 'opcao'}>
                     <input type="radio" name={`${grupo}-cliente`} checked={cliente?.id === c.id} onChange={() => setCliente(c)} />
-                    <strong>{c.nome}</strong><small className="cinza">{c.tipo === 'pj' ? 'Empresa' : c.tipo === 'avulso' ? 'Avulso' : 'Pessoa física'}{c.cpf_cnpj && ` · ${formatarDoc(c.cpf_cnpj)}`}{c.grupo_nome && ` · Grupo ${c.grupo_nome}`}</small>
+                    <strong>{c.nome}<FilialCliente cliente={c} /></strong><small className="cinza">{c.tipo === 'pj' ? 'Empresa' : c.tipo === 'avulso' ? 'Avulso' : 'Pessoa física'}{c.cpf_cnpj && ` · ${formatarDoc(c.cpf_cnpj)}`}{c.grupo_nome && ` · Grupo ${c.grupo_nome}`}</small>
                   </label>
                 </li>
               ))}

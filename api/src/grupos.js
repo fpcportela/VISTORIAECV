@@ -22,6 +22,10 @@ function cnpjOpcional(v) {
   if (!cnpjValido(cnpj)) throw new Recusa(400, 'CNPJ inválido. Confira os números.');
   return cnpj;
 }
+// Áreas que o grupo escolhe se são de todas as unidades (compartilhado) ou separadas por unidade
+export const AREAS = ['vendas', 'clientes', 'relatorios', 'colaboradores'];
+const PADRAO_COMPARTILHA = { vendas: false, clientes: true, relatorios: false, colaboradores: false };
+
 const duplicado = (e, msg) => { if (e.code === '23505') throw new Recusa(400, msg); throw e; };
 
 export function rotasGrupos(app, { exigeLogin, rota }) {
@@ -32,6 +36,8 @@ export function rotasGrupos(app, { exigeLogin, rota }) {
       const master = (await db.query('select eh_admin_rede() as m')).rows[0].m;
       const grupos = (await db.query(
         `select e.id, e.razao_social, e.nome_fantasia, e.cnpj, e.ativo, e.logo, e.cep, e.logradouro, e.numero, e.bairro, e.cidade, e.uf,
+                jsonb_build_object('vendas', e.compartilha_vendas, 'clientes', e.compartilha_clientes,
+                                   'relatorios', e.compartilha_relatorios, 'colaboradores', e.compartilha_colaboradores) as compartilha,
                 coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'codigo', l.codigo, 'nome', l.nome, 'cnpj', l.cnpj,
                           'telefone', l.telefone, 'cep', l.cep, 'logradouro', l.logradouro, 'numero', l.numero, 'bairro', l.bairro,
                           'cidade', l.cidade, 'uf', l.uf, 'ativo', l.ativo) order by l.codigo)
@@ -55,6 +61,8 @@ export function rotasGrupos(app, { exigeLogin, rota }) {
       throw new Recusa(400, 'Logo inválido. Use uma imagem PNG ou JPG.');
     }
     const campos = [razao, texto(b.nome_fantasia, 120)?.toUpperCase() || null, cnpjOpcional(b.cnpj), b.ativo !== false, logo, ...endereco(b)];
+    // compartilhado (true) ou separado por unidade (false); o que não vier mantém o padrão
+    const compartilha = AREAS.map((a) => (typeof b.compartilha?.[a] === 'boolean' ? b.compartilha[a] : PADRAO_COMPARTILHA[a]));
     const novo = await comoUsuario(req.usuarioId, async (db) => {
       await soMaster(db);
       let gid = id;
@@ -62,12 +70,16 @@ export function rotasGrupos(app, { exigeLogin, rota }) {
         if (gid) {
           const ok = (await db.query(
             `update empresas set razao_social = $2, nome_fantasia = $3, cnpj = $4, ativo = $5, logo = $6,
-                    cep = $7, logradouro = $8, numero = $9, bairro = $10, cidade = $11, uf = $12 where id = $1`, [gid, ...campos])).rowCount;
+                    cep = $7, logradouro = $8, numero = $9, bairro = $10, cidade = $11, uf = $12,
+                    compartilha_vendas = $13, compartilha_clientes = $14, compartilha_relatorios = $15, compartilha_colaboradores = $16
+              where id = $1`, [gid, ...campos, ...compartilha])).rowCount;
           if (!ok) throw new Recusa(404, 'Grupo não encontrado.');
         } else {
           gid = (await db.query(
-            `insert into empresas (franquia_id, razao_social, nome_fantasia, cnpj, ativo, logo, cep, logradouro, numero, bairro, cidade, uf)
-             values ((select id from franquias order by criado_em limit 1), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`, campos)).rows[0].id;
+            `insert into empresas (franquia_id, razao_social, nome_fantasia, cnpj, ativo, logo, cep, logradouro, numero, bairro, cidade, uf,
+                                   compartilha_vendas, compartilha_clientes, compartilha_relatorios, compartilha_colaboradores)
+             values ((select id from franquias order by criado_em limit 1), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             returning id`, [...campos, ...compartilha])).rows[0].id;
         }
       } catch (e) { duplicado(e, 'Já existe um grupo com esse CNPJ.'); }
       await db.query('select app_preparar_grupo($1)', [gid]);

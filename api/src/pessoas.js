@@ -49,11 +49,11 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     const busca = texto(req.query.busca, 60);
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
       `select c.id, c.loja_id, c.nome, c.data_nascimento, c.cpf, c.celular, c.cargo, c.ativo,
-              (select string_agg(l.nome, ', ' order by l.codigo) from colaborador_lojas cl join lojas l on l.id = cl.loja_id
+              (select string_agg(loja_nome(cl.loja_id), ', ' order by loja_codigo(cl.loja_id)) from colaborador_lojas cl
                 where cl.colaborador_id = c.id) as loja,
               (select count(*)::int from colaborador_arquivos a where a.colaborador_id = c.id) as arquivos
          from colaboradores c
-        where (pode_colaborador(c.id, 'colaboradores.ver') or pode_colaborador(c.id, 'colaboradores.editar'))
+        where (pode_ver_colaborador(c.id, 'colaboradores.ver') or pode_colaborador(c.id, 'colaboradores.editar'))
           and ($1::uuid is null or c.loja_id = $1 or exists (select 1 from colaborador_lojas cl where cl.colaborador_id = c.id and cl.loja_id = $1))
           and ($2::text is null or c.nome ilike '%' || $2 || '%' or c.cpf like regexp_replace($2, '\\D', '', 'g') || '%')
           and ($3 or c.ativo)
@@ -63,7 +63,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
   app.get('/api/colaboradores/:id', exigeLogin, comRecusa(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.params.id);
-      const ve = (await db.query("select pode_colaborador($1, 'colaboradores.ver') or pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
+      const ve = (await db.query("select pode_ver_colaborador($1, 'colaboradores.ver') or pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
       if (!ve) throw new Recusa(403, 'Seu perfil não pode ver colaboradores.');
       c.loja_ids = (await db.query('select loja_id from colaborador_lojas where colaborador_id = $1', [c.id])).rows.map((x) => x.loja_id);
       c.arquivos = (await db.query(
@@ -203,7 +203,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!UUID.test(req.params.arq)) throw new Recusa(404, 'Arquivo não encontrado.');
     const a = await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.params.id);
-      const ve = (await db.query("select pode_colaborador($1, 'colaboradores.ver') or pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
+      const ve = (await db.query("select pode_ver_colaborador($1, 'colaboradores.ver') or pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
       if (!ve) throw new Recusa(403, 'Seu perfil não pode ver os arquivos.');
       return (await db.query('select nome_arquivo, mime, conteudo from colaborador_arquivos where id = $1 and colaborador_id = $2',
         [req.params.arq, c.id])).rows[0];

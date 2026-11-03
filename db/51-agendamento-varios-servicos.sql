@@ -116,7 +116,11 @@ begin
   -- ninguém: usa o cliente já ligado ao contato ou o particular/avulso.
   if length(v_doc) not in (11, 14) then v_doc := null; end if;
   if v_doc is not null then
-    select c.id into v_cliente from clientes c where c.empresa_id = v_ch.empresa_id and c.cpf_cnpj = v_doc;
+    -- com clientes separados por unidade (Grupos e unidades), procura só na unidade da venda
+    select c.id into v_cliente from clientes c
+     where c.empresa_id = v_ch.empresa_id and c.cpf_cnpj = v_doc
+       and (compartilha(v_ch.empresa_id, 'clientes') or c.loja_id is null or c.loja_id = v_loja)
+     order by c.loja_id = v_loja desc nulls last limit 1;
     if v_cliente is null then
       -- cadastro antigo do contato sem documento: completa o mesmo em vez de criar outro
       select c.id into v_cliente from clientes c
@@ -126,8 +130,8 @@ begin
         update clientes set tipo = (case when length(v_doc) = 14 then 'pj' else 'pf' end)::tipo_pessoa,
                cpf_cnpj = v_doc, nome = coalesce(v_nome, nome) where id = v_cliente;
       else
-        insert into clientes (empresa_id, tipo, nome, cpf_cnpj, whatsapp, email)
-        values (v_ch.empresa_id, (case when length(v_doc) = 14 then 'pj' else 'pf' end)::tipo_pessoa,
+        insert into clientes (empresa_id, loja_id, tipo, nome, cpf_cnpj, whatsapp, email)
+        values (v_ch.empresa_id, v_loja, (case when length(v_doc) = 14 then 'pj' else 'pf' end)::tipo_pessoa,
                 coalesce(v_nome, v_k.nome, 'CLIENTE WHATSAPP'), v_doc,
                 nullif(p_dados->>'whatsapp', ''), nullif(lower(p_dados->>'email'), ''))
         returning id into v_cliente;
