@@ -167,7 +167,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       const historico = (await db.query(
         `select h.acao, h.detalhe, h.criado_em, u.nome as usuario, a.nome as autorizado_por
            from venda_historico h left join usuarios u on u.id = h.usuario_id left join usuarios a on a.id = h.autorizado_por
-          where h.venda_id = $1 order by h.criado_em, h.id`, [v.id])).rows;
+          where h.venda_id = $1 order by h.criado_em desc, h.id desc`, [v.id])).rows;
       const pagamentos = (await db.query(
         `select id, data_pagamento, forma, valor, detalhe, cv, bandeira from venda_pagamentos where venda_id = $1 order by criado_em, id`, [v.id])).rows;
       const pode = (await db.query(
