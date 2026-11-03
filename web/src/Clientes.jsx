@@ -4,10 +4,23 @@ import { api, moeda } from './api.js';
 import { criarTem } from './modulos.js';
 import { cnpjValido, cpfValido, formatarDoc, mascaraCnpj, mascaraCpf, mascaraTelefone } from './documentos.js';
 import { BotaoWhatsApp } from './botaoWhatsApp.jsx';
+import { Icone } from './icones.jsx';
 
 // Cadastro de clientes: pessoa física, empresa e grupo de empresas (vários CNPJs).
 
 const TIPOS = { pf: 'Pessoa física', pj: 'Empresa', grupo: 'Grupo de empresas' };
+
+// Selo pequeno com o número da filial (unidade) onde o cliente foi cadastrado: 0003 aparece como 3
+export function FilialCliente({ cliente }) {
+  if (!cliente?.loja_codigo) return null;
+  const numero = Number(cliente.loja_codigo) || cliente.loja_codigo;
+  const titulo = `Cadastrado na filial ${numero}${cliente.loja_nome ? ` · ${cliente.loja_nome}` : ''}`;
+  return (
+    <span className="filial-cliente" title={titulo} aria-label={titulo}>
+      <Icone nome="lojas" tamanho={11} traco={2.4} />{numero}
+    </span>
+  );
+}
 const dataBR = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
 const mascaraCep = (v) => String(v || '').replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
 
@@ -54,6 +67,7 @@ export default function Clientes({ perfil, loja }) {
               <button key={c.id} className="cartao item-cadastro" onClick={() => setAberto({ id: c.id })}>
                 <span className="item-titulo">
                   <strong>{c.nome}</strong>
+                  <FilialCliente cliente={c} />
                   <span className={`etiqueta tipo-cliente ${c.tipo}`}>{TIPOS[c.tipo]}</span>
                   {!c.ativo && <span className="etiqueta inativa">Inativo</span>}
                 </span>
@@ -178,6 +192,7 @@ export function EditorCliente({ id, tipoInicial = 'pf', grupoInicial, lojas, loj
   return (
     <Janela titulo={titulo} aoFechar={aoFechar}>
       <form className="formulario" onSubmit={salvar}>
+        {id && c.loja_codigo && <small className="cinza">Cliente cadastrado na <FilialCliente cliente={c} /> {c.loja_nome}</small>}
         <fieldset className="sem-borda" disabled={somenteLeitura}>
           {!grupoInicial && (
             <div className="opcoes">

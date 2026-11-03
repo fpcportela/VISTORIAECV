@@ -101,8 +101,8 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const docCliente = cliente?.replace(/\D/g, '') || '';
     const de = dataValida(req.query.de), ate = dataValida(req.query.ate);
     const lista = await comoUsuario(req.usuarioId, async (db) => (await db.query(
-      `select v.id, v.numero, v.tipo, v.situacao, v.data_venda, v.valor_bruto, v.desconto, v.valor_total, v.loja_id, l.nome as loja,
-              c.nome as cliente, c.cpf_cnpj, u.nome as vendedor,
+      `select v.id, v.numero, v.tipo, v.situacao, v.data_venda, v.valor_bruto, v.desconto, v.valor_total, v.loja_id, loja_nome(v.loja_id) as loja,
+              c.nome as cliente, c.cpf_cnpj, usuario_nome(v.vendedor_id) as vendedor,
               (select string_agg(distinct ve.placa, ', ') from venda_itens i join veiculos ve on ve.id = i.veiculo_id
                 where i.venda_id = v.id) as placas,
               (select ve.tipo from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id order by i.ctid limit 1) as tipo_veiculo,
@@ -111,10 +111,8 @@ export function rotasVendas(app, { exigeLogin, rota }) {
               (not exists (select 1 from venda_itens i where i.venda_id = v.id and i.servico_id is not null)
                or exists (select 1 from venda_itens i where i.venda_id = v.id and i.servico_id is null)) as sem_servico
          from vendas v
-         join lojas l on l.id = v.loja_id
          join clientes c on c.id = v.cliente_id
-         left join usuarios u on u.id = v.vendedor_id
-        where pode(v.loja_id, 'vendas.ver')
+        where pode_ver(v.loja_id, 'vendas', 'vendas.ver')
           and ($1::uuid is null or v.loja_id = $1)
           and ($2::situacao_venda is null or v.situacao = $2)
           and ($3::tipo_venda is null or v.tipo = $3)
@@ -132,11 +130,19 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     res.json(lista);
   }));
 
-  async function buscarVenda(db, id) {
+  // soVer: vendas e relatórios compartilhados (Grupos e unidades) também abrem a venda de outra
+  // unidade, só para consultar; qualquer alteração continua exigindo acesso à unidade da venda.
+  async function buscarVenda(db, id, { soVer = false } = {}) {
     if (!UUID.test(id)) throw new Recusa(404, 'Venda não encontrada.');
     const v = (await db.query('select * from vendas where id = $1', [id])).rows[0];
     if (!v) throw new Recusa(404, 'Venda não encontrada.');
-    await exigir(db, v.loja_id, 'vendas.ver');
+    if (!soVer) {
+      await exigir(db, v.loja_id, 'vendas.ver');
+      return v;
+    }
+    const ok = (await db.query("select pode_ver($1, 'vendas', 'vendas.ver') or pode_ver($1, 'relatorios', 'relatorios.ver') as ok",
+      [v.loja_id])).rows[0].ok;
+    if (!ok) throw new Recusa(403, 'Seu perfil não tem permissão para isso.');
     return v;
   }
 
@@ -151,11 +157,12 @@ export function rotasVendas(app, { exigeLogin, rota }) {
 
   app.get('/api/vendas/:id', exigeLogin, comRecusa(async (req, res) => {
     const dados = await comoUsuario(req.usuarioId, async (db) => {
-      const v = await buscarVenda(db, req.params.id);
+      const v = await buscarVenda(db, req.params.id, { soVer: true });
       const extra = (await db.query(
-        `select l.nome as loja, to_jsonb(c) - 'consulta_serasa' || jsonb_build_object('grupo_nome', (select g.nome from clientes g where g.id = c.grupo_cliente_id)) as cliente, u.nome as vendedor
-           from lojas l, clientes c left join usuarios u on u.id = $3
-          where l.id = $1 and c.id = $2`, [v.loja_id, v.cliente_id, v.vendedor_id])).rows[0];
+        `select loja_nome($1) as loja, to_jsonb(c) - 'consulta_serasa' || jsonb_build_object('grupo_nome', (select g.nome from clientes g where g.id = c.grupo_cliente_id),
+                'loja_codigo', loja_codigo(c.loja_id), 'loja_nome', loja_nome(c.loja_id)) as cliente, usuario_nome($3) as vendedor
+           from clientes c
+          where c.id = $2`, [v.loja_id, v.cliente_id, v.vendedor_id])).rows[0];
       const itens = (await db.query(
         `select i.id, i.servico_id, s.nome as servico, i.descricao, i.quantidade, i.valor_unit, i.valor_total,
                 ve.placa, ve.tipo as tipo_veiculo, ve.marca, ve.modelo,
@@ -253,7 +260,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     }
 
     // Na alteração, sem cliente informado, mantém o atual
-    const cliente = existente && !b.cliente_id && !b.cliente_novo?.nome && !b.cliente_avulso
+    const cliente = existente && ((!b.cliente_id && !b.cliente_novo?.nome && !b.cliente_avulso) || b.cliente_id === existente.cliente_id)
       ? existente.cliente_id
       : await resolverCliente(db, { empresa, loja, cliente_id: b.cliente_id, cliente_novo: b.cliente_novo });
     // Preço travado: vale o preço especial do cliente ou o da tabela (ou o que já estava salvo na venda).
@@ -526,11 +533,12 @@ export function rotasVendas(app, { exigeLogin, rota }) {
     const digitos = q.replace(/\D/g, '');
     const dados = await comoUsuario(req.usuarioId, async (db) => {
       const clientes = (await db.query(
-        `select c.id, c.tipo, c.nome, c.cpf_cnpj, c.whatsapp
+        `select c.id, c.tipo, c.nome, c.cpf_cnpj, c.whatsapp, loja_codigo(c.loja_id) as loja_codigo, loja_nome(c.loja_id) as loja_nome
            from clientes c
           where c.ativo and c.tipo <> 'avulso'
             and exists (select 1 from lojas l where l.empresa_id = c.empresa_id and ($1::uuid is null or l.id = $1)
-                          and pode(l.id, 'clientes.ver'))
+                          and pode(l.id, 'clientes.ver')
+                          and (c.loja_id is null or c.loja_id = l.id or compartilha(c.empresa_id, 'clientes')))
             and (c.nome ilike '%' || $2 || '%' or ($3 <> '' and c.cpf_cnpj like $3 || '%'))
           order by c.nome limit 8`, [loja, q, digitos])).rows;
       const vistorias = (await db.query(
@@ -543,7 +551,7 @@ export function rotasVendas(app, { exigeLogin, rota }) {
       const vendas = (await db.query(
         `select v.id, v.numero, v.tipo, v.situacao, v.data_venda, v.valor_total, c.nome as cliente
            from vendas v join clientes c on c.id = v.cliente_id
-          where pode(v.loja_id, 'vendas.ver') and ($1::uuid is null or v.loja_id = $1)
+          where pode_ver(v.loja_id, 'vendas', 'vendas.ver') and ($1::uuid is null or v.loja_id = $1)
             and (c.nome ilike '%' || $3 || '%' or ($4 <> '' and c.cpf_cnpj like $4 || '%')
                  or ($2 <> '' and length($2) >= 3 and exists (select 1 from venda_itens i join veiculos ve on ve.id = i.veiculo_id
                              where i.venda_id = v.id and ve.placa like '%' || $2 || '%')))

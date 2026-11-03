@@ -1088,3 +1088,13 @@ button.cartao-atalho:disabled { cursor: default; }
 .servicos-agenda-linha { display: flex; align-items: center; gap: 8px; }
 .servicos-agenda-linha select { flex: 1; min-width: 0; }
 .servicos-agenda .botao-link { align-self: flex-start; font-size: 14px; }
+
+/* Grupos e unidades: dados compartilhados ou separados por unidade */
+.areas-compartilhadas { display: flex; flex-direction: column; gap: 10px; }
+.area-compartilhada { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--borda); padding-bottom: 10px; }
+.area-compartilhada > span { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; }
+.area-compartilhada .opcao { min-height: 40px; padding: 6px 12px; font-size: 14px; }
+
+/* Número da filial (unidade) onde o cliente foi cadastrado */
+.filial-cliente { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  background: var(--clara); color: var(--forte); font-size: 11px; font-weight: 800; line-height: 1.5; vertical-align: middle; white-space: nowrap; }

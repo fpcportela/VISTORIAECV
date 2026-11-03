@@ -41,6 +41,15 @@ export function CamposEndereco({ f, setF }) {
   );
 }
 
+// Partes do sistema em que o grupo escolhe: dados de todas as unidades juntos ou cada unidade separada
+export const AREAS_COMPARTILHADAS = [
+  ['vendas', 'Vendas', 'Quem vê vendas numa unidade vê as de todas as unidades do grupo.'],
+  ['clientes', 'Clientes', 'Um só cadastro de clientes para o grupo; separado, cada unidade tem a sua carteira.'],
+  ['relatorios', 'Relatórios', 'Os relatórios juntam vendas e financeiro de todas as unidades do grupo.'],
+  ['colaboradores', 'Colaboradores', 'Quem vê colaboradores numa unidade vê os de todas as unidades do grupo.'],
+];
+const PADRAO_COMPARTILHA = { vendas: false, clientes: true, relatorios: false, colaboradores: false };
+
 // Grupos (ex.: VISÃO TOTAL) e as unidades de cada grupo, com ou sem CNPJ próprio.
 // O master cadastra tudo; os demais só veem as unidades do próprio grupo.
 
@@ -69,6 +78,11 @@ export default function Grupos() {
                   <strong>{g.nome_fantasia || g.razao_social}</strong>
                   {!g.ativo && <span className="etiqueta inativa">Inativo</span>}
                   <small className="cinza">{[g.nome_fantasia && g.razao_social !== g.nome_fantasia && g.razao_social, g.cnpj ? `CNPJ ${mascaraCnpj(g.cnpj)}` : 'Sem CNPJ'].filter(Boolean).join(' · ')}</small>
+                  {g.unidades.length > 1 && (
+                    <small className="cinza">
+                      {AREAS_COMPARTILHADAS.map(([a, n]) => `${n}: ${g.compartilha?.[a] ? 'todas as unidades' : 'por unidade'}`).join(' · ')}
+                    </small>
+                  )}
                 </span>
                 {master && (
                   <span className="acoes-cabecalho">
@@ -135,7 +149,8 @@ async function reduzirLogo(arquivo) {
 }
 
 function EditorGrupo({ item, aoFechar, aoSalvar }) {
-  const [f, setF] = useState({ razao_social: item?.razao_social || '', nome_fantasia: item?.nome_fantasia || '', cnpj: item?.cnpj ? mascaraCnpj(item.cnpj) : '', ativo: item?.ativo ?? true, logo: item?.logo || '', ...enderecoVazio(item) });
+  const [f, setF] = useState({ razao_social: item?.razao_social || '', nome_fantasia: item?.nome_fantasia || '', cnpj: item?.cnpj ? mascaraCnpj(item.cnpj) : '', ativo: item?.ativo ?? true, logo: item?.logo || '', ...enderecoVazio(item),
+    compartilha: { ...PADRAO_COMPARTILHA, ...(item?.compartilha || {}) } });
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
 
@@ -172,6 +187,23 @@ function EditorGrupo({ item, aoFechar, aoSalvar }) {
         <label>CNPJ do grupo<input value={f.cnpj} inputMode="numeric" placeholder="Opcional" onChange={(e) => setF({ ...f, cnpj: mascaraCnpj(e.target.value) })} /></label>
         <span className="rotulo-campo">Endereço do grupo</span>
         <CamposEndereco f={f} setF={setF} />
+        <span className="rotulo-campo">Dados entre as unidades</span>
+        <small className="cinza">Para cada parte do sistema, escolha se as unidades do grupo usam os mesmos dados ou se cada unidade fica separada. Compartilhar libera só a consulta: alterar continua sendo na unidade dona do dado.</small>
+        <div className="areas-compartilhadas">
+          {AREAS_COMPARTILHADAS.map(([area, nome, ajuda]) => (
+            <div key={area} className="area-compartilhada">
+              <span><strong>{nome}</strong><small className="cinza">{ajuda}</small></span>
+              <div className="opcoes">
+                {[[true, 'Todas as unidades'], [false, 'Cada unidade separada']].map(([valor, rotulo]) => (
+                  <label key={rotulo} className={f.compartilha[area] === valor ? 'opcao marcada' : 'opcao'}>
+                    <input type="radio" name={`compartilha-${area}`} checked={f.compartilha[area] === valor}
+                      onChange={() => setF((x) => ({ ...x, compartilha: { ...x.compartilha, [area]: valor } }))} />{rotulo}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
         {item && <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={(e) => setF({ ...f, ativo: e.target.checked })} /> Grupo ativo</label>}
         {!item && <p className="cinza ajuda">O grupo já nasce com o perfil Administrador, o plano de contas e os tipos de arquivo. Depois cadastre as unidades e os usuários dele.</p>}
         {erro && <p className="erro" role="alert">{erro}</p>}

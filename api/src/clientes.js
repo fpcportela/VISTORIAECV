@@ -9,10 +9,18 @@ import { cnpjValido, cpfValido } from './documentos.js';
 const TIPOS = ['pf', 'pj', 'grupo'];
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
 
-// Pode fazer X com os clientes de algum grupo do sistema? (a permissão é por loja)
-const podeNaEmpresa = (db, empresa, permissao) =>
-  db.query('select exists (select 1 from lojas l where l.empresa_id = $1 and pode(l.id, $2)) as ok', [empresa, permissao])
-    .then((r) => r.rows[0].ok);
+// Pode fazer X com este cliente? A permissão é por loja: na unidade onde o cliente foi cadastrado
+// ou, se o grupo compartilha os clientes (Grupos e unidades), em qualquer unidade do grupo.
+const podeNoCliente = (db, c, permissao) =>
+  db.query(`select exists (select 1 from lojas l where l.empresa_id = $1 and pode(l.id, $3)
+                             and ($2::uuid is null or l.id = $2 or compartilha($1, 'clientes'))) as ok`,
+  [c.empresa_id, c.loja_id ?? null, permissao]).then((r) => r.rows[0].ok);
+
+// CPF/CNPJ já usado: no grupo todo (clientes compartilhados) ou só na unidade (separados)
+const docEmUso = (db, empresa, loja, doc, exceto) =>
+  db.query(`select 1 from clientes where empresa_id = $1 and cpf_cnpj = $3 and id is distinct from $4
+              and (compartilha($1, 'clientes') or loja_id is not distinct from $2)`, [empresa, loja, doc, exceto ?? null])
+    .then((r) => r.rowCount > 0);
 
 export function rotasClientes(app, { exigeLogin, rota }) {
   const comRecusa = criarComRecusa(rota);
@@ -25,12 +33,14 @@ export function rotasClientes(app, { exigeLogin, rota }) {
     const busca = texto(req.query.busca, 60);
     const lista = await comoUsuario(req.usuarioId, async (db) => (await db.query(
       `select c.id, c.tipo, c.nome, c.nome_fantasia, c.cpf_cnpj, c.whatsapp, c.telefone, c.email, c.cidade, c.uf, c.ativo,
-              c.grupo_cliente_id, g.nome as grupo_nome,
+              c.grupo_cliente_id, g.nome as grupo_nome, c.loja_id, loja_codigo(c.loja_id) as loja_codigo, loja_nome(c.loja_id) as loja_nome,
               (select count(*)::int from clientes m where m.grupo_cliente_id = c.id and m.ativo) as empresas
          from clientes c
          left join clientes g on g.id = c.grupo_cliente_id
         where exists (select 1 from lojas l where l.empresa_id = c.empresa_id and ($1::uuid is null or l.id = $1)
-                        and pode(l.id, 'clientes.ver'))
+                        and pode(l.id, 'clientes.ver')
+                        -- clientes separados por unidade: só os da própria unidade (e o avulso)
+                        and (c.loja_id is null or c.loja_id = l.id or compartilha(c.empresa_id, 'clientes')))
           and (c.ativo or $5)
           and ($2::text is null or c.tipo::text = $2)
           and (not $4 or c.tipo::text <> 'grupo')
@@ -49,9 +59,10 @@ export function rotasClientes(app, { exigeLogin, rota }) {
     const dados = await comoUsuario(req.usuarioId, async (db) => {
       const c = (await db.query(
         `select c.id, c.empresa_id, c.tipo, c.nome, c.nome_fantasia, c.cpf_cnpj, c.telefone, c.whatsapp, c.email, c.cep, c.endereco,
-                c.cidade, c.uf, c.observacoes, c.ativo, c.grupo_cliente_id, g.nome as grupo_nome
+                c.cidade, c.uf, c.observacoes, c.ativo, c.grupo_cliente_id, g.nome as grupo_nome,
+                c.loja_id, loja_codigo(c.loja_id) as loja_codigo, loja_nome(c.loja_id) as loja_nome
            from clientes c left join clientes g on g.id = c.grupo_cliente_id where c.id = $1`, [req.params.id])).rows[0];
-      if (!c || !(await podeNaEmpresa(db, c.empresa_id, 'clientes.ver'))) throw new Recusa(404, 'Cliente não encontrado.');
+      if (!c || !(await podeNoCliente(db, c, 'clientes.ver'))) throw new Recusa(404, 'Cliente não encontrado.');
       const empresas = c.tipo === 'grupo' ? (await db.query(
         `select id, nome, nome_fantasia, cpf_cnpj, cidade, uf, ativo from clientes where grupo_cliente_id = $1 order by nome`, [c.id])).rows : [];
       const vendas = (await db.query(
@@ -59,7 +70,7 @@ export function rotasClientes(app, { exigeLogin, rota }) {
            from vendas where situacao <> 'cancelada'
             and (cliente_id = $1 or cliente_id in (select id from clientes where grupo_cliente_id = $1))`, [c.id])).rows[0];
       const precos = (await db.query('select servico_id, valor from cliente_precos where cliente_id = $1', [c.id])).rows;
-      return { ...c, empresas, vendas, precos, pode_editar: await podeNaEmpresa(db, c.empresa_id, 'clientes.editar') };
+      return { ...c, empresas, vendas, precos, pode_editar: await podeNoCliente(db, c, 'clientes.editar') };
     });
     res.json(dados);
   }));
@@ -115,9 +126,9 @@ export function rotasClientes(app, { exigeLogin, rota }) {
       texto(b.observacoes, 2000), b.ativo !== false, grupoCliente];
 
     const novoId = await comoUsuario(req.usuarioId, async (db) => {
-      let empresa;
+      let empresa, loja;
       if (id) {
-        const atual = (await db.query('select empresa_id, tipo from clientes where id = $1', [id])).rows[0];
+        const atual = (await db.query('select empresa_id, loja_id, tipo from clientes where id = $1', [id])).rows[0];
         if (!atual) throw new Recusa(404, 'Cliente não encontrado.');
         if (atual.tipo === 'avulso') throw new Recusa(400, 'O cliente avulso não pode ser alterado.');
         if (atual.tipo === 'grupo' && tipo !== 'grupo'
@@ -125,14 +136,23 @@ export function rotasClientes(app, { exigeLogin, rota }) {
           throw new Recusa(400, 'Este grupo tem empresas. Tire as empresas do grupo antes de mudar o tipo.');
         }
         empresa = atual.empresa_id;
+        loja = atual.loja_id;
       } else {
         if (!UUID.test(b.loja_id || '')) throw new Recusa(400, 'Escolha a loja.');
         empresa = (await db.query('select empresa_id from lojas where id = $1 and tem_loja(id)', [b.loja_id])).rows[0]?.empresa_id;
         if (!empresa) throw new Recusa(403, 'Você não tem acesso a esta loja.');
+        loja = b.loja_id;
       }
-      if (!(await podeNaEmpresa(db, empresa, 'clientes.editar'))) throw new Recusa(403, 'Seu perfil não pode cadastrar clientes.');
-      if (grupoCliente && !(await db.query("select 1 from clientes where id = $1 and empresa_id = $2 and tipo::text = 'grupo'", [grupoCliente, empresa])).rowCount) {
+      if (!(await podeNoCliente(db, { empresa_id: empresa, loja_id: loja }, 'clientes.editar'))) {
+        throw new Recusa(403, 'Seu perfil não pode cadastrar clientes.');
+      }
+      if (grupoCliente && !(await db.query(
+        `select 1 from clientes where id = $1 and empresa_id = $2 and tipo::text = 'grupo'
+            and (loja_id is null or loja_id = $3 or compartilha($2, 'clientes'))`, [grupoCliente, empresa, loja])).rowCount) {
         throw new Recusa(400, 'Grupo de clientes não encontrado.');
+      }
+      if (doc && (await docEmUso(db, empresa, loja, doc, id))) {
+        throw new Recusa(400, `Já existe um cliente com esse ${tipo === 'pj' ? 'CNPJ' : 'CPF'}.`);
       }
       try {
         if (id) {
@@ -145,8 +165,8 @@ export function rotasClientes(app, { exigeLogin, rota }) {
         }
         const novo = (await db.query(
           `insert into clientes (empresa_id, tipo, nome, nome_fantasia, cpf_cnpj, telefone, whatsapp, email, cep, endereco, cidade, uf,
-                                 observacoes, ativo, grupo_cliente_id)
-           values ($1, $2::tipo_pessoa, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id`, [empresa, ...campos])).rows[0].id;
+                                 observacoes, ativo, grupo_cliente_id, loja_id)
+           values ($1, $2::tipo_pessoa, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id`, [empresa, ...campos, loja])).rows[0].id;
         await gravarPrecos(db, novo, b.precos);
         return novo;
       } catch (e) {

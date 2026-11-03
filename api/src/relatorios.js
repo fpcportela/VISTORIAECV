@@ -23,8 +23,8 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
     const faturar = q.faturar === '1';  // só as que ainda têm valor a faturar e não foram faturadas
     const params = [uuid(q.loja), uuid(q.cliente), dataValida(q.de), dataValida(q.ate), situacao, faturar, uuid(q.vendedor)];
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
-      `select v.id, v.numero, v.data_venda, v.situacao, v.valor_bruto, v.desconto, v.valor_total, v.loja_id, l.nome as loja,
-              v.empresa_id, c.id as cliente_id, c.nome as cliente, c.cpf_cnpj, g.nome as grupo_cliente, u.nome as vendedor,
+      `select v.id, v.numero, v.data_venda, v.situacao, v.valor_bruto, v.desconto, v.valor_total, v.loja_id, loja_nome(v.loja_id) as loja,
+              v.empresa_id, c.id as cliente_id, c.nome as cliente, c.cpf_cnpj, g.nome as grupo_cliente, usuario_nome(v.vendedor_id) as vendedor,
               (select string_agg(distinct ve.placa, ', ') from venda_itens i join veiculos ve on ve.id = i.veiculo_id where i.venda_id = v.id) as placas,
               (select string_agg(distinct nullif(concat_ws(' ', ve.marca, ve.modelo), ''), ', ') from venda_itens i join veiculos ve on ve.id = i.veiculo_id
                 where i.venda_id = v.id) as veiculos,
@@ -34,12 +34,10 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
               ${A_FATURAR} as a_faturar,
               lv.lancamento_id as faturada_em
          from vendas v
-         join lojas l on l.id = v.loja_id
          join clientes c on c.id = v.cliente_id
          left join clientes g on g.id = c.grupo_cliente_id
-         left join usuarios u on u.id = v.vendedor_id
          left join lancamento_vendas lv on lv.venda_id = v.id
-        where pode(v.loja_id, 'relatorios.ver')
+        where pode_ver(v.loja_id, 'relatorios', 'relatorios.ver')
           and ($1::uuid is null or v.loja_id = $1)
           and ($2::uuid is null or c.id = $2 or c.grupo_cliente_id = $2)
           and ($3::date is null or v.data_venda >= $3)
@@ -59,16 +57,15 @@ export function rotasRelatorios(app, { exigeLogin, rota }) {
     const campoData = q.data === 'competencia' ? 'competencia' : q.data === 'pagamento' ? 'pago_em' : 'vencimento';
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
       `select f.id, f.tipo, f.descricao, f.vencimento, f.competencia, f.pago_em, f.valor, f.valor_pago, f.valor - f.valor_pago as saldo,
-              f.status, f.parcela, f.total_parcelas, f.documento, l.nome as loja, cat.nome as categoria, cc.nome as centro,
+              f.status, f.parcela, f.total_parcelas, f.documento, loja_nome(f.loja_id) as loja, cat.nome as categoria, cc.nome as centro,
               c.nome as cliente, c.cpf_cnpj,
               f.status in ('em_aberto', 'pago_parcial') and f.vencimento < (now() at time zone '${FUSO}')::date as vencido,
               (select count(*)::int from lancamento_vendas lv where lv.lancamento_id = f.id) as vendas
          from lancamentos f
-         join lojas l on l.id = f.loja_id
          left join categorias_financeiras cat on cat.id = f.categoria_id
          left join centros_custo cc on cc.id = f.centro_custo_id
          left join clientes c on c.id = f.cliente_id
-        where pode(f.loja_id, 'relatorios.ver') and pode(f.loja_id, 'financeiro.ver')
+        where pode_ver(f.loja_id, 'relatorios', 'relatorios.ver') and pode_ver(f.loja_id, 'relatorios', 'financeiro.ver')
           and ($1::tipo_lancamento is null or f.tipo = $1)
           and ($2::uuid is null or f.loja_id = $2)
           and ($3::uuid is null or c.id = $3 or c.grupo_cliente_id = $3)

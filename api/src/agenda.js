@@ -1,5 +1,5 @@
 import { comoUsuario } from './db.js';
-import { Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './comum.js';
+import { CLIENTE_DA_LOJA, Recusa, UUID, criarComRecusa, exigir, resolverCliente, texto } from './comum.js';
 import { normalizarPlaca } from './placas.js';
 import { enviarOpcoes, enviarTexto, internacional } from './whatsapp.js';
 import { textoConfirmacao, textoConfirmado } from './agendaTexto.js';
@@ -49,7 +49,8 @@ async function dadosAgendamento(db, b, empresa, loja) {
   // cliente: o escolhido na busca, ou pelo CPF/CNPJ (o já cadastrado ou um novo; nunca duplica). Sem documento, não cadastra.
   let cliente = null;
   if (UUID.test(b.cliente_id || '')) {
-    cliente = (await db.query('select id from clientes where id = $1 and empresa_id = $2', [b.cliente_id, empresa])).rows[0]?.id || null;
+    cliente = (await db.query(`select c.id from clientes c where c.empresa_id = $1 and ${CLIENTE_DA_LOJA} and c.id = $3`,
+      [empresa, loja, b.cliente_id])).rows[0]?.id || null;
   } else if (String(b.cpf_cnpj || '').replace(/\D/g, '')) {
     cliente = await resolverCliente(db, { empresa, loja, cliente_novo: { nome, cpf_cnpj: b.cpf_cnpj, whatsapp: tel } });
   }
