@@ -63,11 +63,31 @@ const PERIODOS = {
   todas: () => ['', ''],
 };
 
+// Último filtro usado na lista de vendas, guardado neste navegador. Um período rápido (Hoje, Este mês…)
+// é guardado pelo nome, para "Este mês" continuar sendo o mês atual quando o mês virar.
+const CHAVE_FILTRO = 'vistoria-ecv.filtro-vendas';
+const FILTRO_PADRAO = { periodo: 'mes', de: '', ate: '', situacao: '', cliente: '', busca: '' };
+function lerFiltro() {
+  try {
+    const f = JSON.parse(localStorage.getItem(CHAVE_FILTRO) || 'null');
+    if (!f || typeof f !== 'object') return null;
+    const [de, ate] = PERIODOS[f.periodo] ? PERIODOS[f.periodo]() : [String(f.de || ''), String(f.ate || '')];
+    return { de, ate, situacao: SITUACOES[f.situacao] ? f.situacao : '', cliente: String(f.cliente || ''), busca: String(f.busca || '') };
+  } catch { return null; }
+}
+function salvarFiltro(f) {
+  try { localStorage.setItem(CHAVE_FILTRO, JSON.stringify(f)); } catch { /* sem armazenamento */ }
+}
+
 export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', situacaoInicial = '', empresa, logo, lojasLote = [] }) {
-  const [[de, ate], setIntervalo] = useState(buscaInicial || situacaoInicial ? PERIODOS.todas() : PERIODOS.mes());
-  const [situacao, setSituacao] = useState(situacaoInicial);
-  const [cliente, setCliente] = useState(buscaInicial);
-  const [busca, setBusca] = useState('');
+  // Vindo da tela inicial (busca ou cartão), vale o filtro pedido; senão, volta o último filtro usado
+  const [inicial] = useState(() => (buscaInicial || situacaoInicial
+    ? { de: '', ate: '', situacao: situacaoInicial, cliente: buscaInicial, busca: '' }
+    : lerFiltro() || { ...FILTRO_PADRAO, de: PERIODOS.mes()[0], ate: PERIODOS.mes()[1] }));
+  const [[de, ate], setIntervalo] = useState([inicial.de, inicial.ate]);
+  const [situacao, setSituacao] = useState(inicial.situacao);
+  const [cliente, setCliente] = useState(inicial.cliente);
+  const [busca, setBusca] = useState(inicial.busca);
   const [lista, setLista] = useState(null);
   const [erro, setErro] = useState('');
   const [gerando, setGerando] = useState(false);
@@ -85,6 +105,19 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
 
   const total = (lista || []).filter((v) => v.situacao !== 'cancelada').reduce((t, v) => t + v.valor_total, 0);
   const periodoAtivo = Object.keys(PERIODOS).find((k) => { const [a, b] = PERIODOS[k](); return a === de && b === ate; });
+  const [padraoDe, padraoAte] = PERIODOS[FILTRO_PADRAO.periodo]();
+  const filtroPadrao = de === padraoDe && ate === padraoAte && !situacao && !cliente && !busca;
+
+  useEffect(() => {
+    salvarFiltro(periodoAtivo ? { periodo: periodoAtivo, situacao, cliente, busca } : { de, ate, situacao, cliente, busca });
+  }, [periodoAtivo, de, ate, situacao, cliente, busca]);
+
+  function limpar() {
+    setIntervalo(PERIODOS[FILTRO_PADRAO.periodo]());
+    setSituacao(FILTRO_PADRAO.situacao);
+    setCliente(FILTRO_PADRAO.cliente);
+    setBusca(FILTRO_PADRAO.busca);
+  }
 
   async function pdf() {
     setGerando(true);
@@ -129,6 +162,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
         </select>
         <input type="search" value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Cliente, CPF ou CNPJ" aria-label="Filtrar por cliente, CPF ou CNPJ" />
         <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Placa ou nº da venda" aria-label="Buscar por placa ou número" />
+        <button type="button" className="botao-contorno" onClick={limpar} disabled={filtroPadrao} title="Voltar para Este mês, todas as situações, sem busca">Limpar</button>
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {lista === null ? <p className="cinza">Carregando…</p> : lista.length === 0 ? (
