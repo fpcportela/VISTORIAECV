@@ -951,7 +951,9 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const robo = (await db.query('select ativo from whatsapp_robo where empresa_id = $1', [k.empresa_id])).rows[0]?.ativo || false;
       // agendamento do chamado: a conversa mostra e muda a situação dele
       const agendamento = chamado ? (await db.query(
-        `select a.id, a.inicio, a.situacao, a.loja_id, pode(a.loja_id, 'agenda.gerenciar') as pode
+        `select a.id, a.inicio, a.situacao, a.loja_id, pode(a.loja_id, 'agenda.gerenciar') as pode,
+                (select string_agg(s.nome, ', ' order by x.n) from unnest(a.servico_ids) with ordinality x(id, n)
+                   join servicos s on s.id = x.id) as servicos
            from agendamentos a where a.id = app_agendamento_do_chamado($1)`, [chamado.id])).rows[0] || null : null;
       return { ...k, mensagens, chamado, agendamento, robo, pode_enviar: await podeEnviar(db, k.empresa_id) };
     }));

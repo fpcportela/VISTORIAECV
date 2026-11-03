@@ -40,10 +40,12 @@ async function dadosAgendamento(db, b, empresa, loja) {
   if (tel && tel.length < 10) throw new Recusa(400, 'Confira o celular (com DDD).');
   const placa = b.placa ? normalizarPlaca(b.placa) : null;
   if (b.placa && !placa) throw new Recusa(400, 'Confira a placa.');
-  let servico = null;
-  if (UUID.test(b.servico_id || '')) {
-    servico = (await db.query('select id from servicos where id = $1 and empresa_id = $2', [b.servico_id, empresa])).rows[0]?.id || null;
-  }
+  // serviços: um ou mais (servico_ids, na ordem escolhida); servico_id sozinho ainda vale
+  const pedidos = [...new Set((Array.isArray(b.servico_ids) ? b.servico_ids : [b.servico_id]).filter((x) => UUID.test(x || '')))].slice(0, 20);
+  const achados = pedidos.length
+    ? (await db.query('select id from servicos where id = any($1::uuid[]) and empresa_id = $2', [pedidos, empresa])).rows.map((x) => x.id)
+    : [];
+  const servicos = pedidos.filter((x) => achados.includes(x));
   // cliente: o escolhido na busca, ou pelo CPF/CNPJ (o já cadastrado ou um novo; nunca duplica). Sem documento, não cadastra.
   let cliente = null;
   if (UUID.test(b.cliente_id || '')) {
@@ -51,7 +53,7 @@ async function dadosAgendamento(db, b, empresa, loja) {
   } else if (String(b.cpf_cnpj || '').replace(/\D/g, '')) {
     cliente = await resolverCliente(db, { empresa, loja, cliente_novo: { nome, cpf_cnpj: b.cpf_cnpj, whatsapp: tel } });
   }
-  return { nome, tel, placa, servico, cliente, obs: texto(b.observacao, 1000) };
+  return { nome, tel, placa, servicos, cliente, obs: texto(b.observacao, 1000) };
 }
 
 // Põe o agendamento num chamado do kanban do WhatsApp, na coluna escolhida (o chamado aberto do contato muda de coluna)
@@ -181,14 +183,17 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       const fimPeriodo = `(($2::date + 1)::timestamp at time zone 'America/Sao_Paulo')`;
       const iniPeriodo = `($1::date::timestamp at time zone 'America/Sao_Paulo')`;
       const agendamentos = (await db.query(
-        `select a.*, s.nome as servico, v.numero as venda_numero, v.situacao as venda_situacao,
+        `select a.*,
+                (select string_agg(s.nome, ', ' order by x.n) from unnest(a.servico_ids) with ordinality x(id, n)
+                   join servicos s on s.id = x.id) as servico,
+                v.numero as venda_numero, v.situacao as venda_situacao,
                 c.nome as cliente_nome, c.cpf_cnpj as cliente_doc,
                 -- responsável: o do chamado do WhatsApp (quem salvou a venda); sem chamado, quem criou a venda
                 coalesce((select u.nome from whatsapp_chamados h join usuarios u on u.id = h.responsavel_id
                            where h.id = a.chamado_id or (a.venda_id is not null and h.venda_id = a.venda_id)
                            order by (h.id = a.chamado_id) desc limit 1),
                          (select u.nome from usuarios u where u.id = v.criado_por)) as responsavel
-           from agendamentos a left join servicos s on s.id = a.servico_id left join vendas v on v.id = a.venda_id
+           from agendamentos a left join vendas v on v.id = a.venda_id
            left join clientes c on c.id = a.cliente_id
           where a.loja_id = $3 and a.inicio < ${fimPeriodo} and a.fim > ${iniPeriodo}
           order by a.inicio, a.criado_em`, [de, ate, l.id])).rows;
@@ -221,9 +226,9 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       const d = await dadosAgendamento(db, b, l.empresa_id, l.id);
       const fim = await horarioValido(db, { loja: l.id, inicio, encaixe: b.encaixe === true });
       const novo = (await db.query(
-        `insert into agendamentos (empresa_id, loja_id, inicio, fim, nome, telefone, placa, servico_id, cliente_id, observacao, criado_por)
+        `insert into agendamentos (empresa_id, loja_id, inicio, fim, nome, telefone, placa, servico_ids, cliente_id, observacao, criado_por)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`,
-        [l.empresa_id, l.id, inicio, fim, d.nome, d.tel, d.placa, d.servico, d.cliente, d.obs, req.usuarioId])).rows[0];
+        [l.empresa_id, l.id, inicio, fim, d.nome, d.tel, d.placa, d.servicos, d.cliente, d.obs, req.usuarioId])).rows[0];
       if (UUID.test(b.coluna_id || '')) await ligarChamado(db, novo, b.coluna_id, req.usuarioId);
       return novo.id;
     });
@@ -292,9 +297,9 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       if (b.nome !== undefined) {
         const d = await dadosAgendamento(db, b, a.empresa_id, a.loja_id);
         await db.query(
-          `update agendamentos set nome = $2, telefone = $3, placa = $4, servico_id = $5, observacao = $6,
+          `update agendamentos set nome = $2, telefone = $3, placa = $4, servico_ids = $5, observacao = $6,
                   cliente_id = coalesce($7, cliente_id), atualizado_em = now() where id = $1`,
-          [a.id, d.nome, d.tel, d.placa, d.servico, d.obs, d.cliente]);
+          [a.id, d.nome, d.tel, d.placa, d.servicos, d.obs, d.cliente]);
       }
       if (b.inicio !== undefined) {
         const inicio = instante(b.inicio);
