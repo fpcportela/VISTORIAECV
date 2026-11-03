@@ -133,10 +133,12 @@ export async function avisarConfirmado(usuarioId, agendamentoId) {
   if (falha) throw new Recusa(502, falha.message);
 }
 
-// A cada 5 minutos: robô para quando o cliente não confirmou até a hora; 24 h depois, sem venda, vira FALTOU
-setInterval(() => {
-  comoUsuario(null, (db) => db.query('select app_agenda_rotina()')).catch((e) => console.error('Rotina da agenda:', e.message));
-}, 5 * 60 * 1000).unref();
+// Ao abrir e a cada 5 minutos: robô para quando o cliente não confirmou até a hora; agendado/confirmado
+// sem atualização por 24 h depois do horário vira FALTOU (db/51)
+const rotinaAgenda = () => comoUsuario(null, (db) => db.query('select app_agenda_rotina()'))
+  .catch((e) => console.error('Rotina da agenda:', e.message));
+setTimeout(rotinaAgenda, 15 * 1000).unref();
+setInterval(rotinaAgenda, 5 * 60 * 1000).unref();
 
 export function rotasAgenda(app, { exigeLogin, rota }) {
   const comRecusa = criarComRecusa(rota);

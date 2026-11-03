@@ -46,7 +46,7 @@ end $$;
 
 -- os que já passaram
 select app_agenda_placa_da_venda(v.id) from (select distinct venda_id as id from agendamentos where venda_id is not null and coalesce(placa, '') = '') v;
-select app_agenda_rotina();
+-- (a rotina não roda aqui: a versão atual está no db/51, que roda logo depois)
 
 do $$
 begin

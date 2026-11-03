@@ -35,6 +35,7 @@ const textoHistorico = (h) => ({
   confirmado: `Cliente confirmou pelo WhatsApp em ${quando(h.criado_em)}`,
   nao_confirmado: `Cliente respondeu NÃO em ${quando(h.criado_em)}`,
   remarcado: `Remarcado de ${quando(h.de_inicio)} para ${quando(h.para_inicio)} ${quem(h)} em ${quando(h.criado_em)}`,
+  faltou_auto: `Marcado como FALTOU automaticamente em ${quando(h.criado_em)} (24 h sem atualização)`,
 }[h.acao]);
 
 export const SITUACOES_AGENDA = {
@@ -55,6 +56,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
   const [buscaVenda, setBuscaVenda] = useState('');
   const [agendarPara, setAgendarPara] = useState(paraInicial || null); // vindo da conversa do WhatsApp: cliente já escolhido
   const [destaque, setDestaque] = useState(null); // agendamento achado pela busca da venda
+  const [filtroSit, setFiltroSit] = useState(''); // '' = agenda normal; 'todas' ou uma situação = lista do período
 
   // mês: semanas inteiras (de domingo a sábado) que cobrem o mês do dia escolhido
   const primeiroMes = `${dia.slice(0, 8)}01`;
@@ -127,6 +129,12 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
           <button className="botao-contorno" aria-label="Próximo" onClick={() => passo(1)}>›</button>
           <CampoData value={dia} onChange={(e) => e.target.value && setDia(e.target.value)} aria-label="Ir para o dia" />
         </div>
+        <select value={filtroSit} onChange={(e) => setFiltroSit(e.target.value)} aria-label="Filtrar por situação"
+          className={filtroSit ? 'filtro-ativo' : ''}>
+          <option value="">Situação: agenda normal</option>
+          <option value="todas">Todas as situações (lista)</option>
+          {Object.entries(SITUACOES_AGENDA).map(([v, n]) => <option key={v} value={v}>{n}</option>)}
+        </select>
         <form className="agenda-busca-venda" onSubmit={acharVenda}>
           <input value={buscaVenda} inputMode="numeric" placeholder="Venda nº" aria-label="Buscar agendamento pelo número da venda"
             onChange={(e) => setBuscaVenda(e.target.value.replace(/\D/g, ''))} />
@@ -143,7 +151,10 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
       {aviso && <p className={/enviada|Agendado\b(?!,)/.test(aviso) ? 'sucesso' : 'erro'} role="status">{aviso}</p>}
       {erro && <p className="erro" role="alert">{erro}</p>}
       {!d ? <p className="cinza">Carregando…</p>
-        : modo === 'dia' ? (
+        : filtroSit ? (
+          <Lista d={d} de={modo === 'mes' ? primeiroMes : de} ate={modo === 'mes' ? ultimoMes : ate} situacao={filtroSit} aoSituacao={setFiltroSit}
+            aoDia={(x, id) => { setFiltroSit(''); setDia(x); setModo('dia'); setDestaque(id); }} aoVenda={aoVenda} />
+        ) : modo === 'dia' ? (
           <Dia dia={dia} d={d} pode={pode} aoNovo={(hora) => setJanela({ tipo: 'novo', dia, hora })}
             aoEditar={(a) => setJanela({ tipo: 'editar', a })} aoMudar={mudar} aoVenda={aoVenda} aoNovaVenda={aoNovaVenda} destaque={destaque} />
         ) : modo === 'semana' ? (
@@ -248,6 +259,50 @@ function Cartao({ a, historico = [], pode, aoEditar, aoMudar, aoVenda, aoNovaVen
         {pode && !encerrado && <button className="botao-link" onClick={() => aoEditar(a)}>Editar / remarcar</button>}
         {a.responsavel && <span className="agenda-responsavel" title="Responsável pelo atendimento">👤 {a.responsavel}</span>}
       </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ lista (filtro por situação)
+// Agendamentos do período (dia, semana ou mês) numa tabela, com a contagem de cada situação
+function Lista({ d, de, ate, situacao, aoSituacao, aoDia, aoVenda }) {
+  const doPeriodo = d.agendamentos.filter((a) => { const x = diaSP(a.inicio); return x >= de && x <= ate; });
+  const contagem = Object.fromEntries(Object.keys(SITUACOES_AGENDA).map((s) => [s, doPeriodo.filter((a) => a.situacao === s).length]));
+  const linhas = situacao === 'todas' ? doPeriodo : doPeriodo.filter((a) => a.situacao === situacao);
+  const dataCurta = (t) => new Date(t).toLocaleDateString('pt-BR', { timeZone: FUSO, weekday: 'short', day: '2-digit', month: '2-digit' });
+  return (
+    <div className="agenda-lista">
+      <div className="agenda-lista-resumo" role="group" aria-label="Quantidade por situação">
+        <button className={`chip-sit${situacao === 'todas' ? ' ativo' : ''}`} onClick={() => aoSituacao('todas')}>Todas: {doPeriodo.length}</button>
+        {Object.entries(SITUACOES_AGENDA).map(([s, n]) => (
+          <button key={s} className={`chip-sit sit-${s}${situacao === s ? ' ativo' : ''}`} onClick={() => aoSituacao(s)}>{n}: {contagem[s]}</button>
+        ))}
+      </div>
+      {!linhas.length ? <p className="cinza">Nenhum agendamento {situacao === 'todas' ? '' : `como ${SITUACOES_AGENDA[situacao].toUpperCase()} `}neste período.</p> : (
+        <div className="tabela-relatorio-caixa">
+          <table className="tabela-relatorio">
+            <thead>
+              <tr><th>Dia</th><th>Hora</th><th>Cliente</th><th>Placa</th><th>Serviço</th><th>Celular</th><th>Situação</th><th>Venda</th><th>Responsável</th><th>Origem</th></tr>
+            </thead>
+            <tbody>
+              {linhas.map((a) => (
+                <tr key={a.id}>
+                  <td><button className="botao-link" title="Abrir o dia na agenda" onClick={() => aoDia(diaSP(a.inicio), a.id)}>{dataCurta(a.inicio)}</button></td>
+                  <td>{horaSP(a.inicio)}</td>
+                  <td>{a.nome}</td>
+                  <td>{a.placa || '—'}</td>
+                  <td>{a.servico || '—'}</td>
+                  <td className="num">{a.telefone ? mascaraTelefone(String(a.telefone).replace(/^55/, '')) : '—'}</td>
+                  <td><span className={`chip-sit sit-${a.situacao}`}>{SITUACOES_AGENDA[a.situacao]}</span></td>
+                  <td>{a.venda_id ? <button className="botao-link" onClick={() => aoVenda?.(a.venda_id)}>nº {a.venda_numero}</button> : '—'}</td>
+                  <td>{a.responsavel || '—'}</td>
+                  <td>{a.origem === 'whatsapp' ? 'WhatsApp' : 'Agenda'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
