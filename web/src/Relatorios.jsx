@@ -71,8 +71,29 @@ const chaveGrupo = (fonte, g, v) => {
   return (col?.valor ? col.valor(v) : v[g]) || 'SEM INFORMAÇÃO';
 };
 const celula = (col, v) => (col.soma ? moeda(v[col.id]) : col.valor(v));
+// Célula da tabela: o Nº da venda vira link que abre a venda (quando o usuário pode ver vendas)
+function Celula({ col, v, aoVenda, vazio }) {
+  const texto = celula(col, v) || vazio || '';
+  if (col.id !== 'numero' || !aoVenda || !v.id) return texto;
+  return <button type="button" className="botao-link" title="Abrir a venda" onClick={(e) => { e.stopPropagation(); aoVenda(v.id); }}>{texto}</button>;
+}
+// Filtro que a lista de Vendas entende. O cliente vai pelo CPF/CNPJ (ou nome); um grupo de clientes não tem como filtrar lá.
+const filtroParaVendas = (f, cliente) => ({
+  de: f.de || '', ate: f.ate || '', situacao: f.situacao || '',
+  cliente: cliente && cliente.tipo !== 'grupo' ? (cliente.cpf_cnpj || cliente.nome || '') : '',
+});
+function BotaoVerVendas({ aoVerVendas, f, cliente }) {
+  if (!aoVerVendas) return null;
+  const grupo = cliente?.tipo === 'grupo';
+  return (
+    <button type="button" className="botao-contorno" onClick={() => aoVerVendas(filtroParaVendas(f, cliente))}
+      title={grupo ? 'Abre a tela de Vendas com o mesmo período e situação (o grupo de clientes não entra no filtro de lá)' : 'Abre a tela de Vendas com o mesmo período, situação e cliente'}>
+      Ver em Vendas
+    </button>
+  );
+}
 
-export default function Relatorios({ perfil, loja, empresa, logo }) {
+export default function Relatorios({ perfil, loja, empresa, logo, aoVenda, aoVerVendas }) {
   const [aba, setAba] = useState('personalizado');
   const tem = criarTem(perfil, loja);
   const podeFaturar = perfil.lojas.some((l) => criarTem(perfil, l.id)('financeiro.lancar'));
@@ -84,9 +105,9 @@ export default function Relatorios({ perfil, loja, empresa, logo }) {
         <button role="tab" aria-selected={aba === 'responsavel'} className={aba === 'responsavel' ? 'ativa' : ''} onClick={() => setAba('responsavel')}>Por responsável</button>
         {podeFaturar && <button role="tab" aria-selected={aba === 'faturar'} className={aba === 'faturar' ? 'ativa' : ''} onClick={() => setAba('faturar')}>Faturar cliente</button>}
       </div>
-      {aba === 'personalizado' ? <Personalizado loja={loja} empresa={empresa} logo={logo} podeFinanceiro={tem('financeiro.ver')} />
-        : aba === 'responsavel' ? <PorResponsavel perfil={perfil} loja={loja} empresa={empresa} logo={logo} />
-        : <Faturar perfil={perfil} loja={loja} empresa={empresa} logo={logo} />}
+      {aba === 'personalizado' ? <Personalizado loja={loja} empresa={empresa} logo={logo} podeFinanceiro={tem('financeiro.ver')} aoVenda={aoVenda} aoVerVendas={aoVerVendas} />
+        : aba === 'responsavel' ? <PorResponsavel perfil={perfil} loja={loja} empresa={empresa} logo={logo} aoVenda={aoVenda} aoVerVendas={aoVerVendas} />
+        : <Faturar perfil={perfil} loja={loja} empresa={empresa} logo={logo} aoVenda={aoVenda} aoVerVendas={aoVerVendas} />}
     </>
   );
 }
@@ -134,7 +155,7 @@ export function CampoCliente({ cliente, aoEscolher, obrigatorio }) {
 }
 
 // ------------------------------------------------------------ personalizado
-function Personalizado({ loja, empresa, logo, podeFinanceiro }) {
+function Personalizado({ loja, empresa, logo, podeFinanceiro, aoVenda, aoVerVendas }) {
   const [fonte, setFonte] = useState('vendas');
   const [f, setF] = useState({ de: inicioMes(), ate: hojeISO(), situacao: '', tipo: '', data: 'vencimento' });
   const [cliente, setCliente] = useState(null);
@@ -262,6 +283,7 @@ function Personalizado({ loja, empresa, logo, podeFinanceiro }) {
         <div className="acoes-relatorio">
           <button className="botao-primario" disabled={carregando}>{carregando ? 'Gerando…' : 'Gerar'}</button>
           <button type="button" className="botao-contorno" disabled={!linhas?.length} onClick={() => pdf()}>Gerar PDF</button>
+          {fonte === 'vendas' && <BotaoVerVendas aoVerVendas={aoVerVendas} f={f} cliente={cliente} />}
           <button type="button" className="botao-contorno" onClick={salvarModelo}>Salvar modelo</button>
           {modelos.length > 0 && (
             <select value="" onChange={(e) => usarModelo(e.target.value)} aria-label="Modelos salvos">
@@ -286,7 +308,7 @@ function Personalizado({ loja, empresa, logo, podeFinanceiro }) {
             <thead><tr>{cols.map((c) => <th key={c.id} className={c.soma ? 'num' : ''}>{c.nome}</th>)}</tr></thead>
             <tbody>
               {grupos.map(([k, lista]) => (
-                <GrupoLinhas key={k} titulo={grupo ? k : null} lista={lista} cols={cols} soma={soma} />
+                <GrupoLinhas key={k} titulo={grupo ? k : null} lista={lista} cols={cols} soma={soma} aoVenda={fonte === 'vendas' ? aoVenda : undefined} />
               ))}
             </tbody>
             <tfoot>
@@ -299,11 +321,11 @@ function Personalizado({ loja, empresa, logo, podeFinanceiro }) {
   );
 }
 
-function GrupoLinhas({ titulo, lista, cols, soma }) {
+function GrupoLinhas({ titulo, lista, cols, soma, aoVenda }) {
   return (
     <>
       {titulo !== null && <tr className="linha-grupo"><td colSpan={cols.length}>{titulo} <small>({lista.length})</small></td></tr>}
-      {lista.map((v) => <tr key={v.id}>{cols.map((c) => <td key={c.id} className={c.soma ? 'num' : ''}>{celula(c, v)}</td>)}</tr>)}
+      {lista.map((v) => <tr key={v.id}>{cols.map((c) => <td key={c.id} className={c.soma ? 'num' : ''}><Celula col={c} v={v} aoVenda={aoVenda} /></td>)}</tr>)}
       {titulo !== null && cols.some((c) => c.soma) && (
         <tr className="linha-subtotal">{cols.map((c, i) => <td key={c.id} className={c.soma ? 'num' : ''}>{c.soma ? moeda(soma(lista, c.id)) : i === 0 ? 'Subtotal' : ''}</td>)}</tr>
       )}
@@ -314,7 +336,7 @@ function GrupoLinhas({ titulo, lista, cols, soma }) {
 // ------------------------------------------------------------ vendas por responsável
 // Vendas agrupadas pelo responsável da venda, com quantidade e total de cada um (canceladas ficam de fora, salvo se pedir)
 const PADRAO_RESP = ['numero', 'data_venda', 'cliente', 'placas', 'servicos', 'loja', 'formas', 'situacao', 'valor_total'];
-function PorResponsavel({ perfil, loja, empresa, logo }) {
+function PorResponsavel({ perfil, loja, empresa, logo, aoVenda, aoVerVendas }) {
   const [f, setF] = useState({ de: inicioMes(), ate: hojeISO(), situacao: '', vendedor: '' });
   const [responsaveis, setResponsaveis] = useState([]);
   const [colunas, setColunas] = useState(PADRAO_RESP);
@@ -389,6 +411,7 @@ function PorResponsavel({ perfil, loja, empresa, logo }) {
         <div className="acoes-relatorio">
           <button className="botao-primario" disabled={carregando}>{carregando ? 'Gerando…' : 'Gerar'}</button>
           <button type="button" className="botao-contorno" disabled={!linhas?.length} onClick={pdf}>Gerar PDF</button>
+          <BotaoVerVendas aoVerVendas={aoVerVendas} f={f} />
         </div>
       </form>
       {erro && <p className="erro" role="alert">{erro}</p>}
@@ -402,7 +425,7 @@ function PorResponsavel({ perfil, loja, empresa, logo }) {
           <div className="tabela-relatorio-caixa">
             <table className="tabela-relatorio">
               <thead><tr>{cols.map((c) => <th key={c.id} className={c.soma ? 'num' : ''}>{c.nome}</th>)}</tr></thead>
-              <tbody>{grupos.map(([k, lista]) => <GrupoLinhas key={k} titulo={k} lista={lista} cols={cols} soma={soma} />)}</tbody>
+              <tbody>{grupos.map(([k, lista]) => <GrupoLinhas key={k} titulo={k} lista={lista} cols={cols} soma={soma} aoVenda={aoVenda} />)}</tbody>
               <tfoot>
                 <tr>{cols.map((c, i) => <td key={c.id} className={c.soma ? 'num' : ''}>{c.soma ? moeda(soma(linhas, c.id)) : i === 0 ? 'TOTAL' : ''}</td>)}</tr>
               </tfoot>
@@ -416,7 +439,7 @@ function PorResponsavel({ perfil, loja, empresa, logo }) {
 
 // ------------------------------------------------------------ faturar cliente
 const PADRAO_FATURAR = ['numero', 'data_venda', 'cliente', 'placas', 'veiculos', 'servicos', 'loja', 'formas', 'situacao', 'desconto', 'valor_total', 'a_faturar'];
-function Faturar({ perfil, loja, empresa, logo }) {
+function Faturar({ perfil, loja, empresa, logo, aoVenda, aoVerVendas }) {
   const [cliente, setCliente] = useState(null);
   const [f, setF] = useState({ de: '', ate: '', situacao: '' });
   const [linhas, setLinhas] = useState(null);
@@ -523,6 +546,7 @@ function Faturar({ perfil, loja, empresa, logo }) {
         <div className="acoes-relatorio">
           <button className="botao-primario" disabled={!cliente}>Gerar</button>
           <button type="button" className="botao-contorno" disabled={!escolhidas.length} onClick={() => pdf()}>Gerar PDF</button>
+          {cliente && <BotaoVerVendas aoVerVendas={aoVerVendas} f={f} cliente={cliente} />}
           <button type="button" className="botao-contorno" onClick={salvarModelo}>Salvar modelo</button>
           {modelos.length > 0 && (
             <select value="" onChange={(e) => usarModelo(e.target.value)} aria-label="Modelos salvos">
@@ -561,7 +585,7 @@ function Faturar({ perfil, loja, empresa, logo }) {
               {linhas.map((v) => (
                 <tr key={v.id} className={marcadas.has(v.id) ? 'marcada' : ''} onClick={(e) => e.target.type !== 'checkbox' && marcar(v.id, !marcadas.has(v.id))}>
                   <td className="marcar"><input type="checkbox" checked={marcadas.has(v.id)} onChange={(e) => marcar(v.id, e.target.checked)} aria-label={`Venda ${v.numero}`} /></td>
-                  {cols.map((c) => <td key={c.id} className={c.soma ? 'num' : ''}>{c.id === 'formas' ? celula(c, v) || 'SEM PAGAMENTO' : celula(c, v)}</td>)}
+                  {cols.map((c) => <td key={c.id} className={c.soma ? 'num' : ''}><Celula col={c} v={v} aoVenda={aoVenda} vazio={c.id === 'formas' ? 'SEM PAGAMENTO' : ''} /></td>)}
                 </tr>
               ))}
             </tbody>
