@@ -32,6 +32,8 @@ export default function Ponto({ perfil, loja }) {
   const lojas = aba === 'registrar' ? lojasRegistro : lojasEspelho;
   const [filial, setFilial] = useState('');
   const lojaUsada = lojas.some((l) => l.id === filial) ? filial : lojas.some((l) => l.id === loja) ? loja : lojas[0]?.id || '';
+  // "Ver o espelho de ponto dos colaboradores" (Consulta do módulo no perfil): sem ela, a tela só mostra o próprio ponto
+  const equipe = Boolean(lojaUsada) && pode(lojaUsada, 'ponto.ver_equipe');
 
   return (
     <>
@@ -50,15 +52,17 @@ export default function Ponto({ perfil, loja }) {
         )}
       </div>
       {!lojaUsada ? <p className="cinza">Seu perfil não tem acesso ao ponto.</p>
-        : aba === 'registrar' ? <Registrar key={lojaUsada} loja={lojaUsada} /> : <Espelho key={lojaUsada} loja={lojaUsada} />}
+        : aba === 'registrar' ? <Registrar key={lojaUsada} loja={lojaUsada} equipe={equipe} /> : <Espelho key={lojaUsada} loja={lojaUsada} equipe={equipe} />}
     </>
   );
 }
 
+const SEM_COLABORADOR = 'Seu login não está ligado a um colaborador nesta filial. Peça para marcar "Acessa sistema" no cadastro do colaborador.';
+
 // ---------------------------------------------------------------------------
 // Registro: escolhe o colaborador, tira a foto e registra a próxima marcação
 // ---------------------------------------------------------------------------
-function Registrar({ loja }) {
+function Registrar({ loja, equipe }) {
   const [lista, setLista] = useState(null);
   const [busca, setBusca] = useState('');
   const [escolhido, setEscolhido] = useState(null);
@@ -86,9 +90,11 @@ function Registrar({ loja }) {
         </div>
       )}
       {erro && <p className="erro" role="alert">{erro}</p>}
-      <input type="search" className="busca-ponto" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Procure seu nome" aria-label="Procurar colaborador" />
+      {equipe
+        ? <input type="search" className="busca-ponto" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Procure seu nome" aria-label="Procurar colaborador" />
+        : <small className="cinza">Seu perfil mostra só o seu próprio ponto.</small>}
       {lista === null ? <p className="cinza">Carregando…</p> : filtrados.length === 0 ? (
-        <p className="cinza vazio">{lista.length ? 'Ninguém com esse nome.' : 'Nenhum colaborador ativo nesta filial. Cadastre em Colaboradores.'}</p>
+        <p className="cinza vazio">{lista.length ? 'Ninguém com esse nome.' : equipe ? 'Nenhum colaborador ativo nesta filial. Cadastre em Colaboradores.' : SEM_COLABORADOR}</p>
       ) : (
         <div className="grade-ponto">
           {filtrados.map((c) => {
@@ -237,7 +243,7 @@ function Camera({ loja, colaborador, tipo, aoVoltar, aoRegistrar }) {
 // ---------------------------------------------------------------------------
 // Espelho do mês: marcações por dia, horas, fotos, edição e justificativa
 // ---------------------------------------------------------------------------
-function Espelho({ loja }) {
+function Espelho({ loja, equipe }) {
   const [colaboradores, setColaboradores] = useState([]);
   const [colab, setColab] = useState('');
   const [mes, setMes] = useState(mesAtual());
@@ -271,7 +277,7 @@ function Espelho({ loja }) {
     <>
       <div className="filtros">
         <select value={colab} onChange={(e) => setColab(e.target.value)} aria-label="Colaborador">
-          {colaboradores.length === 0 && <option value="">Nenhum colaborador</option>}
+          {colaboradores.length === 0 && <option value="">{equipe ? 'Nenhum colaborador' : 'Seu login não está ligado a um colaborador'}</option>}
           {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
         </select>
         <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês" />
@@ -368,7 +374,7 @@ function Espelho({ loja }) {
           arquivos={justificativa(justificando.data, justificando.tipo)?.arquivos || []} aoMudar={carregar}
           aoFechar={() => setJustificando(null)} aoSalvar={() => { setJustificando(null); carregar(); }} />
       )}
-      {relatorio && <RelatorioPonto loja={loja} colaboradores={colaboradores} colab={colab} mes={mes} aoFechar={() => setRelatorio(false)} />}
+      {relatorio && <RelatorioPonto loja={loja} colaboradores={colaboradores} colab={colab} mes={mes} equipe={equipe} aoFechar={() => setRelatorio(false)} />}
     </>
   );
 }
@@ -506,7 +512,7 @@ function Justificar({ colaborador, data, tipo, atual, arquivos, aoMudar, aoFecha
 const ENVIO = { enviado: 'enviado pelo WhatsApp', simulado: 'WhatsApp em modo teste', sem_celular: 'colaborador sem celular', sem_whatsapp: 'grupo sem WhatsApp', falhou: 'não enviado', pendente: 'enviando' };
 
 // Relatório do mês em PDF: um colaborador ou todos, com a linha de assinatura
-function RelatorioPonto({ loja, colaboradores, colab, mes, aoFechar }) {
+function RelatorioPonto({ loja, colaboradores, colab, mes, equipe, aoFechar }) {
   const [quem, setQuem] = useState(colab || '');
   const [mesR, setMesR] = useState(mes);
   const [erro, setErro] = useState('');
@@ -533,7 +539,7 @@ function RelatorioPonto({ loja, colaboradores, colab, mes, aoFechar }) {
         <form className="formulario" onSubmit={gerar}>
           <label>Colaborador
             <select value={quem} onChange={(e) => setQuem(e.target.value)}>
-              <option value="">Todos os colaboradores</option>
+              {equipe && <option value="">Todos os colaboradores</option>}
               {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
             </select>
           </label>

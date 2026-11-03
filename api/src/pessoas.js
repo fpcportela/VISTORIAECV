@@ -462,9 +462,15 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     if (!mes) throw new Recusa(400, 'Mês inválido.');
     if (!UUID.test(req.query.loja || '')) throw new Recusa(400, 'Escolha a filial.');
     res.json(await comoUsuario(req.usuarioId, async (db) => {
-      await exigir(db, req.query.loja, 'ponto.ver_equipe', 'Seu perfil não pode ver o ponto dos colaboradores.');
-      const loja = (await db.query('select l.id, l.nome, l.cnpj, l.empresa_id, e.razao_social, e.cnpj as cnpj_grupo, e.logo from lojas l join empresas e on e.id = l.empresa_id where l.id = $1', [req.query.loja])).rows[0];
       const um = UUID.test(req.query.colaborador || '') ? req.query.colaborador : null;
+      // sem "ver o espelho dos colaboradores": só o relatório do próprio ponto
+      const equipe = (await db.query("select pode($1, 'ponto.ver_equipe') as ok", [req.query.loja])).rows[0].ok;
+      if (!equipe) {
+        const meu = um && (await db.query('select 1 from colaboradores where id = $1 and usuario_id = $2', [um, req.usuarioId])).rowCount;
+        if (!meu) throw new Recusa(403, 'Seu perfil só pode ver o seu próprio ponto.');
+        await exigir(db, req.query.loja, 'ponto.registrar', 'Seu perfil não pode ver o ponto nesta filial.');
+      }
+      const loja = (await db.query('select l.id, l.nome, l.cnpj, l.empresa_id, e.razao_social, e.cnpj as cnpj_grupo, e.logo from lojas l join empresas e on e.id = l.empresa_id where l.id = $1', [req.query.loja])).rows[0];
       const colaboradores = (await db.query(
         `select c.id, c.nome, c.cpf, c.cargo,
                 coalesce((select jsonb_agg(jsonb_build_object('data', r.data, 'tipo', r.tipo, 'hora', r.hora, 'ajuste', r.origem = 'ajuste') order by r.hora)
