@@ -74,11 +74,28 @@ export function rotasAcessos(app, { exigeLogin, rota }) {
     UUID.test(req.params.id) ? salvarCargo(req.params.id)(req, res) : res.status(404).json({ erro: 'Cargo não encontrado.' }));
 
   app.get('/api/usuarios', exigeLogin, rota(async (req, res) => {
-    res.json(await comoUsuario(req.usuarioId, async (db) =>
-      (await db.query(
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      const usuarios = (await db.query(
         `select a.*, c.cargo_id, c.cargo, k.colaborador_id, k.colaborador
            from app_usuarios() a left join app_cargos_usuarios() c on c.usuario_id = a.id
-           left join app_colaborador_do_usuario() k on k.usuario_id = a.id`)).rows));
+           left join app_colaborador_do_usuario() k on k.usuario_id = a.id`)).rows;
+      // WhatsApp: conexões que cada um vê (restrito = só as marcadas)
+      const acessos = (await db.query('select * from app_whatsapp_acessos()')).rows;
+      return usuarios.map((u) => {
+        const meus = acessos.filter((x) => x.usuario_id === u.id);
+        return { ...u, whatsapp: { restrito: meus.some((x) => x.restrito), marcadas: meus.filter((x) => x.marcada).map((x) => x.numero_id),
+          ve: meus.filter((x) => x.ve).map((x) => x.numero_id) } };
+      });
+    }));
+  }));
+
+  // Conexões de WhatsApp dos grupos (para marcar no cadastro do usuário quais conversas ele vê)
+  app.get('/api/usuarios/whatsapp-conexoes', exigeLogin, rota(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
+      `select n.id, n.nome, n.empresa_id, n.loja_id, loja_nome(n.loja_id) as loja, n.ativo
+         from whatsapp_numeros n
+        where n.phone_number_id not like 'teste-%' and tem_empresa(n.empresa_id)
+        order by n.criado_em, n.nome`)).rows));
   }));
 
   // Pesquisa na base de colaboradores para o cadastro de usuário já vir preenchido
@@ -101,6 +118,12 @@ export function rotasAcessos(app, { exigeLogin, rota }) {
       const uid = (await db.query('select app_salvar_usuario($1, $2, $3, $4, $5, $6, $7, $8) as id',
         [id ?? null, nome, email, senha || null, ativo !== false, JSON.stringify(limpos), cpf, telefone])).rows[0].id;
       await db.query('select app_definir_cargo($1, $2)', [uid, cargo]);
+      // conversas do WhatsApp que vê: as conexões das unidades dele (padrão) ou só as marcadas
+      const zap = req.body?.whatsapp;
+      if (zap && typeof zap === 'object') {
+        const conexoes = (Array.isArray(zap.conexoes) ? zap.conexoes : []).filter((x) => UUID.test(String(x || '')));
+        await db.query('select app_whatsapp_definir_usuario($1, $2, $3)', [uid, Boolean(zap.restrito), conexoes]);
+      }
       // colaborador amarrado a este usuário (os dois ficam iguais daqui em diante)
       if (req.body && 'colaborador_id' in req.body) {
         await db.query('select app_ligar_colaborador_usuario($1, $2)', [uid, UUID.test(req.body.colaborador_id || '') ? req.body.colaborador_id : null]);
