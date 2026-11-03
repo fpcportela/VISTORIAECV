@@ -361,6 +361,11 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
   const lojasCliente = perfil.lojas.filter((l) => l.empresa_id === k.empresa_id && criarTem(perfil, l.id)('clientes.editar'));
   // Encerrar: leva o chamado para a 1ª coluna que finaliza (ex.: CONCLUÍDO)
   const finalizadoras = colunas.filter((c) => c.finaliza);
+  // venda da conversa: a do chamado (aberta pelo robô) ou a do agendamento ligado a ele
+  const venda = k.chamado?.venda_id ? { id: k.chamado.venda_id, numero: k.chamado.venda_numero, situacao: k.chamado.venda_situacao }
+    : k.agendamento?.venda_id ? { id: k.agendamento.venda_id, numero: k.agendamento.venda_numero, situacao: k.agendamento.venda_situacao } : null;
+  const abrirVenda = venda && aoVenda ? () => { aoFechar(); aoVenda(venda.id); } : null;
+  const confirmado = ['confirmado', 'compareceu'].includes(k.agendamento?.situacao);
   const encerrar = k.chamado && k.pode_enviar && !finalizadoras.some((c) => c.id === k.chamado.coluna_id) ? finalizadoras[0] : null;
 
   return (
@@ -382,6 +387,12 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
         {aoAgendar && (k.cliente_id || lojasCliente.length > 0) && (
           <button type="button" className="botao-contorno pequeno conversa-agendar" onClick={() => agendar()} title="Agendar na agenda com os dados deste cliente">
             <Icone nome="agenda" tamanho={16} /> Agendar
+          </button>
+        )}
+        {abrirVenda && (
+          <button type="button" className={`botao-contorno pequeno conversa-venda${venda.situacao === 'cancelada' ? ' cancelada' : ''}`} onClick={abrirVenda}
+            title="Abre a venda ligada a esta conversa">
+            <Icone nome="vendas" tamanho={16} /> Venda nº {venda.numero}{venda.situacao === 'cancelada' ? ' (cancelada)' : ''}
           </button>
         )}
         {encerrar && (
@@ -417,10 +428,11 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
           </label>
         </div>
       )}
-      {k.chamado?.venda_id ? (
+      {venda ? (
         <p className="aviso-robo">
-          🤖 O robô abriu a <strong>venda nº {k.chamado.venda_numero}</strong>{k.chamado.venda_situacao === 'futuro' ? ' (AGENDADO, falta confirmar)' : ''}.
-          {aoVenda && <button type="button" className="botao-texto" onClick={() => { aoFechar(); aoVenda(k.chamado.venda_id); }}>Abrir a venda</button>}
+          {k.chamado?.venda_id ? '🤖 O robô abriu a ' : '🧾 Esta conversa tem a '}<strong>venda nº {venda.numero}</strong>
+          {venda.situacao === 'cancelada' ? ' (cancelada)' : venda.situacao === 'futuro' ? (confirmado ? ' (AGENDADO, confirmado pelo cliente)' : ' (AGENDADO, falta confirmar)') : ''}.
+          {abrirVenda && <button type="button" className="botao-texto" onClick={abrirVenda}>Abrir a venda</button>}
         </p>
       ) : k.robo && k.chamado?.aberto && (
         <p className="aviso-robo">
