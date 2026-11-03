@@ -284,6 +284,7 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
   app.put('/api/agenda/:id', exigeLogin, comRecusa(async (req, res) => {
     const b = req.body || {};
     let confirmou = false;
+    let avisoVenda = null;
     await comoUsuario(req.usuarioId, async (db) => {
       const a = await agendamentoDe(db, req.params.id);
       // COMPARECEU e FALTOU encerram o agendamento: não muda mais
@@ -295,6 +296,12 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       if (b.situacao !== undefined) {
         if (!SITUACOES.includes(b.situacao)) throw new Recusa(400, 'Situação inválida.');
         await db.query('update agendamentos set situacao = $2, atualizado_em = now() where id = $1', [a.id, b.situacao]);
+        // Cancelou: a venda ligada é cancelada junto pelo banco (db/52); avisa o que aconteceu com ela
+        if (b.situacao === 'cancelado' && a.situacao !== 'cancelado' && a.venda_id) {
+          const v = (await db.query('select numero, situacao from vendas where id = $1', [a.venda_id])).rows[0];
+          if (v?.situacao === 'cancelada') avisoVenda = `Agendamento cancelado. A venda nº ${v.numero} também foi cancelada.`;
+          else if (v?.situacao === 'finalizada') avisoVenda = `Agendamento cancelado, mas a venda nº ${v.numero} está FINALIZADA e não foi cancelada. Para cancelar, libere a edição da venda e cancele por lá.`;
+        }
       }
       if (b.nome !== undefined) {
         const d = await dadosAgendamento(db, b, a.empresa_id, a.loja_id);
@@ -328,7 +335,7 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
     } else if (confirmou) {
       try { await avisarConfirmado(req.usuarioId, req.params.id); } catch (e) { aviso = `Confirmado, mas a mensagem não foi pelo WhatsApp: ${e.message}`; }
     }
-    res.json({ ok: true, aviso });
+    res.json({ ok: true, aviso: aviso || avisoVenda });
   }));
 
   app.post('/api/agenda/:id/confirmacao', exigeLogin, comRecusa(async (req, res) => {

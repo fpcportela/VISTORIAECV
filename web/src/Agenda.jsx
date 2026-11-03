@@ -92,6 +92,9 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
 
   const recarregar = (msg) => { setRecarga((n) => n + 1); setJanela(null); setAviso(msg || ''); };
   const mudar = async (a, corpo) => {
+    // Cancelar o agendamento cancela a venda aberta ligada a ele: pede confirmação antes
+    if (corpo.situacao === 'cancelado' && a.venda_id && ['aberta', 'futuro'].includes(a.venda_situacao)
+        && !window.confirm(`Cancelar este agendamento também cancela a venda nº ${a.venda_numero}. Continuar?`)) return;
     setAviso('');
     try { const r = await api(`/agenda/${a.id}`, { metodo: 'PUT', corpo }); recarregar(r.aviso); } catch (f) { setAviso(f.message); }
   };
@@ -148,7 +151,7 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
         </div>
       )}
       <h2 className="agenda-titulo">{titulo}</h2>
-      {aviso && <p className={/enviada|Agendado\b(?!,)/.test(aviso) ? 'sucesso' : 'erro'} role="status">{aviso}</p>}
+      {aviso && <p className={/enviada|Agendado\b(?!,)|também foi cancelada/.test(aviso) ? 'sucesso' : 'erro'} role="status">{aviso}</p>}
       {erro && <p className="erro" role="alert">{erro}</p>}
       {!d ? <p className="cinza">Carregando…</p>
         : filtroSit ? (
