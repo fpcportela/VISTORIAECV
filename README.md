@@ -111,7 +111,7 @@ Se a API não estiver no mesmo computador do Docker, ajuste `EVOLUTION_WEBHOOK_U
 Em WhatsApp > Robô de atendimento cada grupo monta as perguntas (nome, CPF/CNPJ, placa, tipo de
 veículo, serviço, data ou pergunta livre), a mensagem de boas-vindas e a final. Com o robô ligado,
 quem manda mensagem responde as perguntas e, no fim, o sistema abre uma venda **FUTURO** na tela de
-vendas, com o cliente e o veículo. Na venda, o botão **Confirmar venda** passa ela para Aberta.
+vendas, com o cliente e o veículo. Na venda, o botão **Salvar e confirmar** grava o que foi alterado e passa ela para Aberta.
 Se um atendente responder na conversa, o robô para naquele atendimento. O cliente também pode
 escrever ATENDENTE a qualquer momento.
 
