@@ -506,7 +506,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const colunas = (await db.query('select id, nome, ordem, finaliza from whatsapp_colunas where empresa_id = $1 order by ordem, nome', [empresa])).rows;
       const chamados = (await db.query(
         `select h.id, h.coluna_id, h.titulo, h.ordem, h.aberto, h.criado_em, h.atualizado_em, h.responsavel_id, u.nome as responsavel,
-                h.robo_estado, h.venda_id, (select v.numero from vendas v where v.id = h.venda_id) as venda_numero,
+                h.robo_estado, h.venda_id, (select v.numero from vendas v where v.id = h.venda_id) as venda_numero, (select v.situacao from vendas v where v.id = h.venda_id) as venda_situacao,
                 k.id as contato_id, coalesce(k.nome, k.telefone) as contato, k.telefone, k.nao_lidas, k.cliente_id, cl.nome as cliente,
                 (select m.texto from whatsapp_conversa m where m.contato_id = k.id order by m.criado_em desc limit 1) as ultima,
                 ag.id as agendamento_id, ag.loja_id as agenda_loja, ag.inicio as agenda_inicio,
