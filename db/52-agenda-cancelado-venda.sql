@@ -1,4 +1,4 @@
--- Agendamento CANCELADO: a venda ligada a ele é cancelada junto (a do robô, a do "Abrir venda" ou a ligada
+-- Agendamento CANCELADO ou FALTOU (o automático das 24 h ou marcado à mão): a venda ligada a ele é cancelada junto (a do robô, a do "Abrir venda" ou a ligada
 -- pela Nova venda). Segue a mesma regra do botão Cancelar da venda: só venda ABERTA ou AGENDADO (futuro).
 -- Venda aberta não tem lançamento no financeiro nem entra em royalties, então não há nada mais a desfazer.
 -- Venda FINALIZADA (ou já cancelada) fica como está; a finalizada ganha um aviso no histórico.
@@ -6,8 +6,12 @@
 -- Pode rodar de novo sem problema.
 create or replace function trg_agenda_cancelado_venda() returns trigger language plpgsql security definer as $$
 declare v vendas;
+        motivo text;
 begin
-  if new.situacao <> 'cancelado' or old.situacao = 'cancelado' or new.venda_id is null then return null; end if;
+  if new.situacao not in ('cancelado', 'faltou') or old.situacao in ('cancelado', 'faltou') or new.venda_id is null then
+    return null;
+  end if;
+  motivo := case when new.situacao = 'faltou' then 'Cliente faltou no agendamento' else 'Agendamento cancelado na agenda' end;
   select * into v from vendas where id = new.venda_id;
   if v.id is null then return null; end if;
   if exists (select 1 from agendamentos where venda_id = v.id and id <> new.id
@@ -17,10 +21,10 @@ begin
   if v.situacao in ('aberta', 'futuro') then
     update vendas set situacao = 'cancelada' where id = v.id;
     insert into venda_historico (venda_id, usuario_id, acao, detalhe)
-    values (v.id, app_usuario_atual(), 'cancelada', 'Agendamento cancelado na agenda');
+    values (v.id, app_usuario_atual(), 'cancelada', motivo);
   elsif v.situacao = 'finalizada' then
     insert into venda_historico (venda_id, usuario_id, acao, detalhe)
-    values (v.id, app_usuario_atual(), 'alterada', 'Agendamento cancelado na agenda; a venda está finalizada e não foi cancelada');
+    values (v.id, app_usuario_atual(), 'alterada', motivo || '; a venda está finalizada e não foi cancelada');
   end if;
   return null;
 end $$;

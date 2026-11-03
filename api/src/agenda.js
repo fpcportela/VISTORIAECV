@@ -296,11 +296,12 @@ export function rotasAgenda(app, { exigeLogin, rota }) {
       if (b.situacao !== undefined) {
         if (!SITUACOES.includes(b.situacao)) throw new Recusa(400, 'Situação inválida.');
         await db.query('update agendamentos set situacao = $2, atualizado_em = now() where id = $1', [a.id, b.situacao]);
-        // Cancelou: a venda ligada é cancelada junto pelo banco (db/52); avisa o que aconteceu com ela
-        if (b.situacao === 'cancelado' && a.situacao !== 'cancelado' && a.venda_id) {
+        // Cancelou ou faltou: a venda ligada é cancelada junto pelo banco (db/52); avisa o que aconteceu com ela
+        if (['cancelado', 'faltou'].includes(b.situacao) && !['cancelado', 'faltou'].includes(a.situacao) && a.venda_id) {
           const v = (await db.query('select numero, situacao from vendas where id = $1', [a.venda_id])).rows[0];
-          if (v?.situacao === 'cancelada') avisoVenda = `Agendamento cancelado. A venda nº ${v.numero} também foi cancelada.`;
-          else if (v?.situacao === 'finalizada') avisoVenda = `Agendamento cancelado, mas a venda nº ${v.numero} está FINALIZADA e não foi cancelada. Para cancelar, libere a edição da venda e cancele por lá.`;
+          const sit = b.situacao === 'faltou' ? 'Agendamento marcado como FALTOU' : 'Agendamento cancelado';
+          if (v?.situacao === 'cancelada') avisoVenda = `${sit}. A venda nº ${v.numero} também foi cancelada.`;
+          else if (v?.situacao === 'finalizada') avisoVenda = `${sit}, mas a venda nº ${v.numero} está FINALIZADA e não foi cancelada. Para cancelar, libere a edição da venda e cancele por lá.`;
         }
       }
       if (b.nome !== undefined) {

@@ -92,9 +92,9 @@ export default function Agenda({ perfil, loja, aoVenda, aoNovaVenda, diaInicial,
 
   const recarregar = (msg) => { setRecarga((n) => n + 1); setJanela(null); setAviso(msg || ''); };
   const mudar = async (a, corpo) => {
-    // Cancelar o agendamento cancela a venda aberta ligada a ele: pede confirmação antes
-    if (corpo.situacao === 'cancelado' && a.venda_id && ['aberta', 'futuro'].includes(a.venda_situacao)
-        && !window.confirm(`Cancelar este agendamento também cancela a venda nº ${a.venda_numero}. Continuar?`)) return;
+    // Cancelar ou marcar FALTOU cancela a venda aberta ligada ao agendamento: pede confirmação antes
+    if (['cancelado', 'faltou'].includes(corpo.situacao) && a.venda_id && ['aberta', 'futuro'].includes(a.venda_situacao)
+        && !window.confirm(`${corpo.situacao === 'faltou' ? 'Marcar FALTOU' : 'Cancelar este agendamento'} também cancela a venda nº ${a.venda_numero}. Continuar?`)) return;
     setAviso('');
     try { const r = await api(`/agenda/${a.id}`, { metodo: 'PUT', corpo }); recarregar(r.aviso); } catch (f) { setAviso(f.message); }
   };
