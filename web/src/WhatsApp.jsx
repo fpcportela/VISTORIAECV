@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, grupoEscolhido, sessao } from './api.js';
+import { api, cabecalhos } from './api.js';
 import { criarTem } from './modulos.js';
 import { formatarDoc as formatarDocumento, mascaraTelefone } from './documentos.js';
 import { EditorCliente } from './Clientes.jsx';
@@ -1019,7 +1019,7 @@ function BaseConhecimento({ pode }) {
         const q = new URLSearchParams({ arquivo: a.name, titulo: a.name.replace(/\.[^.]+$/, '') });
         const r = await fetch(`/api/whatsapp/conhecimento/arquivo?${q}`, {
           method: 'POST', body: a,
-          headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}`, ...(grupoEscolhido.ler() ? { 'X-Grupo': grupoEscolhido.ler() } : {}) },
+          headers: { 'Content-Type': 'application/octet-stream', ...cabecalhos() },
         });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || (r.status === 413 ? `"${a.name}" passa de 10 MB.` : `Não foi possível enviar "${a.name}".`));
       }
@@ -1099,7 +1099,7 @@ function TextoBase({ inicial, aoFechar, aoSalvar }) {
 async function abrirArquivo(id) {
   const aba = window.open('', '_blank');
   const r = await fetch(`/api/whatsapp/conhecimento/${id}/arquivo`, {
-    headers: { Authorization: `Bearer ${sessao.token()}`, ...(grupoEscolhido.ler() ? { 'X-Grupo': grupoEscolhido.ler() } : {}) },
+    headers: { ...cabecalhos() },
   });
   if (!r.ok) { aba?.close(); throw new Error('Não foi possível abrir o documento.'); }
   const url = URL.createObjectURL(await r.blob());

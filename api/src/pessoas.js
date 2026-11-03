@@ -65,7 +65,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       const c = await colaborador(db, req.params.id);
       const ve = (await db.query("select pode_ver_colaborador($1, 'colaboradores.ver') or pode_colaborador($1, 'colaboradores.editar') as ok", [c.id])).rows[0].ok;
       if (!ve) throw new Recusa(403, 'Seu perfil não pode ver colaboradores.');
-      c.loja_ids = (await db.query('select loja_id from colaborador_lojas where colaborador_id = $1', [c.id])).rows.map((x) => x.loja_id);
+      c.loja_ids = (await db.query('select app_colaborador_lojas($1) as loja_id', [c.id])).rows.map((x) => x.loja_id);
       c.arquivos = (await db.query(
         `select a.id, a.tipo_id, t.nome as tipo, a.nome_arquivo, a.mime, a.tamanho, a.observacao, a.enviado_em, u.nome as enviado_por
            from colaborador_arquivos a left join tipos_arquivo t on t.id = a.tipo_id left join usuarios u on u.id = a.enviado_por
@@ -91,7 +91,15 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     const lojas = [...new Set((Array.isArray(b.loja_ids) ? b.loja_ids : [b.loja_id]).filter((l) => UUID.test(String(l || ''))))];
     if (!lojas.length) throw new Recusa(400, 'Escolha pelo menos uma unidade do colaborador.');
     const novoId = await comoUsuario(req.usuarioId, async (db) => {
-      for (const l of lojas) await exigir(db, l, 'colaboradores.editar', 'Seu perfil não pode cadastrar colaboradores em uma das unidades escolhidas.');
+      // Unidades que a pessoa pode mexer agora; as outras só passam se o colaborador já tem
+      // (quem vê uma unidade por vez mexe só na unidade escolhida no topo, e as outras ficam)
+      const jaTem = id ? (await db.query('select app_colaborador_lojas($1) as loja_id', [id])).rows.map((x) => x.loja_id) : [];
+      const podeLojas = [];
+      for (const l of lojas) {
+        if ((await db.query("select pode($1, 'colaboradores.editar') as ok", [l])).rows[0].ok) podeLojas.push(l);
+        else if (!jaTem.includes(l)) throw new Recusa(403, 'Seu perfil não pode cadastrar colaboradores em uma das unidades escolhidas.');
+      }
+      if (!podeLojas.length) throw new Recusa(403, 'Seu perfil não pode alterar este colaborador nesta unidade.');
       const empresas = (await db.query('select distinct empresa_id from lojas where id = any($1)', [lojas])).rows;
       if (empresas.length !== 1) throw new Recusa(400, 'As unidades precisam ser do mesmo grupo.');
       const empresa = empresas[0].empresa_id;
@@ -101,7 +109,9 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       const cargoId = UUID.test(b.cargo_id || '') ? b.cargo_id : null;
       const cargoNome = cargoId ? (await db.query('select nome from cargos where id = $1 and empresa_id = $2', [cargoId, empresa])).rows[0]?.nome : null;
       if (cargoId && !cargoNome) throw new Recusa(400, 'Cargo não encontrado.');
-      const campos = [lojas[0], nome.toUpperCase(), nascimento, cpf, celular, cargoNome ?? (texto(b.cargo, 60)?.toUpperCase() || null), b.ativo !== false, cargoId];
+      // a principal continua a primeira marcada, se a pessoa pode mexer nela; senão, a que pode
+      const principal = podeLojas.includes(lojas[0]) || jaTem.includes(lojas[0]) ? lojas[0] : podeLojas[0];
+      const campos = [principal, nome.toUpperCase(), nascimento, cpf, celular, cargoNome ?? (texto(b.cargo, 60)?.toUpperCase() || null), b.ativo !== false, cargoId];
       let cid = id;
       if (cid) {
         const atual = await colaborador(db, cid);
@@ -116,7 +126,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
           `insert into colaboradores (empresa_id, loja_id, nome, data_nascimento, cpf, celular, cargo, ativo, cargo_id)
            values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`, [empresa, ...campos])).rows[0].id;
       }
-      for (const l of lojas) await db.query('insert into colaborador_lojas (colaborador_id, loja_id) values ($1, $2) on conflict do nothing', [cid, l]);
+      for (const l of podeLojas) await db.query('insert into colaborador_lojas (colaborador_id, loja_id) values ($1, $2) on conflict do nothing', [cid, l]);
       // "Acessa sistema": cria ou atualiza o login (usuário e senha) ligado ao colaborador; desmarcado, desativa o login
       if (b.acesso && typeof b.acesso === 'object') {
         const a = b.acesso;
@@ -126,6 +136,12 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
           await db.query('select app_colaborador_acesso($1, $2, $3, $4, $5)',
             [cid, Boolean(a.ativo), texto(a.usuario, 80), a.senha ? String(a.senha) : null, UUID.test(a.perfil_id || '') ? a.perfil_id : null]);
         }
+      }
+      // "Todas as unidades": no colaborador e, se ele tem login, no usuário (vê as unidades juntas)
+      if (typeof b.todas_unidades === 'boolean') {
+        await db.query('update colaboradores set todas_unidades = $2 where id = $1', [cid, b.todas_unidades]);
+        const uid = (await db.query('select usuario_id from colaboradores where id = $1', [cid])).rows[0]?.usuario_id;
+        if (uid) await db.query('select app_definir_todas_unidades($1, $2)', [uid, b.todas_unidades]);
       }
       return cid;
     });

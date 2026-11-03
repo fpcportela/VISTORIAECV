@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { sessao } from './api.js';
+import { cabecalhos } from './api.js';
 
 // Configurações. Por enquanto: backup completo do sistema.
 
@@ -92,7 +92,7 @@ function Backup() {
       if (pasta && (await pasta.requestPermission({ mode: 'readwrite' })) !== 'granted') {
         throw new Error('O navegador não deu acesso à pasta. Clique em "Escolher pasta" de novo.');
       }
-      const r = await fetch('/api/backup', { headers: { Authorization: `Bearer ${sessao.token()}` } });
+      const r = await fetch('/api/backup', { headers: { ...cabecalhos() } });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || 'Não foi possível gerar o backup.');
       const dados = await r.blob();
       let nome = nomeBackup();
@@ -176,7 +176,7 @@ function Importar() {
     setOcupado('Lendo o arquivo e comparando com o sistema…'); setErro(''); setResultado(''); setAnalise(null);
     try {
       const r = await fetch('/api/backup/importar/analisar', {
-        method: 'POST', body: arquivo, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+        method: 'POST', body: arquivo, headers: { 'Content-Type': 'application/octet-stream', ...cabecalhos() },
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.erro || 'Não foi possível ler o arquivo.');
@@ -194,7 +194,7 @@ function Importar() {
     try {
       const r = await fetch('/api/backup/importar/aplicar', {
         method: 'POST', body: JSON.stringify({ id: analise.id, modo, acoes, confirmacao }),
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessao.token()}` },
+        headers: { 'Content-Type': 'application/json', ...cabecalhos() },
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.erro || 'Não foi possível importar.');

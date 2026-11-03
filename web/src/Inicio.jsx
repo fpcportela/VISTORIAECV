@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
-import { api, grupoEscolhido, moeda } from './api.js';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { api, grupoEscolhido, lojaEscolhida, moeda } from './api.js';
 import { aplicarTema, COR_PADRAO, PALETA } from './tema.js';
 import { Icone } from './icones.jsx';
 import { MODULOS, criarTem, ordenar } from './modulos.js';
@@ -23,8 +23,24 @@ import { Placa, PlacasDiversas } from './Placa.jsx';
 import Pesquisa from './Pesquisa.jsx';
 import { AbrirWhatsApp } from './botaoWhatsApp.jsx';
 
-export default function Inicio({ perfil, setPerfil, aoSair }) {
-  const [loja, setLoja] = useState('');
+// Unidade inicial: quem vê uma unidade por vez começa na última que usou (ou na primeira);
+// os demais começam em "Todas as lojas", como sempre.
+function lojaInicial(perfil) {
+  if (!perfil.unidade_por_vez) { lojaEscolhida.usar(''); return ''; }
+  const lembrada = lojaEscolhida.lembrada();
+  const id = perfil.lojas.some((l) => l.id === lembrada) ? lembrada : perfil.lojas[0]?.id || '';
+  lojaEscolhida.salvar(id);
+  return id;
+}
+
+export default function Inicio({ perfil: perfilCompleto, setPerfil, aoSair }) {
+  const [loja, setLoja] = useState(() => lojaInicial(perfilCompleto));
+  // Sem "Todas as unidades", as telas só enxergam a unidade escolhida no topo (o servidor
+  // também só devolve essa). lojasTodas guarda todas as da pessoa, para nomes e para a troca.
+  const perfil = useMemo(() => (perfilCompleto.unidade_por_vez
+    ? { ...perfilCompleto, lojasTodas: perfilCompleto.lojas, lojas: perfilCompleto.lojas.filter((l) => l.id === loja),
+        acessos: { [loja]: perfilCompleto.acessos[loja] || [] } }
+    : { ...perfilCompleto, lojasTodas: perfilCompleto.lojas }), [perfilCompleto, loja]);
   const [tela, setTela] = useState('inicio');
   const [pontoRapido, setPontoRapido] = useState(false); // Registrar ponto do início: câmera direto
   const [whatsAbre, setWhatsAbre] = useState({ chave: 0 }); // botão WhatsApp dos cadastros: abre a conversa
@@ -103,7 +119,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   async function trocarCor(cor) {
     aplicarTema(cor);
-    setPerfil({ ...perfil, cor });
+    setPerfil({ ...perfilCompleto, cor });
     try {
       await api('/tema', { metodo: 'PUT', corpo: { cor } });
     } catch (falha) {
@@ -156,7 +172,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   }
 
   async function salvarMenu(lista) {
-    setPerfil({ ...perfil, menu: lista });
+    setPerfil({ ...perfilCompleto, menu: lista });
     setOrganizandoMenu(false);
     try {
       await api('/menu', { metodo: 'PUT', corpo: { menu: lista } });
@@ -199,6 +215,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   function trocarLoja(id) {
     if (id === loja) return;
     if (abasVenda.some((a) => !a.id) && !confirm('Há venda nova ainda não salva. Trocar de loja e descartar?')) return;
+    if (perfilCompleto.unidade_por_vez) lojaEscolhida.salvar(id); else lojaEscolhida.usar(id);
     setLoja(id);
     setDados(null); setErro('');
     setAbasVenda([]); setAbaVenda('lista');
@@ -211,8 +228,9 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
 
   const seletorLoja = (
     <select value={loja} onChange={(e) => trocarLoja(e.target.value)} aria-label="Loja">
-      {perfil.lojas.length > 1 && <option value="">Todas as lojas</option>}
-      {perfil.lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+      {/* "Todas as lojas" só para quem tem "Todas as unidades"; os demais trocam uma por vez */}
+      {perfilCompleto.lojas.length > 1 && !perfilCompleto.unidade_por_vez && <option value="">Todas as lojas</option>}
+      {perfilCompleto.lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
     </select>
   );
 

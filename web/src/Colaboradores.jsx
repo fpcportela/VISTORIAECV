@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, sessao } from './api.js';
+import { api, cabecalhos } from './api.js';
 import { criarTem } from './modulos.js';
 import { cpfValido, mascaraCpf, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
@@ -13,7 +13,7 @@ const tamanhoArquivo = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1
 // Busca um arquivo protegido pelo login e abre numa aba nova
 export async function abrirArquivo(caminho) {
   const janela = window.open('', '_blank');
-  const r = await fetch(`/api${caminho}`, { headers: { Authorization: `Bearer ${sessao.token()}` } });
+  const r = await fetch(`/api${caminho}`, { headers: { ...cabecalhos() } });
   if (!r.ok) { janela?.close(); throw new Error((await r.json().catch(() => ({}))).erro || 'Não foi possível abrir o arquivo.'); }
   const url = URL.createObjectURL(await r.blob());
   if (janela) janela.location.href = url; else window.location.href = url;
@@ -76,7 +76,7 @@ export default function Colaboradores({ perfil, loja }) {
 function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSalvar }) {
   const [c, setC] = useState(null);
   const [f, setF] = useState({ nome: '', data_nascimento: '', cpf: '', celular: '', cargo: '', cargo_id: '',
-    loja_ids: [lojasEditar.some((l) => l.id === lojaPadrao) ? lojaPadrao : lojasEditar[0]?.id].filter(Boolean), ativo: true,
+    loja_ids: [lojasEditar.some((l) => l.id === lojaPadrao) ? lojaPadrao : lojasEditar[0]?.id].filter(Boolean), ativo: true, todas_unidades: false,
     acesso: { ativo: false, usuario: '', senha: '', perfil_id: '' } });
   const [cargos, setCargos] = useState([]);
   useEffect(() => { api('/cargos').then((l) => setCargos(l.filter((x) => x.ativo))).catch(() => {}); }, []);
@@ -93,7 +93,7 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
       setC(d);
       setF({ nome: d.nome, data_nascimento: d.data_nascimento || '', cpf: d.cpf ? mascaraCpf(d.cpf) : '',
         celular: d.celular ? mascaraTelefone(d.celular) : '', cargo: d.cargo || '', cargo_id: d.cargo_id || '',
-        loja_ids: d.loja_ids?.length ? d.loja_ids : [d.loja_id], ativo: d.ativo,
+        loja_ids: d.loja_ids?.length ? d.loja_ids : [d.loja_id], ativo: d.ativo, todas_unidades: Boolean(d.todas_unidades),
         acesso: { ativo: Boolean(d.acesso?.ativo), usuario: d.acesso?.login || '', senha: '', perfil_id: d.acesso?.perfil_id || '' } });
     } catch (falha) {
       setErro(falha.message);
@@ -129,14 +129,18 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
 
   // Unidades que aparecem: as que pode editar, mais as que o colaborador já tem (se forem só consulta)
   const lojasCampo = [...lojasEditar, ...f.loja_ids.filter((id) => !lojasEditar.some((l) => l.id === id))
-    .map((id) => perfil.lojas.find((l) => l.id === id) || { id, nome: 'OUTRA UNIDADE' })];
+    .map((id) => (perfil.lojasTodas || perfil.lojas).find((l) => l.id === id) || { id, nome: 'OUTRA UNIDADE' })];
   // as unidades precisam ser do mesmo grupo: mostra só as do grupo da primeira marcada
-  const grupoDe = (id) => perfil.lojas.find((l) => l.id === id)?.empresa_id;
+  const grupoDe = (id) => (perfil.lojasTodas || perfil.lojas).find((l) => l.id === id)?.empresa_id;
   const grupoAtual = grupoDe(f.loja_ids[0]);
   const lojasDoGrupo = grupoAtual ? lojasCampo.filter((l) => !l.empresa_id || l.empresa_id === grupoAtual || !grupoDe(l.id)) : lojasCampo;
   const editaveis = lojasDoGrupo.filter((l) => lojasEditar.some((x) => x.id === l.id));
-  const todas = editaveis.length > 0 && editaveis.every((l) => f.loja_ids.includes(l.id));
-  const marcar = (id, sim) => setF({ ...f, loja_ids: sim ? [...f.loja_ids, id] : f.loja_ids.filter((x) => x !== id) });
+  // "Todas as unidades" é uma opção própria: marca todas e deixa ver as unidades juntas.
+  // Marcar as unidades uma a uma não liga a opção: sem ela, a pessoa vê uma unidade por vez.
+  const marcarTodas = (sim) => setF({ ...f, todas_unidades: sim,
+    loja_ids: sim ? [...new Set([...f.loja_ids, ...editaveis.map((l) => l.id)])] : f.loja_ids });
+  const marcar = (id, sim) => setF({ ...f, loja_ids: sim ? [...f.loja_ids, id] : f.loja_ids.filter((x) => x !== id),
+    todas_unidades: sim ? f.todas_unidades : false });
   const cargosDoGrupo = cargos.filter((x) => !grupoAtual || x.empresa_id === grupoAtual);
 
   return (
@@ -169,9 +173,10 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
                 <fieldset className="grupo-permissoes">
                   <legend>Unidades em que trabalha</legend>
                   {editaveis.length > 1 && (
-                    <label className="linha-check"><input type="checkbox" checked={todas}
-                      onChange={(e) => setF({ ...f, loja_ids: e.target.checked ? [...new Set([...f.loja_ids, ...editaveis.map((l) => l.id)])] : f.loja_ids.filter((id) => !editaveis.some((l) => l.id === id)) })} /> <strong>Todas as unidades</strong></label>
+                    <label className="linha-check"><input type="checkbox" checked={f.todas_unidades}
+                      onChange={(e) => marcarTodas(e.target.checked)} /> <strong>Todas as unidades</strong></label>
                   )}
+                  {editaveis.length > 1 && <small className="cinza">Com "Todas as unidades", vê todas juntas. Sem ela, vê as unidades marcadas uma por vez (troca no topo da tela).</small>}
                   {lojasDoGrupo.map((l) => (
                     <label key={l.id} className="linha-check">
                       <input type="checkbox" checked={f.loja_ids.includes(l.id)} disabled={!lojasEditar.some((x) => x.id === l.id)}
@@ -249,7 +254,7 @@ function Arquivos({ colaborador, podeEditar, aoMudar }) {
       const q = new URLSearchParams({ nome: arquivo.name, mime: arquivo.type || 'application/octet-stream', ...(tipo && { tipo }), ...(obs.trim() && { obs: obs.trim() }) });
       const r = await fetch(`/api/colaboradores/${colaborador.id}/arquivos?${q}`, {
         method: 'POST', body: arquivo,
-        headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+        headers: { 'Content-Type': 'application/octet-stream', ...cabecalhos() },
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || (r.status === 413 ? 'O arquivo passa de 15 MB.' : 'Não foi possível enviar o arquivo.'));
       setArquivo(null); setObs(''); setChaveInput((k) => k + 1);
