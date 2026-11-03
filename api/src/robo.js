@@ -434,6 +434,8 @@ export function normalizarResposta(texto) {
 // Sinais: mensagem de robô (menu numerado, "mensagem automática"...), a mesma mensagem repetida,
 // respostas instantâneas seguidas ou conversa em ciclo (muitas mensagens em pouco tempo).
 const FRASES_ROBO = /\b(MENSAGEM AUTOMATICA|RESPOSTA AUTOMATICA|ASSISTENTE VIRTUAL|ATENDENTE VIRTUAL|SOU UM ROBO|SOU O ROBO|CHATBOT|DIGITE O NUMERO|DIGITE A OPCAO|ESCOLHA UMA DAS OPCOES|SELECIONE UMA OPCAO|OPCAO INVALIDA|NAO ENTENDI SUA (RESPOSTA|MENSAGEM)|NOSSO HORARIO DE ATENDIMENTO|FORA DO HORARIO DE ATENDIMENTO|AGRADECEMOS (O SEU |SEU )?CONTATO|EM BREVE RETORNAREMOS)\b/;
+// tamanho mínimo de uma resposta "instantânea" para contar como de outro robô
+const TEXTO_DE_ROBO = 40;
 export function pareceRobo(mensagens = []) {
   const entradas = mensagens.filter((m) => m.direcao === 'entrada');
   const ultimas = entradas.slice(-6);
@@ -448,12 +450,16 @@ export function pareceRobo(mensagens = []) {
     const t = semAcento(m.texto).replace(/\s+/g, ' ');
     if (t.length >= 15 && (contagem[t] = (contagem[t] || 0) + 1) >= 3) return 'a mesma mensagem repetida';
   }
-  // respondeu em menos de 2 segundos depois do nosso robô, três vezes seguidas
+  // respondeu em menos de 2 segundos depois do nosso robô, três vezes seguidas, com um texto
+  // que uma pessoa não digita nesse tempo. Respostas curtas ("2", "Ola", "Ester soares") não contam:
+  // a hora da mensagem do cliente vem do WhatsApp sem os milissegundos e a do robô é gravada
+  // depois do envio, então uma pessoa que responde rápido parece responder em menos de 1 segundo.
   let rapidas = 0;
   for (let i = 1; i < mensagens.length; i += 1) {
     const a = mensagens[i - 1], b = mensagens[i];
     if (a.direcao === 'saida' && a.robo && b.direcao === 'entrada' && a.em && b.em) {
-      rapidas = new Date(b.em) - new Date(a.em) < 2000 ? rapidas + 1 : 0;
+      const longa = String(b.texto || '').trim().length >= TEXTO_DE_ROBO;
+      rapidas = longa && new Date(b.em) - new Date(a.em) < 2000 ? rapidas + 1 : 0;
       if (rapidas >= 3) return 'respostas instantâneas';
     }
   }
