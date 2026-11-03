@@ -169,7 +169,9 @@ function Quadro({ recarga, aoAbrir, aoAgenda }) {
                       </span>
                       {c.titulo && <span className="kanban-titulo">{c.titulo}</span>}
                       {c.robo_estado === 'coletando' && !c.venda_id && <span className="selo-robo">🤖 Robô atendendo</span>}
-                      {c.venda_numero && <span className="selo-robo venda">Venda nº {c.venda_numero} aberta pelo robô</span>}
+                      {c.venda_numero && (c.venda_situacao === 'cancelada'
+                        ? <span className="selo-robo venda-cancelada">Venda nº {c.venda_numero} cancelada</span>
+                        : <span className="selo-robo venda">Venda nº {c.venda_numero} aberta pelo robô</span>)}
                       <small className="cinza">{telefoneBR(c.telefone)}{c.cliente ? ' · cliente' : ''}</small>
                       {c.ultima && <span className="kanban-ultima">{c.ultima}</span>}
                     </button>
@@ -419,7 +421,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
       )}
       {k.chamado?.venda_id ? (
         <p className="aviso-robo">
-          🤖 O robô abriu a <strong>venda nº {k.chamado.venda_numero}</strong>{k.chamado.venda_situacao === 'futuro' ? ' (AGENDADO, falta confirmar)' : ''}.
+          🤖 O robô abriu a <strong>venda nº {k.chamado.venda_numero}</strong>{k.chamado.venda_situacao === 'futuro' ? ' (AGENDADO, falta confirmar)' : k.chamado.venda_situacao === 'cancelada' ? ' (CANCELADA)' : ''}.
           {aoVenda && <button type="button" className="botao-texto" onClick={() => { aoFechar(); aoVenda(k.chamado.venda_id); }}>Abrir a venda</button>}
         </p>
       ) : k.robo && k.chamado?.aberto && (
