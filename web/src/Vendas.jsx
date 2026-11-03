@@ -307,6 +307,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const [consulta, setConsulta] = useState(null); // { indice, placa }
   const [liberando, setLiberando] = useState(false);
   const [autorizando, setAutorizando] = useState(null); // { modo } enquanto pede a senha do desconto
+  // venda de outro dia: ao salvar, pergunta se a data passa para hoje ou fica a da abertura
+  const [perguntandoData, setPerguntandoData] = useState(null); // { modo }
+  const dataDecidida = useRef(null);
   // preços vêm travados; destrava com a senha de quem autoriza (vale até salvar)
   const [precoLiberado, setPrecoLiberado] = useState(null); // { email, senha, nome }
   const [pedindoPreco, setPedindoPreco] = useState(false);
@@ -421,7 +424,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
 
   // modo: 'salvar' grava e mantém a situação; 'confirmar' grava e passa a venda AGENDADO (do robô)
   // para Aberta; 'finalizar' grava e trava a venda como Finalizada.
-  async function salvar(modo = 'salvar', autorizacao = null) {
+  async function salvar(modo = 'salvar', autorizacao = null, dataUsada = data) {
     const finalizar = modo === 'finalizar';
     const confirmar = modo === 'confirmar' && venda?.situacao === 'futuro';
     setErro('');
@@ -436,6 +439,14 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     }
     const cartaoSemCv = pagamentos.findIndex((pg) => numero(pg.valor) > 0 && ehCartao(pg.forma) && (!pg.cv.trim() || !pg.bandeira));
     if (cartaoSemCv >= 0) return setErro(`Pagamento ${cartaoSemCv + 1}: informe o CV e a bandeira do cartão.`);
+    // venda aberta em outro dia (e a data não foi mexida): pergunta antes de gravar se atualiza para hoje.
+    // Venda agendada (robô) salva sem confirmar continua com a data do agendamento, sem perguntar.
+    const dataAbertura = venda ? String(venda.data_venda).slice(0, 10) : null;
+    const chaveData = venda && `${venda.id}|${dataAbertura}|${hoje()}`;
+    if (venda && !autorizacao && dataUsada === dataAbertura && dataAbertura !== hoje()
+      && !(venda.situacao === 'futuro' && modo === 'salvar') && dataDecidida.current !== chaveData) {
+      return setPerguntandoData({ modo });
+    }
     // desconto novo ou alterado: pede a senha de quem autoriza antes de salvar
     if (!autorizacao && numero(desconto) > 0 && numero(desconto) !== Number(venda?.desconto || 0)) {
       return setAutorizando({ modo });
@@ -443,7 +454,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     setOcupado(true);
     try {
       const corpo = {
-        loja_id: loja, data_venda: data, desconto: numero(desconto), observacoes,
+        loja_id: loja, data_venda: dataUsada, desconto: numero(desconto), observacoes,
         ...(autorizacao && { autorizacao_desconto: autorizacao }),
         ...(precoLiberado && { autorizacao_preco: { email: precoLiberado.email, senha: precoLiberado.senha } }),
         // veículo ainda sem serviço vai só com a placa: a venda fica aberta para ajustar depois
@@ -753,6 +764,16 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
             setPrecoLiberado({ ...a, nome: r.nome }); setPedindoPreco(false);
           }} />
       )}
+      {perguntandoData && (
+        <PerguntarData dataVenda={data}
+          aoFechar={() => setPerguntandoData(null)}
+          aoEscolher={(nova) => {
+            const { modo } = perguntandoData;
+            dataDecidida.current = `${venda.id}|${String(venda.data_venda).slice(0, 10)}|${hoje()}`;
+            setPerguntandoData(null); setData(nova);
+            salvar(modo, null, nova);
+          }} />
+      )}
       {autorizando && (
         <AutorizarDesconto desconto={numero(desconto)} emailSugerido={pode.desconto ? perfil.usuario.email : ''}
           aoFechar={() => setAutorizando(null)}
@@ -803,6 +824,29 @@ function TrocarUnidade({ venda, lojas, emailSugerido, aoFechar, aoTrocar }) {
             </div>
           </form>
         )}
+      </section>
+    </div>
+  );
+}
+
+// Venda de outro dia: atualizar a data para hoje ou manter a data de abertura
+function PerguntarData({ dataVenda, aoFechar, aoEscolher }) {
+  const dataHoje = hoje();
+  return (
+    <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
+      <section className="modal" role="alertdialog" aria-modal="true" aria-label="Data da venda">
+        <div className="modal-topo">
+          <h2>A data da venda não é hoje</h2>
+          <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+        <div className="formulario">
+          <p>Esta venda está com a data <strong>{dataBR(dataVenda)}</strong> e hoje é <strong>{dataBR(dataHoje)}</strong>.
+            Quer atualizar a data da venda para hoje ou manter a data de abertura?</p>
+          <div className="acoes-modal">
+            <button type="button" className="botao-contorno" onClick={() => aoEscolher(dataVenda)}>Manter {dataBR(dataVenda)}</button>
+            <button type="button" className="botao-primario" autoFocus onClick={() => aoEscolher(dataHoje)}>Atualizar para hoje ({dataBR(dataHoje)})</button>
+          </div>
+        </div>
       </section>
     </div>
   );
