@@ -43,6 +43,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const contadorAbas = useRef(0);
   const [buscaVendas, setBuscaVendas] = useState('');
   const [situacaoVendas, setSituacaoVendas] = useState(''); // lista de vendas aberta já filtrada (cartão da tela inicial)
+  const [filtroVendas, setFiltroVendas] = useState(null); // lista de vendas aberta com o filtro de um relatório ({ de, ate, situacao, cliente, chave })
   const [organizandoMenu, setOrganizandoMenu] = useState(false);
   const [aviso, setAviso] = useState('');
   const [consulta, setConsulta] = useState(null); // null = fechada; texto = placa digitada
@@ -88,7 +89,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   function abrir(id) {
     setMenuAberto(false);
     if (['inicio', 'usuarios', 'vistorias', 'vendas', 'servicos', 'colaboradores', 'ponto', 'financeiro', 'config', 'lojas', 'clientes', 'whatsapp', 'relatorios', 'agenda', 'royalties'].includes(id)) {
-      setTela(id); setVistoriaId(null); setBuscaVendas(''); setSituacaoVendas('');
+      setTela(id); setVistoriaId(null); setBuscaVendas(''); setSituacaoVendas(''); setFiltroVendas(null);
       if (id === 'vendas') setAbaVenda('lista');
       if (id === 'agenda') setAgendaAbre((a) => ({ chave: a.chave + 1 }));
       if (id === 'whatsapp') setWhatsAbre((w) => ({ chave: w.chave + 1 }));
@@ -123,7 +124,12 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
     setFinanceiroAbre((f) => ({ aba, novo, filtro, chave: f.chave + 1 }));
   };
   // cartões de vendas em aberto: abre a lista já filtrada pela situação
-  const verVendas = (situacao) => { setMenuAberto(false); setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(''); setSituacaoVendas(situacao); };
+  const verVendas = (situacao) => { setMenuAberto(false); setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(''); setSituacaoVendas(situacao); setFiltroVendas(null); };
+  // "Ver em Vendas" dos relatórios: abre a lista com o mesmo período, situação e cliente
+  const verVendasFiltradas = (filtro) => {
+    setMenuAberto(false); setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(''); setSituacaoVendas('');
+    setFiltroVendas((f) => ({ ...filtro, chave: (f?.chave || 0) + 1 }));
+  };
   const abrirVistoria = (id) => { setTela('vistorias'); setVistoriaId(id); };
   const abrirVenda = (id) => {
     setTela('vendas');
@@ -196,7 +202,7 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
   const pesquisa = (classe) => (tem('vistorias.ver') || tem('vendas.ver') || tem('clientes.ver') || tem('placa.consultar')) && (
     <Pesquisa classe={classe} loja={loja} podeConsultarPlaca={tem('placa.consultar')}
       aoVistoria={abrirVistoria} aoVenda={abrirVenda} aoConsultarPlaca={(p) => setConsulta(p)}
-      aoCliente={(c) => { setTela('vendas'); setAbaVenda('lista'); setBuscaVendas(c.cpf_cnpj || c.nome); }} />
+      aoCliente={(c) => { setTela('vendas'); setAbaVenda('lista'); setFiltroVendas(null); setBuscaVendas(c.cpf_cnpj || c.nome); }} />
   );
 
   const paleta = paletaAberta && (
@@ -421,14 +427,15 @@ export default function Inicio({ perfil, setPerfil, aoSair }) {
             : tela === 'whatsapp' ? <WhatsApp key={whatsAbre.chave} contatoInicial={whatsAbre.contato} perfil={perfil} loja={loja} aoVenda={abrirVenda}
                 aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined}
                 aoAgendar={tem('agenda.gerenciar') ? (dados) => { setAgendaAbre((a) => ({ chave: a.chave + 1, agendarPara: dados })); setTela('agenda'); } : undefined} />
-            : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo} />
+            : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo}
+                aoVenda={tem('vendas.ver') ? abrirVenda : undefined} aoVerVendas={tem('vendas.ver') ? verVendasFiltradas : undefined} />
             : tela === 'financeiro' ? <Financeiro key={financeiroAbre.chave} perfil={perfil} loja={loja} abaInicial={financeiroAbre.aba} novoInicial={financeiroAbre.novo} filtroInicial={financeiroAbre.filtro} aoVenda={tem('vendas.ver') ? abrirVenda : undefined} />
             : tela === 'servicos' ? (() => {
                 const lojaServicos = lojasCom('servicos.ver').includes(loja) ? loja : lojasCom('servicos.ver')[0];
                 return <Servicos loja={lojaServicos} podeEditar={criarTem(perfil, lojaServicos)('servicos.gerenciar')} />;
               })()
             : tela === 'vendas' ? (abaVenda === 'lista' || !abasVenda.length) && (
-                <ListaVendas key={`${buscaVendas}|${situacaoVendas}`} loja={loja} buscaInicial={buscaVendas} situacaoInicial={situacaoVendas} empresa={empresa} logo={perfil.logo} lojasLote={perfil.lojas.filter((l) => lojasCom('vendas.criar').includes(l.id))} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
+                <ListaVendas key={`${buscaVendas}|${situacaoVendas}|${filtroVendas?.chave || ''}`} loja={loja} buscaInicial={buscaVendas} situacaoInicial={situacaoVendas} filtroInicial={filtroVendas} empresa={empresa} logo={perfil.logo} lojasLote={perfil.lojas.filter((l) => lojasCom('vendas.criar').includes(l.id))} podeCriar={tem('vendas.criar')} aoAbrir={abrirVenda} aoNova={novaVenda} />)
             : tela === 'vistorias' ? (vistoriaId
               ? <ExecutarVistoria key={vistoriaId} id={vistoriaId} aoVoltar={() => setVistoriaId(null)} />
               : <ListaVistorias loja={loja} podeCriar={tem('vistorias.criar')} aoAbrir={setVistoriaId} aoNova={() => setNovaVistoria(true)} />)

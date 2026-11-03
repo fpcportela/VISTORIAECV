@@ -79,9 +79,11 @@ function salvarFiltro(f) {
   try { localStorage.setItem(CHAVE_FILTRO, JSON.stringify(f)); } catch { /* sem armazenamento */ }
 }
 
-export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', situacaoInicial = '', empresa, logo, lojasLote = [] }) {
-  // Vindo da tela inicial (busca ou cartão), vale o filtro pedido; senão, volta o último filtro usado
-  const [inicial] = useState(() => (buscaInicial || situacaoInicial
+export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '', situacaoInicial = '', filtroInicial = null, empresa, logo, lojasLote = [] }) {
+  // Vindo da tela inicial (busca ou cartão) ou de um relatório, vale o filtro pedido; senão, volta o último filtro usado
+  const [inicial] = useState(() => (filtroInicial
+    ? { de: filtroInicial.de || '', ate: filtroInicial.ate || '', situacao: filtroInicial.situacao || '', cliente: filtroInicial.cliente || '', busca: '' }
+    : buscaInicial || situacaoInicial
     ? { de: '', ate: '', situacao: situacaoInicial, cliente: buscaInicial, busca: '' }
     : lerFiltro() || { ...FILTRO_PADRAO, de: PERIODOS.mes()[0], ate: PERIODOS.mes()[1] }));
   const [[de, ate], setIntervalo] = useState([inicial.de, inicial.ate]);
