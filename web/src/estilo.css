@@ -883,6 +883,18 @@ span.agenda-livre { cursor: default; color: #64748b; }
 .ag-compareceu { border-left-color: #0369a1; }
 .ag-faltou { border-left-color: #b45309; }
 .ag-cancelado { border-left-color: #94a3b8; opacity: .65; }
+/* Agenda: lista filtrada por situação */
+.agenda-filtros select.filtro-ativo { border-color: var(--forte); font-weight: 600; }
+.agenda-lista { display: flex; flex-direction: column; gap: 10px; }
+.agenda-lista-resumo { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-sit { display: inline-block; border: 1px solid #cbd5e1; border-radius: 999px; padding: 2px 10px; background: #fff; color: #334155; font: inherit; font-size: .8rem; white-space: nowrap; }
+button.chip-sit { cursor: pointer; padding: 4px 12px; }
+.chip-sit.ativo { outline: 2px solid var(--forte); outline-offset: 1px; font-weight: 700; }
+.chip-sit.sit-agendado { border-color: #ca8a04; color: #854d0e; background: #fefce8; }
+.chip-sit.sit-confirmado { border-color: #16a34a; color: #166534; background: #f0fdf4; }
+.chip-sit.sit-compareceu { border-color: #0369a1; color: #075985; background: #f0f9ff; }
+.chip-sit.sit-faltou { border-color: #b45309; color: #92400e; background: #fff7ed; }
+.chip-sit.sit-cancelado { border-color: #94a3b8; color: #475569; background: #f8fafc; }
 .agenda-semana { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
 .agenda-col { display: flex; flex-direction: column; gap: 4px; align-items: stretch; text-align: left; border: 1px solid var(--borda, #e2e8f0); border-radius: 8px; padding: 8px; background: var(--fundo-cartao, #fff); font: inherit; cursor: pointer; min-height: 120px; }
 .agenda-col.hoje { border-color: var(--forte); }
