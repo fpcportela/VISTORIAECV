@@ -1079,3 +1079,10 @@ button.cartao-atalho { font: inherit; text-align: center; cursor: pointer; borde
 button.cartao-atalho:hover:not(:disabled) { border-color: var(--forte, #0774B8); box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 button.cartao-atalho:disabled { cursor: default; }
 .agenda-acoes .botao-whatsapp { padding: 4px 8px; }
+
+/* Agendar vistoria: um ou mais serviços */
+.servicos-agenda { display: flex; flex-direction: column; gap: 6px; }
+.servicos-agenda-titulo { font-size: 14px; font-weight: 700; }
+.servicos-agenda-linha { display: flex; align-items: center; gap: 8px; }
+.servicos-agenda-linha select { flex: 1; min-width: 0; }
+.servicos-agenda .botao-link { align-self: flex-start; font-size: 14px; }

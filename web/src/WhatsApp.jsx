@@ -404,7 +404,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
             </select>
           </label>
           {k.agendamento && (
-            <label>Agendamento · {quandoAgenda(k.agendamento.inicio)}
+            <label title={k.agendamento.servicos || undefined}>Agendamento · {quandoAgenda(k.agendamento.inicio)}{k.agendamento.servicos ? ` · ${k.agendamento.servicos}` : ''}
               <select value={k.agendamento.situacao} disabled={!k.agendamento.pode || ['compareceu', 'faltou'].includes(k.agendamento.situacao)} onChange={(e) => mudarAgendamento(e.target.value)}
                 className={`sit-agenda ag-${k.agendamento.situacao}`}>
                 {Object.entries(SITUACAO_AG).map(([v, n]) => <option key={v} value={v}>{n}</option>)}

@@ -168,11 +168,37 @@ export function conferir(campo, resposta, servicos) {
   }
 }
 
+// Um ou mais serviços na mesma resposta: "1, 3", "1 e 3", "CAUTELAR e LAUDO". Devolve { lista } ou { erro }.
+export function conferirServicos(resposta, servicos) {
+  const s = semAcento(resposta);
+  const um = (t) => { const c = conferir('servico', t, servicos); return c.erro ? null : { id: c.valor, nome: c.nome }; };
+  const sem = (lista) => lista.filter((x, i) => lista.findIndex((y) => y.id === x.id) === i);
+  // só números: cada um é um serviço da lista
+  if (/^\d+([\s,;/+]+(E\s+)?\d+|\s+E\s+\d+)*$/.test(s)) {
+    const lista = s.match(/\d+/g).map(um);
+    const errado = s.match(/\d+/g).find((_, i) => !lista[i]);
+    return errado ? { erro: `Não tem o número ${errado} na lista. Responda com os números dos serviços (ex.: 1, 3).` } : { lista: sem(lista) };
+  }
+  // o nome inteiro de um serviço (que pode ter "E" ou vírgula no meio)
+  const exato = servicos.find((x) => semAcento(x.nome) === s);
+  if (exato) return { lista: [{ id: exato.id, nome: exato.nome }] };
+  const partes = s.split(/\s*(?:,|;|\+|\/|\bE\b)\s*/).filter(Boolean);
+  if (partes.length > 1) {
+    const lista = partes.map(um);
+    if (lista.every(Boolean)) return { lista: sem(lista) };
+  }
+  const c = um(resposta);
+  return c ? { lista: [c] } : { erro: 'Responda com o número do serviço da lista (para mais de um, separe por vírgula: 1, 3).' };
+}
+
 // Pergunta da etapa, com as opções quando for escolha
 function pergunta(etapa, servicos) {
   let p = etapa.pergunta || CAMPOS[etapa.campo] || '';
   if (etapa.campo === 'tipo_veiculo') p += `\n${TIPOS.map(([, rot], i) => `${i + 1} - ${rot}`).join('\n')}`;
-  if (etapa.campo === 'servico') p += `\n${servicos.map((s, i) => `${i + 1} - ${s.nome}${s.preco ? ` - ${s.preco}` : ''}`).join('\n')}`;
+  if (etapa.campo === 'servico') {
+    p += `\n${servicos.map((s, i) => `${i + 1} - ${s.nome}${s.preco ? ` - ${s.preco}` : ''}`).join('\n')}`;
+    if (servicos.length > 1) p += '\n(pode escolher mais de um: mande os números separados por vírgula, ex.: 1, 3)';
+  }
   if (!etapa.obrigatorio) p += '\n(se não quiser informar, responda PULAR)';
   return p;
 }
@@ -199,7 +225,8 @@ const listaHorarios = (opcoes) => opcoes.map((t, i) => `${i + 1} - ${rotuloHorar
 // Reserva o horário na agenda; devolve o id do agendamento ou null se alguém pegou antes
 async function reservar(ch, horario, dados, contato) {
   const r = await comoUsuario(null, (db) => db.query('select app_agenda_robo($1, $2, $3) as id', [ch.id, horario,
-    JSON.stringify({ loja_id: dados.loja_id, nome: dados.nome, telefone: contato.telefone, placa: dados.placa, servico_id: dados.servico_id, observacao: 'Agendado pelo robô do WhatsApp.' })]));
+    JSON.stringify({ loja_id: dados.loja_id, nome: dados.nome, telefone: contato.telefone, placa: dados.placa, servico_id: dados.servico_id,
+      servico_ids: dados.servico_ids || [], observacao: 'Agendado pelo robô do WhatsApp.' })]));
   return r.rows[0].id;
 }
 
@@ -211,7 +238,7 @@ function paraVenda(dados, contato, nacional) {
   if (dados.observacoes) extras.push(dados.observacoes);
   return {
     loja_id: dados.loja_id, nome: dados.nome, cpf_cnpj: dados.cpf_cnpj, email: dados.email, placa: dados.placa, tipo_veiculo: dados.tipo_veiculo,
-    servico_id: dados.servico_id, data: dados.data, whatsapp: nacional(contato.telefone),
+    servico_id: dados.servico_id, servico_ids: dados.servico_ids || [], data: dados.data, whatsapp: nacional(contato.telefone),
     observacoes: ['Pedido feito pelo WhatsApp (robô).', ...extras].join('\n'),
   };
 }
@@ -237,7 +264,7 @@ const ESQUEMA = {
         cpf_cnpj: anulavel({ type: 'string' }),
         placa: anulavel({ type: 'string' }),
         tipo_veiculo: anulavel({ type: 'string', enum: ['carro', 'moto', 'caminhao', 'outro'] }),
-        servico: anulavel({ type: 'string', description: 'Nome exato do serviço, igual à lista.' }),
+        servico: anulavel({ type: 'string', description: 'Nome exato do serviço, igual à lista. Se o cliente quiser mais de um, os nomes separados por vírgula.' }),
         data: anulavel({ type: 'string', description: 'DD/MM/AAAA' }),
         horario: anulavel({ type: 'string', description: 'Horário escolhido pelo cliente, exatamente como na lista de horários livres (AAAA-MM-DDTHH:MM).' }),
         email: anulavel({ type: 'string' }),
@@ -513,6 +540,23 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
     }
     return null;
   };
+  // serviços escolhidos (um ou mais): servico_id é o primeiro, servico_ids todos, servico_nome os nomes
+  const guardarServicos = (lista, somar = true) => {
+    const todos = [...(somar ? dados.servicos || [] : []), ...lista].filter((x, i, l) => l.findIndex((y) => y.id === x.id) === i);
+    dados.servicos = todos;
+    dados.servico_ids = todos.map((x) => x.id);
+    dados.servico_id = todos[0]?.id;
+    dados.servico_nome = todos.map((x) => x.nome).join(', ');
+  };
+  const restantes = () => ctx.servicos.filter((x) => !(dados.servico_ids || []).includes(x.id));
+  const fraseMais = () => `Anotado: ${dados.servico_nome}. Quer incluir mais algum serviço?`;
+  const textoMais = () => {
+    const r = restantes();
+    return [fraseMais(), ...r.map((s, i) => `${i + 1} - ${s.nome}${s.preco ? ` - ${s.preco}` : ''}`),
+      `${r.length + 1} - Não, só ${(dados.servico_ids || []).length > 1 ? 'esses' : 'esse'}`].join('\n');
+  };
+  const botoesMais = () => ({ pergunta: fraseMais(),
+    opcoes: [...restantes().map((x) => ({ titulo: x.nome, descricao: x.preco || undefined })), { titulo: `Não, só ${(dados.servico_ids || []).length > 1 ? 'esses' : 'esse'}` }] });
   const posicao = (id) => fluxo.findIndex((b) => b.id === id);
   const depois = (n, ir) => (ir ? posicao(ir) : n + 1);
   // Pergunta do bloco; a do horário busca os horários livres e guarda as opções oferecidas
@@ -545,7 +589,8 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
       : await comoUsuario(null, async (db) => (await db.query('select app_robo_agendamento($1) as a', [ch.id])).rows[0].a).catch(() => null);
     if (ag) {
       fim = fim.replace(/\s*Em (breve|instantes) um atendente confirma com voc[eê]\.?/i, '');
-      const pergunta = `Sua vistoria ficou para ${rotuloHorario(ag.inicio)}${ag.loja?.nome ? `, na ${ag.loja.nome}` : ''}${ag.placa ? ` (placa ${ag.placa})` : ''}.\n\nConfirma o agendamento? Responda SIM ou NÃO.`;
+      const qual = dados.servico_nome && dados.servico_ids?.length ? `\n${dados.servico_ids.length > 1 ? 'Serviços' : 'Serviço'}: ${dados.servico_nome}.` : '';
+      const pergunta = `Sua vistoria ficou para ${rotuloHorario(ag.inicio)}${ag.loja?.nome ? `, na ${ag.loja.nome}` : ''}${ag.placa ? ` (placa ${ag.placa})` : ''}.${qual}\n\nConfirma o agendamento? Responda SIM ou NÃO.`;
       await falar(juntar([...falas, fim, pergunta]), { pergunta: juntar([...falas, fim, pergunta.replace(/ Responda SIM ou NÃO\.$/, '')]), opcoes: [{ titulo: 'SIM' }, { titulo: 'NÃO' }] });
       await comoUsuario(null, (db) => db.query("select app_agenda_confirmacao_passo($1, 'aguardando', null)", [ag.id])).catch((e) => console.error('[robô] confirmação:', e.message));
       return true;
@@ -619,8 +664,8 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
         continue;
       }
       if (campo === 'servico') {
-        const c = conferir('servico', valor, ctx.servicos);
-        if (c.valor) { dados.servico_id = c.valor; dados.servico_nome = c.nome; } else dados.servico_nome = String(valor).slice(0, 120);
+        const c = conferirServicos(valor, ctx.servicos);
+        if (c.lista) guardarServicos(c.lista, false); else dados.servico_nome = String(valor).slice(0, 120);
         continue;
       }
       const c = conferir(campo, valor, ctx.servicos);
@@ -654,6 +699,7 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
     const n = ch.robo_etapa || 0;
     const b = fluxo[n];
     if (b?.tipo === 'menu') return falar(textoMenu(b), botoesMenu(b));
+    if (b?.tipo === 'pergunta' && b.campo === 'servico' && dados.mais_servicos) return falar(textoMais(), botoesMais());
     if (b?.tipo === 'pergunta') {
       const q = await perguntar(b);
       if (b.campo === 'horario') await estado('coletando', null, dados); // guarda os horários oferecidos
@@ -755,13 +801,34 @@ async function atender(contatoId, { enviarTexto, enviarOpcoes, nacional, retomar
       }
       dados.horario = escolhido; dados.agendamento_id = id; dados.data = localSP(escolhido).slice(0, 10);
     }
+  } else if (b.campo === 'servico' && dados.mais_servicos) {
+    // "quer incluir mais algum serviço?": números da lista dos que faltam, ou "não, só esses"
+    const r = restantes();
+    const s = semAcento(ultima);
+    const pronto = /^(NAO\b|N$|NENHUM|SO\b|PRONTO|SOMENTE|APENAS|0$|OK$)/.test(s) || Number(s) === r.length + 1;
+    if (!pronto) {
+      const c = conferirServicos(ultima, r);
+      if (c.erro) return falar(`${c.erro}\n\n${textoMais()}`, comFalas([c.erro], botoesMais()));
+      guardarServicos(c.lista);
+      if (restantes().length) { await estado('coletando', n, dados); return falar(textoMais(), botoesMais()); }
+    }
+    delete dados.mais_servicos;
   } else if (!b.obrigatorio && PULAR.includes(semAcento(ultima))) {
     // pulou
+  } else if (b.campo === 'servico') {
+    const c = conferirServicos(ultima, ctx.servicos);
+    if (c.erro) { const q = await perguntar(b); return falar(`${c.erro}\n\n${q}`, comFalas([c.erro], botoesPergunta(b))); }
+    guardarServicos(c.lista, false);
+    // escolheu um só: pergunta se quer mais algum (quem já mandou vários, já sabe que pode)
+    if (c.lista.length === 1 && restantes().length) {
+      dados.mais_servicos = true;
+      await estado('coletando', n, dados);
+      return falar(textoMais(), botoesMais());
+    }
   } else {
     const c = conferir(b.campo, ultima, ctx.servicos);
     if (c.erro) { const q = await perguntar(b); return falar(`${c.erro}\n\n${q}`, comFalas([c.erro], botoesPergunta(b))); }
     if (b.campo === 'livre') dados.extras = [...(dados.extras || []), { pergunta: b.texto, resposta: c.valor }];
-    else if (b.campo === 'servico') { dados.servico_id = c.valor; dados.servico_nome = c.nome; }
     else dados[b.campo] = c.valor;
   }
   return executar(depois(n, b.ir));

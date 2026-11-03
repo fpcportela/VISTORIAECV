@@ -294,7 +294,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const clienteCarregado = useRef(undefined); // cliente da venda salva: abrir a venda não muda os preços
   // venda aberta direto de uma consulta de placa: já vem com o veículo e o relatório da consulta
   const [veiculos, setVeiculos] = useState(() => [veiculoInicial ? { ...veiculoVazio(), ...doConsultado(veiculoInicial) }
-    : agendamento ? { ...veiculoVazio(), placa: agendamento.placa || '', itens: [{ ...itemVazio(), servico_id: agendamento.servico_id || '' }] }
+    // vindo da agenda: um item para cada serviço agendado
+    : agendamento ? { ...veiculoVazio(), placa: agendamento.placa || '',
+      itens: (agendamento.servico_ids?.length ? agendamento.servico_ids : [agendamento.servico_id || '']).map((s) => ({ ...itemVazio(), servico_id: s })) }
       : veiculoVazio()]);
   const [pagamentos, setPagamentos] = useState(() => [pagamentoVazio()]);
   const [desconto, setDesconto] = useState('');

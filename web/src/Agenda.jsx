@@ -219,9 +219,12 @@ function Dia({ dia, d, pode, aoNovo, aoEditar, aoMudar, aoVenda, aoNovaVenda, de
   );
 }
 
+// Serviços do agendamento (um ou mais); os antigos só tinham servico_id
+const listaServicos = (a) => (a?.servico_ids?.length ? a.servico_ids : a?.servico_id ? [a.servico_id] : []);
+
 // Dados do agendamento para abrir a venda já preenchida
 const paraVenda = (a) => ({
-  id: a.id, loja_id: a.loja_id, placa: a.placa || '', servico_id: a.servico_id || '',
+  id: a.id, loja_id: a.loja_id, placa: a.placa || '', servico_ids: listaServicos(a),
   cliente: a.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : null,
   observacao_venda: [`Agendamento de ${quando(a.inicio)}`, !a.cliente_id && a.nome, a.telefone && mascaraTelefone(String(a.telefone).replace(/^55/, '')),
     a.observacao].filter(Boolean).join(' · '),
@@ -339,7 +342,7 @@ function Editor({ perfil, loja, servicos, colunas = [], agendamento, inicial, ao
   const [f, setF] = useState({
     nome: a?.nome || inicial?.nome || '', placa: a?.placa || '',
     telefone: (a?.telefone || inicial?.telefone) ? mascaraTelefone(String(a?.telefone || inicial.telefone).replace(/^55/, '')) : '',
-    servico_id: a?.servico_id || '', observacao: a?.observacao || '',
+    servico_ids: listaServicos(a).length ? listaServicos(a) : [''], observacao: a?.observacao || '',
     dia: a ? diaSP(a.inicio) : inicial?.dia || hoje(), hora: a ? horaSP(a.inicio) : inicial?.hora || '',
     encaixe: false, enviar_whatsapp: false,
     cpf_cnpj: a?.cliente_doc ? formatarDoc(a.cliente_doc) : inicial?.cliente?.cpf_cnpj ? formatarDoc(inicial.cliente.cpf_cnpj) : '',
@@ -408,7 +411,7 @@ function Editor({ perfil, loja, servicos, colunas = [], agendamento, inicial, ao
     setErro(''); setSalvando(true);
     const d = f.cpf_cnpj.replace(/\D/g, '');
     const corpo = {
-      loja_id: loja, nome: f.nome, telefone: f.telefone, placa: f.placa, servico_id: f.servico_id || null, observacao: f.observacao,
+      loja_id: loja, nome: f.nome, telefone: f.telefone, placa: f.placa, servico_ids: f.servico_ids.filter(Boolean), observacao: f.observacao,
       inicio: instanteSP(f.dia, f.hora), encaixe: f.encaixe, ...extra,
       ...(cliente ? { cliente_id: cliente.id } : { cpf_cnpj: d }),
     };
@@ -453,12 +456,26 @@ function Editor({ perfil, loja, servicos, colunas = [], agendamento, inicial, ao
           <label>Celular (WhatsApp)<input value={f.telefone} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => mudar({ telefone: mascaraTelefone(e.target.value) })} /></label>
           <label>Placa<input value={f.placa} maxLength={8} onChange={(e) => mudar({ placa: e.target.value.toUpperCase() })} /></label>
         </div>
-        <label>Serviço
-          <select value={f.servico_id} onChange={(e) => mudar({ servico_id: e.target.value })}>
-            <option value="">—</option>
-            {servicos.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
-          </select>
-        </label>
+        {/* um ou mais serviços: cada um na sua linha; o + acrescenta outro */}
+        <div className="servicos-agenda">
+          <span className="servicos-agenda-titulo">{f.servico_ids.length > 1 ? 'Serviços' : 'Serviço'}</span>
+          {f.servico_ids.map((id, k) => (
+            <div key={k} className="servicos-agenda-linha">
+              <select value={id} aria-label={`Serviço ${k + 1}`}
+                onChange={(e) => mudar({ servico_ids: f.servico_ids.map((x, j) => (j === k ? e.target.value : x)) })}>
+                <option value="">—</option>
+                {servicos.filter((s) => s.id === id || !f.servico_ids.includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
+              </select>
+              {f.servico_ids.length > 1 && (
+                <button type="button" className="fechar" aria-label={`Remover o serviço ${k + 1}`}
+                  onClick={() => mudar({ servico_ids: f.servico_ids.filter((_, j) => j !== k) })}>×</button>
+              )}
+            </div>
+          ))}
+          {f.servico_ids.every(Boolean) && f.servico_ids.length < servicos.length && (
+            <button type="button" className="botao-link" onClick={() => mudar({ servico_ids: [...f.servico_ids, ''] })}>+ Adicionar outro serviço</button>
+          )}
+        </div>
         <div className="linha-campos dois">
           <label>Dia<CampoData value={f.dia} required onChange={(e) => mudar({ dia: e.target.value, hora: f.encaixe ? f.hora : '' })} /></label>
           <label>Horário
