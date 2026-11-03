@@ -1056,6 +1056,8 @@ button.fx-no:hover { box-shadow: 0 3px 10px rgba(15,23,42,.18); }
 .agenda-responsavel { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--cinza); white-space: nowrap; }
 .agenda-agendar-para { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 8px 0; padding: 10px 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
 .conversa-agendar { display: inline-flex; align-items: center; gap: 6px; }
+.conversa-venda { display: inline-flex; align-items: center; gap: 6px; border-color: #16a34a; color: #166534; font-weight: 600; }
+.conversa-venda.cancelada { border-color: #dc2626; color: #b91c1c; }
 .sit-agenda.ag-confirmado { border-color: #16a34a; color: #166534; font-weight: 600; }
 .sit-agenda.ag-agendado { border-color: #ca8a04; color: #854d0e; font-weight: 600; }
 .botao-whatsapp { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #16a34a; border-radius: 8px; background: #f0fdf4; color: #15803d; font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; white-space: nowrap; }
