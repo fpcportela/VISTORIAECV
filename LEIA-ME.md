@@ -224,7 +224,7 @@ segue a partir do bloco 1:
 - **Passar para atendente** e **Encerrar**.
 
 Cada bloco diz para onde vai depois ("Próximo bloco" ou "Ir para" outro bloco). Na venda, o botão
-**Confirmar venda** passa ela para Aberta. Se um atendente responder na conversa, o robô para naquele
+**Salvar e confirmar** grava o que foi alterado e passa ela para Aberta. Se um atendente responder na conversa, o robô para naquele
 atendimento. O cliente também pode escrever ATENDENTE a qualquer momento.
 
 **Prompt da IA**: o texto com quem é a loja, como falar, regras e preços (pode carregar de um .txt).

@@ -306,7 +306,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const [servicos, setServicos] = useState([]);
   const [consulta, setConsulta] = useState(null); // { indice, placa }
   const [liberando, setLiberando] = useState(false);
-  const [autorizando, setAutorizando] = useState(null); // { finalizar } enquanto pede a senha do desconto
+  const [autorizando, setAutorizando] = useState(null); // { modo } enquanto pede a senha do desconto
   // preços vêm travados; destrava com a senha de quem autoriza (vale até salvar)
   const [precoLiberado, setPrecoLiberado] = useState(null); // { email, senha, nome }
   const [pedindoPreco, setPedindoPreco] = useState(false);
@@ -419,7 +419,11 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   const falta = Math.round((total - pago) * 100) / 100;
   const mudarPagamento = (n, campos) => setPagamentos((l) => l.map((pg, k) => (k === n ? { ...pg, ...campos } : pg)));
 
-  async function salvar(finalizar = false, autorizacao = null) {
+  // modo: 'salvar' grava e mantém a situação; 'confirmar' grava e passa a venda AGENDADO (do robô)
+  // para Aberta; 'finalizar' grava e trava a venda como Finalizada.
+  async function salvar(modo = 'salvar', autorizacao = null) {
+    const finalizar = modo === 'finalizar';
+    const confirmar = modo === 'confirmar' && venda?.situacao === 'futuro';
     setErro('');
     if (modoCliente === 'buscar' && !cliente) return setErro('Escolha o cliente na lista.');
     const placaRuim = veiculos.findIndex((v) => v.placa && !placaValida(v.placa));
@@ -434,7 +438,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
     if (cartaoSemCv >= 0) return setErro(`Pagamento ${cartaoSemCv + 1}: informe o CV e a bandeira do cartão.`);
     // desconto novo ou alterado: pede a senha de quem autoriza antes de salvar
     if (!autorizacao && numero(desconto) > 0 && numero(desconto) !== Number(venda?.desconto || 0)) {
-      return setAutorizando({ finalizar });
+      return setAutorizando({ modo });
     }
     setOcupado(true);
     try {
@@ -458,27 +462,18 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
       if (vid) await api(`/vendas/${vid}`, { metodo: 'PUT', corpo });
       else vid = (await api('/vendas', { metodo: 'POST', corpo })).id;
       setPrecoLiberado(null);
+      if (confirmar) await api(`/vendas/${vid}/confirmar`, { metodo: 'POST' });
       if (finalizar) await api(`/vendas/${vid}/finalizar`, { metodo: 'POST' });
       if (!venda) return aoSalvo(vid);
       await carregar();
-      setAviso(finalizar ? 'Venda finalizada.' : 'Venda salva.'); setTimeout(() => setAviso(''), 2200);
+      setAviso(finalizar ? 'Venda finalizada.' : confirmar ? 'Venda salva e confirmada.' : 'Venda salva.'); setTimeout(() => setAviso(''), 2200);
     } catch (falha) {
-      if (falha.status === 428) { setAutorizando({ finalizar }); return; }
+      if (falha.status === 428) { setAutorizando({ modo }); return; }
       setErro(falha.message);
       if (venda && !autorizacao) carregar();
       if (autorizacao) throw falha; // a janela de autorização mostra o erro
     } finally {
       setOcupado(false);
-    }
-  }
-
-  // FUTURO (aberta pelo robô do WhatsApp) passa a ser uma venda aberta comum
-  async function confirmar() {
-    try {
-      await api(`/vendas/${venda.id}/confirmar`, { metodo: 'POST' });
-      await carregar();
-    } catch (falha) {
-      setErro(falha.message);
     }
   }
 
@@ -715,9 +710,9 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
       <div className="acoes-vistoria">
         {['aberta', 'futuro'].includes(venda?.situacao) && pode.cancelar && <button className="botao-contorno perigo" onClick={cancelar}>Cancelar venda</button>}
         {venda?.situacao === 'finalizada' && <button className="botao-contorno" onClick={() => setLiberando(true)}>Liberar edição</button>}
-        {editavel && <button className="botao-contorno" onClick={() => salvar(false)} disabled={ocupado}>Salvar</button>}
-        {venda?.situacao === 'futuro' && pode.editar && <button className="botao-contorno" onClick={confirmar} disabled={ocupado}>Confirmar venda</button>}
-        {editavel && pode.finalizar && <button className="botao-primario" onClick={() => salvar(true)} disabled={ocupado}>Salvar e finalizar</button>}
+        {editavel && <button className="botao-contorno" onClick={() => salvar('salvar')} disabled={ocupado}>Salvar</button>}
+        {venda?.situacao === 'futuro' && pode.editar && <button className="botao-contorno" onClick={() => salvar('confirmar')} disabled={ocupado}>Salvar e confirmar</button>}
+        {editavel && pode.finalizar && <button className="botao-primario" onClick={() => salvar('finalizar')} disabled={ocupado}>Salvar e finalizar</button>}
       </div>
 
       {venda?.historico?.length > 0 && (
@@ -761,7 +756,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
       {autorizando && (
         <AutorizarDesconto desconto={numero(desconto)} emailSugerido={pode.desconto ? perfil.usuario.email : ''}
           aoFechar={() => setAutorizando(null)}
-          aoAutorizar={async (a) => { await salvar(autorizando.finalizar, a); setAutorizando(null); }} />
+          aoAutorizar={async (a) => { await salvar(autorizando.modo, a); setAutorizando(null); }} />
       )}
       {liberando && (
         <LiberarEdicao venda={venda} dispensaSenha={perfil.master || pode.autorizar}
