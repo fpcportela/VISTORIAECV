@@ -266,6 +266,9 @@ function Espelho({ loja }) {
   const justificativasDia = (d) => (dados?.justificativas || []).filter((j) => j.data === d)
     .sort((a, b) => (a.tipo ? ORDEM.indexOf(a.tipo) + 1 : 0) - (b.tipo ? ORDEM.indexOf(b.tipo) + 1 : 0));
   const comprovante = (d) => dados?.comprovantes?.find((c) => c.data === d);
+  // O ponto é um só em todas as filiais do colaborador: se no mês ele bateu em mais de uma,
+  // cada horário mostra a filial em que foi batido
+  const variasFiliais = new Set((dados?.registros || []).filter((r) => r.ativo && r.loja_id).map((r) => r.loja_id)).size > 1;
   const totalMes = dias.reduce((t, d) => t + minutosDia(doDia(d)), 0);
   // férias do colaborador e banco de horas (saldo de cada dia contado)
   const deFerias = (d) => (dados?.ferias || []).some((f) => d >= f.inicio && d <= f.fim);
@@ -310,6 +313,9 @@ function Espelho({ loja }) {
                           {horaBR(marcas[k].hora)}{marcas[k].origem === 'ajuste' && <sup>*</sup>}
                         </button>
                       ) : null}
+                      {marcas[k] && variasFiliais && marcas[k].loja_codigo && (
+                        <small className="tp-filial" title={`Batido na filial ${marcas[k].loja_codigo} · ${marcas[k].loja || ''}`}>F{marcas[k].loja_codigo}</small>
+                      )}
                       {marcas[k]?.tem_foto && (
                         <button className="tp-foto" onClick={() => setFoto({ id: marcas[k].id, titulo: `${MARCACOES[k]} · ${new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')} · ${horaBR(marcas[k].hora)}` })}
                           title="Ver foto do registro" aria-label={`Ver foto: ${MARCACOES[k]} de ${new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}`}>
@@ -430,6 +436,7 @@ function DetalheMarcacao({ dados, data, tipo, aoFechar, aoSalvar }) {
             {historico.map((r) => (
               <li key={r.id} className={r.ativo ? '' : 'riscado'}>
                 <strong>{horaBR(r.hora)}</strong> {r.origem === 'ajuste' ? `editado: ${r.motivo}` : 'registrado com foto'}
+                {r.loja && <> · filial {r.loja_codigo} {r.loja}</>}
                 <small className="cinza"> · {r.registrado_por || '—'} em {new Date(r.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</small>
               </li>
             ))}

@@ -282,14 +282,16 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
     const r = await comoUsuario(req.usuarioId, async (db) => {
       const c = await colaborador(db, req.body?.colaborador_id);
       if (!c.ativo) throw new Recusa(400, 'Este colaborador está inativo.');
-      // o ponto fica na unidade em que foi batido (se o colaborador trabalha nela); senão, na principal
+      // o ponto fica na unidade em que foi batido (se o colaborador trabalha nela); senão, na principal.
+      // O registro é um só para todas as unidades dele: pode entrar numa filial e sair em outra.
       const lojaPonto = UUID.test(req.body?.loja_id || '')
-        && (await db.query('select 1 from colaborador_lojas where colaborador_id = $1 and loja_id = $2', [c.id, req.body.loja_id])).rowCount
+        && (await db.query('select colaborador_trabalha_em($1, $2) as ok', [c.id, req.body.loja_id])).rows[0].ok
         ? req.body.loja_id : c.loja_id;
       await exigir(db, lojaPonto, 'ponto.registrar', 'Seu perfil não pode registrar ponto nesta unidade.');
       if (c.usuario_id !== req.usuarioId && !(await db.query("select pode($1, 'ponto.ver_equipe') as ok", [lojaPonto])).rows[0].ok) {
         throw new Recusa(403, 'Seu perfil só pode registrar o seu próprio ponto.');
       }
+      // marcações de hoje em qualquer filial (as regras do banco mostram todas as do colaborador)
       const feitos = (await db.query(
         `select tipo from ponto_registros where colaborador_id = $1 and ativo and data = (now() at time zone '${FUSO}')::date`, [c.id]))
         .rows.map((x) => x.tipo);
@@ -314,7 +316,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       await exigirVerPonto(db, c, req.usuarioId);
       const registros = (await db.query(
         `select r.id, r.data, r.tipo, r.hora, r.origem, r.motivo, r.ativo, r.ajuste_de, r.foto is not null as tem_foto,
-                u.nome as registrado_por, r.criado_em
+                u.nome as registrado_por, r.criado_em, r.loja_id, loja_codigo(r.loja_id) as loja_codigo, loja_nome(r.loja_id) as loja
            from ponto_registros r left join usuarios u on u.id = r.registrado_por
           where r.colaborador_id = $1 and to_char(r.data, 'YYYY-MM') = $2
           order by r.data, r.criado_em`, [c.id, mes])).rows;
@@ -341,9 +343,12 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
   app.get('/api/ponto/registros/:id/foto', exigeLogin, comRecusa(async (req, res) => {
     if (!UUID.test(req.params.id)) throw new Recusa(404, 'Foto não encontrada.');
     const f = await comoUsuario(req.usuarioId, async (db) => {
-      const r = (await db.query('select r.loja_id, r.foto, r.foto_mime, c.usuario_id from ponto_registros r join colaboradores c on c.id = r.colaborador_id where r.id = $1', [req.params.id])).rows[0];
+      const r = (await db.query('select r.colaborador_id, r.foto, r.foto_mime, c.usuario_id from ponto_registros r join colaboradores c on c.id = r.colaborador_id where r.id = $1', [req.params.id])).rows[0];
       if (!r?.foto) throw new Recusa(404, 'Foto não encontrada.');
-      if (r.usuario_id !== req.usuarioId) await exigir(db, r.loja_id, 'ponto.ver_equipe', 'Seu perfil não pode ver as fotos do ponto.');
+      // a batida pode ter sido em outra filial do colaborador: a permissão é numa das unidades dele
+      if (r.usuario_id !== req.usuarioId) {
+        await exigirColab(db, { id: r.colaborador_id }, 'ponto.ver_equipe', 'Seu perfil não pode ver as fotos do ponto.');
+      }
       return r;
     });
     res.set('Content-Type', f.foto_mime || 'image/jpeg');
@@ -363,12 +368,14 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
       const c = await colaborador(db, b.colaborador_id);
       await exigirColab(db, c, 'ponto.ajustar', 'Seu perfil não pode editar o ponto.');
       const anterior = (await db.query(
-        'update ponto_registros set ativo = false where colaborador_id = $1 and data = $2 and tipo = $3 and ativo returning id, foto, foto_mime',
+        'update ponto_registros set ativo = false where colaborador_id = $1 and data = $2 and tipo = $3 and ativo returning id, loja_id, foto, foto_mime',
         [c.id, data, b.tipo])).rows[0];
+      // a correção fica na filial da batida original; a inclusão, na unidade escolhida no topo (se for dele)
+      const loja = anterior?.loja_id ?? (await db.query('select loja_ponto_colaborador($1) as loja', [c.id])).rows[0].loja;
       return (await db.query(
         `insert into ponto_registros (colaborador_id, loja_id, data, tipo, hora, foto, foto_mime, origem, ajuste_de, motivo, registrado_por)
          values ($1, $2, $3, $4, ($3::date + $5::time) at time zone '${FUSO}', $6, $7, 'ajuste', $8, $9, $10) returning id`,
-        [c.id, c.loja_id, data, b.tipo, b.hora, anterior?.foto ?? null, anterior?.foto_mime ?? null, anterior?.id ?? null, motivo, req.usuarioId])).rows[0].id;
+        [c.id, loja, data, b.tipo, b.hora, anterior?.foto ?? null, anterior?.foto_mime ?? null, anterior?.id ?? null, motivo, req.usuarioId])).rows[0].id;
     });
     res.json({ id });
   }));

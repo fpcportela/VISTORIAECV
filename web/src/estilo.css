@@ -768,6 +768,7 @@ button.tf-linha:hover { border-color: var(--forte); }
 .acesso-sistema .dados-veiculo label { text-align: left; align-items: stretch; }
 .tp-foto { background: none; border: none; padding: 2px 4px; margin-left: 2px; color: var(--forte); cursor: pointer; border-radius: 6px; vertical-align: middle; display: inline-flex; }
 .tp-foto:hover { background: #eef1f6; }
+.tp-filial { font-size: 10px; font-weight: 600; color: var(--cinza); background: #eef1f6; border-radius: 4px; padding: 0 4px; margin-left: 3px; vertical-align: middle; }
 
 /* ---------- Relatórios ---------- */
 .relatorio-config { background: #fff; border-radius: 10px; padding: 14px; margin: 14px 0; display: flex; flex-direction: column; gap: 12px; }
