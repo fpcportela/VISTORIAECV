@@ -24,6 +24,14 @@ export function mascaraTelefone(v) {
   return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
 
+// Telefone da conversa do WhatsApp (5511987654321) para o formato do cadastro: (11) 98765-4321
+export function telefoneConversa(tel) {
+  let d = digitos(tel);
+  if (d.startsWith('55') && d.length >= 12) d = d.slice(2);
+  if (d.length === 10 && /[6-9]/.test(d[2])) d = `${d.slice(0, 2)}9${d.slice(2)}`;
+  return mascaraTelefone(d);
+}
+
 export function cpfValido(v) {
   const c = digitos(v);
   if (!/^\d{11}$/.test(c) || /^(\d)\1+$/.test(c)) return false;

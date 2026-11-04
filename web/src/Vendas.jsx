@@ -5,7 +5,7 @@ import { Placa, PlacaInput, PlacasDiversas, placaValida } from './Placa.jsx';
 import { lerMoeda, paraMoeda, semAcento } from './entrada.js';
 import { SeletorVeiculo } from './Veiculo.jsx';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
-import { formatarDoc, mascaraTelefone } from './documentos.js';
+import { formatarDoc, mascaraTelefone, telefoneConversa } from './documentos.js';
 import { CampoData } from './Data.jsx';
 import { EditorCliente, FilialCliente } from './Clientes.jsx';
 import { BotaoWhatsApp } from './botaoWhatsApp.jsx';
@@ -506,6 +506,14 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
   // Novo cadastro abre a tela completa de cliente (com os preços especiais), nas unidades do grupo da venda
   const empresaVenda = perfil.lojas.find((l) => l.id === loja)?.empresa_id;
   const lojasCadastro = perfil.lojas.filter((l) => l.empresa_id === empresaVenda && (perfil.master || perfil.acessos[l.id]?.includes('clientes.editar')));
+  // Venda de um agendamento (robô do WhatsApp ou "Abrir venda" na agenda): o Novo cadastro já vem com o nome
+  // informado no atendimento e o telefone da conversa. Sem agendamento, o cadastro abre vazio como sempre.
+  const agCadastro = venda?.agendamentos?.[0] || agendamento;
+  const nomeAgendado = String(agCadastro?.nome || '').trim();
+  const clienteDoAgendamento = agCadastro && {
+    nome: nomeAgendado && nomeAgendado !== 'CLIENTE WHATSAPP' ? nomeAgendado : '',
+    whatsapp: agCadastro.telefone ? telefoneConversa(agCadastro.telefone) : '',
+  };
   return (
     <>
       <div className="cabecalho">
@@ -745,7 +753,7 @@ export function EditorVenda({ id, perfil, lojaInicial, lojasPermitidas, veiculoI
         <ConsultaPlaca loja={loja} placaInicial={consulta.placa} aoUsar={editavel ? usarVeiculo : undefined} aoFechar={() => setConsulta(null)} />
       )}
       {cadastrando && (
-        <EditorCliente lojas={lojasCadastro} lojaInicial={loja} aoAbrir={() => {}} aoFechar={() => setCadastrando(false)}
+        <EditorCliente lojas={lojasCadastro} lojaInicial={loja} inicial={clienteDoAgendamento || undefined} aoAbrir={() => {}} aoFechar={() => setCadastrando(false)}
           aoSalvar={async (cid) => {
             setCadastrando(false);
             try { setCliente(await api(`/clientes/${cid}`)); setModoCliente('atual'); } catch (falha) { setErro(falha.message); }
