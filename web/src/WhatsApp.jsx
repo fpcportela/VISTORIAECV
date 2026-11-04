@@ -66,7 +66,7 @@ export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar, c
           ? (situacao.master ? 'clique em Conexões, crie a conexão e leia o QR code com o celular do WhatsApp.' : 'peça ao master para ligar o celular do WhatsApp deste grupo.')
           : (situacao.master ? 'clique em Conexões e informe o ID do número do WhatsApp.' : 'peça ao master para cadastrar o número do WhatsApp deste grupo.')}</p>
       ) : !conexoes.length ? (
-        <p className="aviso-zap"><strong>Sem conexão liberada:</strong> seu usuário não vê nenhuma conexão de WhatsApp deste grupo. Peça a quem cuida dos usuários (tela Usuários).</p>
+        <p className="aviso-zap"><strong>Sem conexão liberada:</strong> seu usuário não vê nenhuma conexão de WhatsApp nesta filial. Escolha outra filial no topo ou peça a quem cuida dos usuários (tela Usuários).</p>
       ) : null}
       <div className="abas" role="tablist">
         <button role="tab" aria-selected={aba === 'chamados'} className={aba === 'chamados' ? 'ativa' : ''} onClick={() => setAba('chamados')}>Chamados</button>
