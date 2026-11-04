@@ -183,7 +183,7 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
           )}
           <div className="tabela-vendas" role="table">
             {lista.map((v) => (
-              <button key={v.id} className={`cartao linha-venda${v.situacao === 'futuro' ? ' agendada' : v.sem_servico && v.situacao === 'aberta' ? ' sem-servico' : ''}${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
+              <button key={v.id} className={`cartao linha-venda${v.situacao === 'futuro' ? ' agendada' : v.situacao === 'cancelada' ? ' cancelada' : v.sem_servico && v.situacao === 'aberta' ? ' sem-servico' : ''}${lote ? ' em-lote' : ''}${lote?.has(v.id) ? ' marcada' : ''}`} role="row" aria-pressed={lote ? lote.has(v.id) : undefined}
                 onClick={() => (lote ? setLote((l) => { const n = new Set(l); if (n.has(v.id)) n.delete(v.id); else n.add(v.id); return n; }) : aoAbrir(v.id))}>
                 <span className="lv-num">{lote && <span className="marca-lote" aria-hidden="true">{lote.has(v.id) ? '✓' : ''}</span>}{v.tipo_veiculo && ['carro', 'moto', 'caminhao'].includes(v.tipo_veiculo) && (
                   <span className="lv-tipo" title={TIPOS_VEICULO[v.tipo_veiculo]} aria-label={TIPOS_VEICULO[v.tipo_veiculo]}><Icone nome={v.tipo_veiculo} tamanho={20} /></span>
@@ -193,8 +193,10 @@ export function ListaVendas({ loja, podeCriar, aoAbrir, aoNova, buscaInicial = '
                     : v.placas.includes(',') ? <PlacasDiversas tamanho="mini" /> : <Placa placa={v.placas} tamanho="mini" />}
                   <span className="lv-nome">
                     <strong>{v.cliente}</strong>
-                    <small className="cinza">{v.cpf_cnpj && `${formatarDoc(v.cpf_cnpj)}`}{v.cpf_cnpj && !loja && ' · '}{!loja && v.loja}</small>
-                    {v.vendedor && <small className="lv-vendedor" title="Vistoriador (responsável pela venda)">Vistoriador: <strong>{v.vendedor}</strong></small>}
+                    {v.cpf_cnpj && <small className="cinza">{formatarDoc(v.cpf_cnpj)}</small>}
+                    <small className="lv-loja-vendedor" title={`${!loja && v.loja ? `${v.loja} · ` : ''}Vistoriador: ${v.vendedor || 'sem responsável'}`}>
+                      {!loja && v.loja && <>{v.loja} · </>}Vistoriador: <strong>{v.vendedor || '—'}</strong>
+                    </small>
                     {v.sem_servico && ['aberta', 'futuro'].includes(v.situacao) && <small className="lv-pendente">Falta o serviço</small>}
                   </span>
                 </span>

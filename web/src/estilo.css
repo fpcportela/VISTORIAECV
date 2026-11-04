@@ -975,6 +975,9 @@ button.chip-sit { cursor: pointer; padding: 4px 12px; }
 /* Venda agendada pelo robô do WhatsApp (situação futuro): linha azul clara até confirmar */
 .linha-venda.agendada { background: #e0f2fe; box-shadow: inset 4px 0 0 #0ea5e9; }
 .linha-venda.agendada .venda-futuro { background: #fff; }
+/* Venda cancelada: linha toda vermelha, no mesmo modelo da agendada */
+.linha-venda.cancelada { background: #fee2e2; box-shadow: inset 4px 0 0 #dc2626; }
+.linha-venda.cancelada .venda-cancelada { background: #fff; }
 /* Venda salva sem serviço: linha amarela até alguém completar */
 .linha-venda.sem-servico { background: #fef9c3; box-shadow: inset 4px 0 0 #eab308; }
 .linha-venda .lv-pendente { color: #92400e; font-weight: 700; font-size: 12px; }
@@ -1001,8 +1004,9 @@ button.chip-sit { cursor: pointer; padding: 4px 12px; }
 .agenda-historico { list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--borda); font-size: .8rem; color: var(--cinza); display: grid; gap: 2px; }
 .agenda-historico li::before { content: '↪ '; }
 .agenda-remarcado { border-left-color: #94a3b8; border-style: dashed; background: transparent; opacity: .8; }
-.lv-vendedor { color: var(--texto, #1f2937); }
-.lv-vendedor strong { font-weight: 800; }
+/* Loja e vistoriador numa linha menor abaixo do CPF, cortada com reticências para não alargar a linha */
+.lv-loja-vendedor { font-size: 11px; color: var(--cinza, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-loja-vendedor strong { font-weight: 700; color: var(--texto, #1f2937); overflow: visible; }
 .agenda-mes .agenda-col { min-height: 96px; }
 .agenda-mes-cab { font-size: .8rem; font-weight: 700; color: var(--cinza); text-align: center; text-transform: uppercase; }
 .agenda-col.fora-mes { opacity: .45; }
