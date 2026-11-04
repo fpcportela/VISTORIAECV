@@ -355,6 +355,11 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
   const [colab, setColab] = useState(item?.colaborador_id ? { id: item.colaborador_id, nome: item.colaborador } : null);
   const [achados, setAchados] = useState([]);
   const [ignorados, setIgnorados] = useState(false);
+  // WhatsApp: conversas de quais conexões vê (padrão = as das unidades dele; restrito = só as marcadas)
+  const [conexoes, setConexoes] = useState([]);
+  const [zapRestrito, setZapRestrito] = useState(Boolean(item?.whatsapp?.restrito));
+  const [zapMarcadas, setZapMarcadas] = useState(() => new Set(item?.whatsapp?.restrito ? item.whatsapp.marcadas : item?.whatsapp?.ve || []));
+  useEffect(() => { api('/usuarios/whatsapp-conexoes').then(setConexoes).catch(() => setConexoes([])); }, []);
 
   // Pesquisa na base de colaboradores pelo nome ou CPF digitado (só no usuário novo ou ainda sem colaborador)
   const busca = cpf.replace(/\D/g, '').length >= 6 ? cpf.replace(/\D/g, '') : nome.trim();
@@ -396,6 +401,17 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
     setVinculos(novo);
   };
 
+  // conexões dos grupos das filiais marcadas; no padrão, vê as do grupo todo e as das filiais marcadas
+  const gruposMarcados = new Set(lojas.filter(marcada).map((l) => l.empresa_id));
+  const conexoesDoUsuario = conexoes.filter((c) => gruposMarcados.has(c.empresa_id));
+  const vePadrao = (c) => !c.loja_id || marcada({ id: c.loja_id });
+  const marcarConexao = (id, sim) => setZapMarcadas((s) => { const n = new Set(s); if (sim) n.add(id); else n.delete(id); return n; });
+  const usarRestrito = (sim) => {
+    // ao passar para "só as marcadas", já começa com as que ele vê hoje
+    if (sim && !zapRestrito && !zapMarcadas.size) setZapMarcadas(new Set(conexoesDoUsuario.filter(vePadrao).map((c) => c.id)));
+    setZapRestrito(sim);
+  };
+
   async function salvar(e) {
     e.preventDefault();
     setErro('');
@@ -409,6 +425,7 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
         nome, cpf, telefone, email, senha: senha || undefined, ativo, cargo_id: cargoId || null, colaborador_id: colab?.id || null,
         vinculos: Object.entries(vinculos).filter(([, p]) => p).map(([loja_id, perfil_id]) => ({ loja_id, perfil_id })),
         ...(lojas.length > 1 ? { todas_unidades: todasUnidades } : {}),
+        ...(conexoes.length && !item?.master && { whatsapp: { restrito: zapRestrito, conexoes: zapRestrito ? [...zapMarcadas] : [] } }),
       };
       await (item ? api(`/usuarios/${item.id}`, { metodo: 'PUT', corpo }) : api('/usuarios', { metodo: 'POST', corpo }));
       aoSalvar();
@@ -495,6 +512,30 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
                   </select>
                 </div>
               ))}
+            </fieldset>
+          )}
+
+          {!item?.master && conexoesDoUsuario.length > 0 && (
+            <fieldset className="grupo-permissoes conexoes-usuario">
+              <legend>WhatsApp: conversas que vê</legend>
+              <label className="linha-check">
+                <input type="radio" name="zap-acesso" checked={!zapRestrito} onChange={() => usarRestrito(false)} />
+                As conexões das filiais marcadas acima (e as do grupo todo)
+              </label>
+              <label className="linha-check">
+                <input type="radio" name="zap-acesso" checked={zapRestrito} onChange={() => usarRestrito(true)} />
+                Só as conexões marcadas abaixo
+              </label>
+              <div className="lista-conexao-usuario">
+                {conexoesDoUsuario.map((c) => (
+                  <label key={c.id} className="linha-check">
+                    <input type="checkbox" disabled={!zapRestrito} checked={zapRestrito ? zapMarcadas.has(c.id) : vePadrao(c)}
+                      onChange={(e) => marcarConexao(c.id, e.target.checked)} />
+                    {c.nome} <small className="cinza">{c.loja ? `(${c.loja})` : '(grupo todo)'}{c.ativo ? '' : ' · desligada'}</small>
+                  </label>
+                ))}
+              </div>
+              <small className="cinza">Vale para ver e responder as conversas e os chamados. O perfil ainda precisa ter o módulo WhatsApp.</small>
             </fieldset>
           )}
         </fieldset>

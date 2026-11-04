@@ -62,10 +62,9 @@ async function ligarChamado(db, ag, colunaId, usuarioId) {
   if (!ag.telefone) throw new Recusa(400, 'Para mandar para o WhatsApp, informe o celular do cliente.');
   const col = (await db.query('select id from whatsapp_colunas where id = $1 and empresa_id = $2 and not finaliza', [colunaId, ag.empresa_id])).rows[0];
   if (!col) throw new Recusa(400, 'Escolha a coluna do chamado.');
-  const contato = (await db.query(
-    `insert into whatsapp_contatos (empresa_id, telefone, nome) values ($1, $2, $3)
-     on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome) returning id`,
-    [ag.empresa_id, internacional(ag.telefone), ag.nome])).rows[0].id;
+  // conversa na conexão de WhatsApp da unidade do agendamento (senão a do grupo todo)
+  const contato = (await db.query('select app_whatsapp_contato($1, whatsapp_numero_loja($2), $3, $4, null) as id',
+    [ag.empresa_id, ag.loja_id, internacional(ag.telefone), ag.nome])).rows[0].id;
   const ordem = `coalesce((select min(ordem) from whatsapp_chamados where coluna_id = $1), 1) - 1`;
   let chamado = (await db.query('select id from whatsapp_chamados where contato_id = $1 and aberto order by criado_em desc limit 1', [contato])).rows[0]?.id;
   if (chamado) {
@@ -80,15 +79,20 @@ async function ligarChamado(db, ag, colunaId, usuarioId) {
   await db.query('update agendamentos set chamado_id = $1 where id = $2', [chamado, ag.id]);
 }
 
-// Manda a confirmação pelo WhatsApp do grupo e grava na conversa do contato
+// Conexão de WhatsApp do agendamento: a da conversa do chamado dele, senão a da unidade (senão a do grupo todo)
+const CONEXAO_DO_AGENDAMENTO = `left join whatsapp_numeros n on n.ativo and n.id = coalesce(
+           (select k.numero_id from whatsapp_chamados h join whatsapp_contatos k on k.id = h.contato_id where h.id = a.chamado_id),
+           whatsapp_numero_loja(a.loja_id))`;
+
+// Manda a confirmação pelo WhatsApp da unidade e grava na conversa do contato
 async function mandarConfirmacao(usuarioId, agendamentoId) {
   const a = await comoUsuario(usuarioId, async (db) => {
     const x = (await db.query(
-      `select a.*, to_jsonb(l) as loja, n.phone_number_id from agendamentos a join lojas l on l.id = a.loja_id
-         left join whatsapp_numeros n on n.empresa_id = a.empresa_id and n.ativo where a.id = $1`, [agendamentoId])).rows[0];
+      `select a.*, to_jsonb(l) as loja, n.id as conexao_id, n.phone_number_id from agendamentos a join lojas l on l.id = a.loja_id
+         ${CONEXAO_DO_AGENDAMENTO} where a.id = $1`, [agendamentoId])).rows[0];
     if (!x) throw new Recusa(404, 'Agendamento não encontrado.');
     if (!x.telefone) throw new Recusa(400, 'O agendamento não tem celular.');
-    if (!x.phone_number_id) throw new Recusa(400, 'O WhatsApp deste grupo ainda não está ligado (WhatsApp > Configurar).');
+    if (!x.phone_number_id) throw new Recusa(400, 'O WhatsApp desta unidade ainda não está ligado (WhatsApp > Conexões).');
     return x;
   });
   const para = internacional(a.telefone);
@@ -98,10 +102,7 @@ async function mandarConfirmacao(usuarioId, agendamentoId) {
   const pergunta = corpo.replace(/\n\nConfirma o agendamento\? Responda SIM ou NÃO\.$/, '\n\nConfirma o agendamento?');
   try { envio = await enviarOpcoes(a.phone_number_id, para, corpo, pergunta, [{ titulo: 'SIM' }, { titulo: 'NÃO' }]); } catch (e) { falha = e; }
   await comoUsuario(usuarioId, async (db) => {
-    const contato = (await db.query(
-      `insert into whatsapp_contatos (empresa_id, telefone, nome) values ($1, $2, $3)
-       on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome) returning id`,
-      [a.empresa_id, para, a.nome])).rows[0].id;
+    const contato = (await db.query('select app_whatsapp_contato($1, $2, $3, $4, null) as id', [a.empresa_id, a.conexao_id, para, a.nome])).rows[0].id;
     await db.query(
       `insert into whatsapp_conversa (empresa_id, contato_id, chamado_id, direcao, texto, status, erro, id_externo, enviado_por)
        values ($1, $2, $3, 'saida', $4, $5, $6, $7, $8)`,
@@ -115,18 +116,15 @@ async function mandarConfirmacao(usuarioId, agendamentoId) {
 // Confirmado na agenda: manda ao cliente a confirmação com o endereço e o link do Waze
 export async function avisarConfirmado(usuarioId, agendamentoId) {
   const a = await comoUsuario(usuarioId, async (db) => (await db.query(
-    `select a.*, to_jsonb(l) as loja, n.phone_number_id from agendamentos a join lojas l on l.id = a.loja_id
-       left join whatsapp_numeros n on n.empresa_id = a.empresa_id and n.ativo where a.id = $1`, [agendamentoId])).rows[0]);
+    `select a.*, to_jsonb(l) as loja, n.id as conexao_id, n.phone_number_id from agendamentos a join lojas l on l.id = a.loja_id
+       ${CONEXAO_DO_AGENDAMENTO} where a.id = $1`, [agendamentoId])).rows[0]);
   if (!a?.telefone || !a.phone_number_id) return; // sem celular ou sem WhatsApp ligado: não manda nada
   const para = internacional(a.telefone);
   const corpo = await textoConfirmado(a, a.loja);
   let envio, falha = null;
   try { envio = await enviarTexto(a.phone_number_id, para, corpo); } catch (e) { falha = e; }
   await comoUsuario(usuarioId, async (db) => {
-    const contato = (await db.query(
-      `insert into whatsapp_contatos (empresa_id, telefone, nome) values ($1, $2, $3)
-       on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome) returning id`,
-      [a.empresa_id, para, a.nome])).rows[0].id;
+    const contato = (await db.query('select app_whatsapp_contato($1, $2, $3, $4, null) as id', [a.empresa_id, a.conexao_id, para, a.nome])).rows[0].id;
     await db.query(
       `insert into whatsapp_conversa (empresa_id, contato_id, chamado_id, direcao, texto, status, erro, id_externo, enviado_por)
        values ($1, $2, $3, 'saida', $4, $5, $6, $7, $8)`,

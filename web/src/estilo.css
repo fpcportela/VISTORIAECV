@@ -1098,3 +1098,20 @@ button.cartao-atalho:disabled { cursor: default; }
 /* Número da filial (unidade) onde o cliente foi cadastrado */
 .filial-cliente { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
   background: var(--clara); color: var(--forte); font-size: 11px; font-weight: 800; line-height: 1.5; vertical-align: middle; white-space: nowrap; }
+
+/* WhatsApp: várias conexões */
+.abas .filtro-conexao { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--cinza); }
+.abas .filtro-conexao select { border: 1px solid var(--borda); border-radius: 6px; padding: 6px 10px; font-size: 14px; min-height: 38px; max-width: 220px; background: #fff; }
+.selo-conexao { align-self: flex-start; font-size: 11px; font-weight: 800; color: var(--forte); background: var(--clara); border: 1px solid var(--borda); border-radius: 10px; padding: 1px 8px; }
+.lista-conexoes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lista-conexoes li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--borda); border-radius: 8px; padding: 10px 12px; }
+.lista-conexoes li > span:first-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lista-conexoes li.desligada { opacity: .7; }
+.robo-escolha { max-width: 420px; }
+.conexoes-usuario { display: flex; flex-direction: column; gap: 6px; }
+.conexoes-usuario .lista-conexao-usuario { display: flex; flex-direction: column; gap: 4px; padding-left: 26px; }
+@media (max-width: 700px) {
+  .abas { flex-wrap: wrap; }
+  .abas .filtro-conexao { margin-left: 0; width: 100%; padding: 6px 0; }
+  .abas .filtro-conexao select { flex: 1; max-width: none; }
+}

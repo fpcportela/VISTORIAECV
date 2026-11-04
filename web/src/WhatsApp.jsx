@@ -36,7 +36,8 @@ export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar, c
   const [situacao, setSituacao] = useState(null);
   const [erro, setErro] = useState('');
   const [aberto, setAberto] = useState(contatoInicial || null); // contato da conversa aberta (no quadro)
-  const [janela, setJanela] = useState(null);      // 'chamado' | 'simular' | 'configurar'
+  const [janela, setJanela] = useState(null);      // 'chamado' | 'simular' | 'conexoes'
+  const [conexao, setConexao] = useState('');      // filtro: conexão escolhida ('' = todas que a pessoa vê)
   const [recarga, setRecarga] = useState(0);
   const recarregar = () => setRecarga((n) => n + 1);
 
@@ -44,6 +45,9 @@ export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar, c
 
   if (erro) return (<><div className="cabecalho"><h1>WhatsApp</h1></div><p className="erro" role="alert">{erro}</p></>);
   if (!situacao) return <p className="cinza">Carregando…</p>;
+  const conexoes = situacao.conexoes || [];
+  const variasConexoes = conexoes.length > 1;
+  const filtro = conexoes.some((c) => c.id === conexao) ? conexao : '';
 
   return (
     <>
@@ -51,24 +55,35 @@ export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar, c
         <h1>WhatsApp</h1>
         <div className="acoes-cabecalho">
           {situacao.provedor === 'teste' && situacao.pode_enviar && <button className="botao-contorno" onClick={() => setJanela('simular')}>Simular mensagem recebida</button>}
-          {situacao.master && <button className="botao-contorno" onClick={() => setJanela('configurar')}>Configurar</button>}
+          {situacao.master && <button className="botao-contorno" onClick={() => setJanela('conexoes')}>Conexões</button>}
           {situacao.pode_enviar && <button className="botao-primario" onClick={() => setJanela('chamado')}>+ Chamado</button>}
         </div>
       </div>
       {situacao.provedor === 'teste' ? (
         <p className="aviso-zap"><strong>Modo teste:</strong> as mensagens ficam só no sistema e não saem pelo WhatsApp. Para ligar de verdade, coloque as chaves da API oficial no servidor (veja o LEIA-ME, parte WhatsApp).</p>
-      ) : !situacao.numero ? (
+      ) : !situacao.configuradas ? (
         <p className="aviso-zap"><strong>Falta o número:</strong> {situacao.provedor === 'evolution'
-          ? (situacao.master ? 'clique em Configurar e leia o QR code com o celular do WhatsApp deste grupo.' : 'peça ao master para ligar o celular do WhatsApp deste grupo.')
-          : (situacao.master ? 'clique em Configurar e informe o ID do número do WhatsApp deste grupo.' : 'peça ao master para cadastrar o número do WhatsApp deste grupo.')}</p>
+          ? (situacao.master ? 'clique em Conexões, crie a conexão e leia o QR code com o celular do WhatsApp.' : 'peça ao master para ligar o celular do WhatsApp deste grupo.')
+          : (situacao.master ? 'clique em Conexões e informe o ID do número do WhatsApp.' : 'peça ao master para cadastrar o número do WhatsApp deste grupo.')}</p>
+      ) : !conexoes.length ? (
+        <p className="aviso-zap"><strong>Sem conexão liberada:</strong> seu usuário não vê nenhuma conexão de WhatsApp deste grupo. Peça a quem cuida dos usuários (tela Usuários).</p>
       ) : null}
       <div className="abas" role="tablist">
         <button role="tab" aria-selected={aba === 'chamados'} className={aba === 'chamados' ? 'ativa' : ''} onClick={() => setAba('chamados')}>Chamados</button>
         <button role="tab" aria-selected={aba === 'conversas'} className={aba === 'conversas' ? 'ativa' : ''} onClick={() => setAba('conversas')}>Conversas</button>
         <button role="tab" aria-selected={aba === 'robo'} className={aba === 'robo' ? 'ativa' : ''} onClick={() => setAba('robo')}>Robô de atendimento</button>
+        {/* mais de uma conexão: escolhe de qual ver os chamados e as conversas */}
+        {variasConexoes && aba !== 'robo' && (
+          <label className="filtro-conexao">Conexão
+            <select value={filtro} onChange={(e) => setConexao(e.target.value)}>
+              <option value="">Todas ({conexoes.length})</option>
+              {conexoes.map((c) => <option key={c.id} value={c.id}>{nomeConexao(c)}</option>)}
+            </select>
+          </label>
+        )}
       </div>
-      {aba === 'chamados' ? <Quadro recarga={recarga} aoAbrir={setAberto} aoAgenda={aoAgenda} />
-        : aba === 'conversas' ? <Conversas recarga={recarga} perfil={perfil} loja={loja} aoMudar={recarregar} aoVenda={aoVenda} aoAgendar={aoAgendar} />
+      {aba === 'chamados' ? <Quadro recarga={recarga} conexao={filtro} mostrarConexao={variasConexoes && !filtro} aoAbrir={setAberto} aoAgenda={aoAgenda} />
+        : aba === 'conversas' ? <Conversas recarga={recarga} conexao={filtro} mostrarConexao={variasConexoes && !filtro} perfil={perfil} loja={loja} aoMudar={recarregar} aoVenda={aoVenda} aoAgendar={aoAgendar} />
         : <Robo />}
       {aberto && (
         <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && setAberto(null)}>
@@ -77,27 +92,30 @@ export default function WhatsApp({ perfil, loja, aoVenda, aoAgenda, aoAgendar, c
           </section>
         </div>
       )}
-      {janela === 'chamado' && <NovoChamado aoFechar={() => setJanela(null)} aoCriar={() => { setJanela(null); setAba('chamados'); recarregar(); }} />}
-      {janela === 'simular' && <Simular aoFechar={() => setJanela(null)} aoEnviar={() => { setJanela(null); recarregar(); }} />}
-      {janela === 'configurar' && <Configurar situacao={situacao} aoFechar={() => setJanela(null)} aoSalvar={() => { setJanela(null); recarregar(); }} />}
+      {janela === 'chamado' && <NovoChamado conexoes={conexoes.filter((c) => c.pode_enviar)} conexaoInicial={filtro} aoFechar={() => setJanela(null)} aoCriar={() => { setJanela(null); setAba('chamados'); recarregar(); }} />}
+      {janela === 'simular' && <Simular conexoes={conexoes.filter((c) => c.pode_enviar)} conexaoInicial={filtro} aoFechar={() => setJanela(null)} aoEnviar={() => { setJanela(null); recarregar(); }} />}
+      {janela === 'conexoes' && <Conexoes aoFechar={() => { setJanela(null); recarregar(); }} />}
     </>
   );
 }
 
+// Nome da conexão com a unidade (ou "grupo todo")
+const nomeConexao = (c) => `${c.nome}${c.loja ? ` · ${c.loja}` : ''}${c.teste ? ' (teste)' : ''}${c.ativo === false ? ' (desligada)' : ''}`;
+
 // ------------------------------------------------------------ kanban
-function Quadro({ recarga, aoAbrir, aoAgenda }) {
+function Quadro({ recarga, conexao, mostrarConexao, aoAbrir, aoAgenda }) {
   const [q, setQ] = useState(null);
   const [erro, setErro] = useState('');
   const [arrastando, setArrastando] = useState(null);
   const [sobre, setSobre] = useState(null);
   const [editandoColuna, setEditandoColuna] = useState(null);
 
-  const carregar = () => api('/whatsapp/quadro').then((d) => { setQ(d); setErro(''); }).catch((f) => setErro(f.message));
+  const carregar = () => api(`/whatsapp/quadro${conexao ? `?conexao=${conexao}` : ''}`).then((d) => { setQ(d); setErro(''); }).catch((f) => setErro(f.message));
   useEffect(() => {
     carregar();
     const t = setInterval(() => { if (!document.hidden) carregar(); }, ATUALIZAR_MS);
     return () => clearInterval(t);
-  }, [recarga]);
+  }, [recarga, conexao]);
 
   if (erro && !q) return <p className="erro" role="alert">{erro}</p>;
   if (!q) return <p className="cinza">Carregando…</p>;
@@ -171,6 +189,7 @@ function Quadro({ recarga, aoAbrir, aoAgenda }) {
                       {c.robo_estado === 'coletando' && !c.venda_id && <span className="selo-robo">🤖 Robô atendendo</span>}
                       {c.venda_numero && <span className="selo-robo venda">Venda nº {c.venda_numero} aberta pelo robô</span>}
                       <small className="cinza">{telefoneBR(c.telefone)}{c.cliente ? ' · cliente' : ''}</small>
+                      {mostrarConexao && c.conexao && <span className="selo-conexao">{c.conexao}</span>}
                       {c.ultima && <span className="kanban-ultima">{c.ultima}</span>}
                     </button>
                     <small className="cinza kanban-rodape">
@@ -246,19 +265,20 @@ function RenomearColuna({ coluna, aoFechar, aoSalvar }) {
 }
 
 // ------------------------------------------------------------ conversas
-function Conversas({ recarga, perfil, loja, aoMudar, aoVenda, aoAgendar }) {
+function Conversas({ recarga, conexao, mostrarConexao, perfil, loja, aoMudar, aoVenda, aoAgendar }) {
   const [lista, setLista] = useState(null);
   const [busca, setBusca] = useState('');
   const [aberto, setAberto] = useState(null);
   const [erro, setErro] = useState('');
 
   useEffect(() => {
-    const carregar = () => api(`/whatsapp/contatos${busca ? `?busca=${encodeURIComponent(busca)}` : ''}`)
+    const q = new URLSearchParams({ ...(busca && { busca }), ...(conexao && { conexao }) }).toString();
+    const carregar = () => api(`/whatsapp/contatos${q ? `?${q}` : ''}`)
       .then((l) => { setLista(l); setErro(''); }).catch((f) => setErro(f.message));
     const t0 = setTimeout(carregar, busca ? 300 : 0);
     const t = setInterval(() => { if (!document.hidden) carregar(); }, ATUALIZAR_MS);
     return () => { clearTimeout(t0); clearInterval(t); };
-  }, [busca, recarga]);
+  }, [busca, recarga, conexao]);
 
   return (
     <div className={`conversas${aberto ? ' com-aberta' : ''}`}>
@@ -271,7 +291,7 @@ function Conversas({ recarga, perfil, loja, aoMudar, aoVenda, aoAgendar }) {
               <li key={k.id}>
                 <button type="button" className={aberto === k.id ? 'ativa' : ''} onClick={() => setAberto(k.id)}>
                   <span className="kanban-nome"><strong>{k.cliente || (k.nome === k.telefone ? telefoneBR(k.telefone) : k.nome)}</strong>{k.nao_lidas > 0 && <span className="selo-nao-lidas">{k.nao_lidas}</span>}</span>
-                  <small className="cinza">{telefoneBR(k.telefone)} · {quando(k.ultima_em)}</small>
+                  <small className="cinza">{telefoneBR(k.telefone)} · {quando(k.ultima_em)}{mostrarConexao && k.conexao ? ` · ${k.conexao}` : ''}</small>
                   {k.ultima && <span className="kanban-ultima">{k.ultima}</span>}
                 </button>
               </li>
@@ -373,7 +393,7 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
       <header className="conversa-topo">
         <div>
           <h2>{k.cliente || k.nome || telefoneBR(k.telefone)}</h2>
-          <small className="cinza">{telefoneBR(k.telefone)}{k.cliente && k.nome && k.nome !== k.cliente ? ` · no WhatsApp: ${k.nome}` : ''}</small>
+          <small className="cinza">{telefoneBR(k.telefone)}{k.cliente && k.nome && k.nome !== k.cliente ? ` · no WhatsApp: ${k.nome}` : ''}{k.conexao ? ` · conexão ${k.conexao}` : ''}</small>
         </div>
         <div className="conversa-cliente">
           {/* o servidor liga sozinho o contato ao cliente com o mesmo celular */}
@@ -476,8 +496,21 @@ function Conversa({ contatoId, perfil, loja, aoFechar, aoMudar, aoVenda, aoAgend
 }
 
 // ------------------------------------------------------------ janelas
-function NovoChamado({ aoFechar, aoCriar }) {
-  const [f, setF] = useState({ telefone: '', nome: '', titulo: '' });
+// Escolha da conexão (só aparece com mais de uma)
+function CampoConexao({ conexoes, f, setF }) {
+  if (conexoes.length < 2) return null;
+  return (
+    <label>Conexão (número que manda e recebe)
+      <select value={f.conexao} onChange={(e) => setF({ ...f, conexao: e.target.value })} required>
+        <option value="">Escolha…</option>
+        {conexoes.map((c) => <option key={c.id} value={c.id}>{nomeConexao(c)}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function NovoChamado({ conexoes = [], conexaoInicial, aoFechar, aoCriar }) {
+  const [f, setF] = useState({ telefone: '', nome: '', titulo: '', conexao: conexaoInicial || (conexoes.length === 1 ? conexoes[0].id : '') });
   const [erro, setErro] = useState('');
   // pesquisa no cadastro de clientes pelo nome ou pelo telefone, para ver se o cliente já existe
   const [busca, setBusca] = useState('');
@@ -519,6 +552,7 @@ function NovoChamado({ aoFechar, aoCriar }) {
         <label>WhatsApp do cliente<input value={f.telefone} inputMode="tel" required placeholder="(11) 99999-9999" onChange={(e) => setF({ ...f, telefone: mascaraTelefone(e.target.value) })} /></label>
         <label>Nome<input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} placeholder="Opcional" /></label>
         <label>Assunto<input value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} placeholder="Ex.: ORÇAMENTO CAUTELAR" /></label>
+        <CampoConexao conexoes={conexoes} f={f} setF={setF} />
         <p className="cinza ajuda">Se o contato já tiver um chamado aberto, o sistema usa o mesmo.</p>
         {erro && <p className="erro" role="alert">{erro}</p>}
         <div className="acoes-modal">
@@ -530,8 +564,8 @@ function NovoChamado({ aoFechar, aoCriar }) {
   );
 }
 
-function Simular({ aoFechar, aoEnviar }) {
-  const [f, setF] = useState({ telefone: '', nome: '', texto: '' });
+function Simular({ conexoes = [], conexaoInicial, aoFechar, aoEnviar }) {
+  const [f, setF] = useState({ telefone: '', nome: '', texto: '', conexao: conexaoInicial || (conexoes.length === 1 ? conexoes[0].id : '') });
   const [erro, setErro] = useState('');
   return (
     <Janela titulo="Simular mensagem recebida" aoFechar={aoFechar}>
@@ -543,6 +577,7 @@ function Simular({ aoFechar, aoEnviar }) {
         <label>Celular de quem mandou<input value={f.telefone} inputMode="tel" required placeholder="(11) 99999-9999" onChange={(e) => setF({ ...f, telefone: mascaraTelefone(e.target.value) })} /></label>
         <label>Nome no WhatsApp<input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} placeholder="Opcional" /></label>
         <label>Mensagem<textarea rows={3} data-livre value={f.texto} required onChange={(e) => setF({ ...f, texto: e.target.value })} placeholder="Bom dia, quanto custa a cautelar?" /></label>
+        <CampoConexao conexoes={conexoes} f={f} setF={setF} />
         {erro && <p className="erro" role="alert">{erro}</p>}
         <div className="acoes-modal">
           <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
@@ -553,18 +588,127 @@ function Simular({ aoFechar, aoEnviar }) {
   );
 }
 
-// WhatsApp por QR code (Evolution): o master lê o QR code com o celular do grupo, como no WhatsApp Web
+// ------------------------------------------------------------ conexões (números) do grupo
+// O master cadastra quantos números quiser: cada um do grupo todo ou de uma unidade, com o robô do
+// grupo ou um robô próprio. Quem vê as conversas de cada conexão é marcado na tela Usuários.
+function Conexoes({ aoFechar }) {
+  const [d, setD] = useState(null);
+  const [erro, setErro] = useState('');
+  const [editando, setEditando] = useState(null); // conexão (ou {} para nova)
+  const [qr, setQr] = useState(null);             // conexão sendo ligada por QR code
+  const carregar = () => api('/whatsapp/conexoes').then((r) => { setD(r); setErro(''); }).catch((f) => setErro(f.message));
+  useEffect(() => { carregar(); }, []);
+
+  async function excluir(c) {
+    if (!window.confirm(`Excluir a conexão ${c.nome}?`)) return;
+    try { await api(`/whatsapp/conexoes/${c.id}`, { metodo: 'DELETE' }); carregar(); } catch (f) { setErro(f.message); }
+  }
+
+  if (qr) return <ConectarQr conexao={qr} aoFechar={() => { setQr(null); carregar(); }} />;
+  if (editando) return <EditorConexao item={editando} d={d} aoFechar={() => setEditando(null)} aoSalvar={(novo) => { setEditando(null); carregar(); if (novo && d.provedor === 'evolution') setQr(novo); }} />;
+  return (
+    <Janela titulo="Conexões do WhatsApp" aoFechar={aoFechar}>
+      <div className="formulario">
+        <p className="cinza ajuda">
+          Cada conexão é um número de WhatsApp. Pode ser do grupo todo ou de uma unidade, e usar o robô do grupo ou um robô próprio.
+          Quem vê as conversas de cada conexão é marcado no cadastro do usuário (tela Usuários).
+          {d?.provedor === 'teste' && ' Modo teste: nada sai pelo WhatsApp.'}
+          {d?.provedor === 'meta' && !d.token && ' Falta o WHATSAPP_TOKEN no servidor.'}
+        </p>
+        {!d && !erro && <p className="cinza">Carregando…</p>}
+        {d && (d.conexoes.length ? (
+          <ul className="lista-conexoes">
+            {d.conexoes.map((c) => (
+              <li key={c.id} className={c.ativo ? '' : 'desligada'}>
+                <span>
+                  <strong>{c.nome}</strong>{c.teste && <span className="cinza"> (teste)</span>}{!c.ativo && <span className="cinza"> (desligada)</span>}
+                  <small className="cinza">
+                    {c.loja ? `Unidade ${c.loja}` : 'Grupo todo'} · {c.robo_proprio ? 'robô próprio' : 'robô do grupo'}
+                    {c.numero ? ` · ${mascaraTelefone(String(c.numero).replace(/^55/, ''))}` : ''} · {c.conversas} conversa(s)
+                  </small>
+                </span>
+                <span className="acoes-item">
+                  {d.provedor === 'evolution' && !c.teste && <button type="button" className="botao-contorno pequeno" onClick={() => setQr(c)}>QR code</button>}
+                  <button type="button" className="botao-contorno pequeno" onClick={() => setEditando(c)}>Editar</button>
+                  {c.conversas === 0 && <button type="button" className="botao-contorno pequeno perigo" onClick={() => excluir(c)}>Excluir</button>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="cinza">Nenhuma conexão ainda.</p>)}
+        {erro && <p className="erro" role="alert">{erro}</p>}
+        <div className="acoes-modal">
+          <button type="button" className="botao-contorno" onClick={aoFechar}>Fechar</button>
+          {d && <button type="button" className="botao-primario" onClick={() => setEditando({})}>+ Nova conexão</button>}
+        </div>
+      </div>
+    </Janela>
+  );
+}
+
+function EditorConexao({ item, d, aoFechar, aoSalvar }) {
+  const novo = !item.id;
+  const [f, setF] = useState({
+    nome: item.nome || '', loja_id: item.loja_id || '', robo_proprio: Boolean(item.robo_proprio), ativo: item.ativo ?? true,
+    phone_number_id: item.teste ? '' : item.phone_number_id || '',
+    numero: item.numero ? mascaraTelefone(String(item.numero).replace(/^55/, '')) : '',
+  });
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const meta = d.provedor === 'meta';
+  return (
+    <Janela titulo={novo ? 'Nova conexão' : `Conexão ${item.nome}`} aoFechar={aoFechar}>
+      <form className="formulario" onSubmit={async (e) => {
+        e.preventDefault(); setErro(''); setSalvando(true);
+        try {
+          const corpo = { ...f, ...(!meta && { phone_number_id: undefined }) };
+          const r = novo ? await api('/whatsapp/conexoes', { metodo: 'POST', corpo }) : await api(`/whatsapp/conexoes/${item.id}`, { metodo: 'PUT', corpo });
+          aoSalvar(novo ? { id: r.id, nome: f.nome.toUpperCase() } : null);
+        } catch (falha) { setErro(falha.message); setSalvando(false); }
+      }}>
+        <label>Nome da conexão<input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} required maxLength={60} placeholder="Ex.: LOJA CENTRO, VENDAS" /></label>
+        <label>De qual unidade
+          <select value={f.loja_id} onChange={(e) => setF({ ...f, loja_id: e.target.value })}>
+            <option value="">Grupo todo (todas as unidades)</option>
+            {d.lojas.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+          </select>
+        </label>
+        <p className="cinza ajuda">
+          {f.loja_id ? 'Conexão de uma unidade: por padrão, só quem trabalha nela vê as conversas, e o robô já atende nessa unidade (não pergunta qual).'
+            : 'Conexão do grupo todo: por padrão, todos com WhatsApp no perfil veem as conversas, e o robô pergunta a unidade (se houver mais de uma).'}
+        </p>
+        <fieldset className="grupo-permissoes">
+          <legend>Robô de atendimento</legend>
+          <label className="linha-check"><input type="radio" checked={!f.robo_proprio} onChange={() => setF({ ...f, robo_proprio: false })} /> Usar o robô do grupo (o mesmo das outras conexões)</label>
+          <label className="linha-check"><input type="radio" checked={f.robo_proprio} onChange={() => setF({ ...f, robo_proprio: true })} /> Robô próprio desta conexão</label>
+          {f.robo_proprio && <small className="cinza">O robô próprio começa como uma cópia do robô do grupo. Ajuste na aba Robô de atendimento, escolhendo esta conexão.</small>}
+        </fieldset>
+        {meta && <label>ID do número (Phone number ID)<input value={f.phone_number_id} inputMode="numeric" data-livre required placeholder="Copie do painel da Meta, em WhatsApp > Configuração da API"
+          onChange={(e) => setF({ ...f, phone_number_id: e.target.value.replace(/\D/g, '') })} /></label>}
+        {d.provedor !== 'evolution' && <label>Número (só para mostrar)<input value={f.numero} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => setF({ ...f, numero: mascaraTelefone(e.target.value) })} /></label>}
+        {d.provedor === 'evolution' && novo && <p className="cinza ajuda">Depois de salvar, aparece o QR code para ligar o celular desta conexão.</p>}
+        {!novo && <label className="linha-check"><input type="checkbox" checked={f.ativo} onChange={(e) => setF({ ...f, ativo: e.target.checked })} /> Conexão ligada (desligada: para de receber e mandar, mas o histórico fica)</label>}
+        {erro && <p className="erro" role="alert">{erro}</p>}
+        <div className="acoes-modal">
+          <button type="button" className="botao-contorno" onClick={aoFechar}>Voltar</button>
+          <button className="botao-primario" disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+        </div>
+      </form>
+    </Janela>
+  );
+}
+
+// WhatsApp por QR code (Evolution): o master lê o QR code com o celular da conexão, como no WhatsApp Web
 const ESTADOS_QR = { open: 'ligado', connecting: 'esperando a leitura do QR code', close: 'desligado', sem_instancia: 'desligado' };
-function ConectarQr({ aoFechar, aoSalvar }) {
+function ConectarQr({ conexao, aoFechar }) {
   const [e, setE] = useState(null);
   const [qr, setQr] = useState(null);
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
-  const ligou = useRef(false);
 
-  const ver = () => api('/whatsapp/evolution/estado').then((r) => {
+  const ver = () => api(`/whatsapp/evolution/estado?conexao=${conexao.id}`).then((r) => {
     setE(r); setErro('');
-    if (r.estado === 'open') { setQr(null); ligou.current = true; }
+    if (r.estado === 'open') setQr(null);
   }).catch((f) => setErro(f.message));
   useEffect(() => { ver(); }, []);
   // enquanto o QR code está na tela, confere a cada 3 segundos e troca o código a cada 30 (ele vence)
@@ -579,19 +723,18 @@ function ConectarQr({ aoFechar, aoSalvar }) {
     if (!renovar) setOcupado(true);
     setErro('');
     try {
-      const r = await api('/whatsapp/evolution/conectar', { metodo: 'POST' });
+      const r = await api('/whatsapp/evolution/conectar', { metodo: 'POST', corpo: { conexao: conexao.id } });
       if (r.estado === 'open') { setQr(null); await ver(); } else { setQr({ imagem: r.qr, codigo: r.codigo, desde: renovar ? qr?.desde : Date.now() }); setE((x) => ({ ...x, estado: 'connecting' })); }
     } catch (f) { setErro(f.message); } finally { setOcupado(false); }
   }
   async function desligar() {
-    if (!confirm('Desligar o WhatsApp deste grupo? As mensagens param de chegar até ler o QR code de novo.')) return;
+    if (!confirm(`Desligar o WhatsApp da conexão ${conexao.nome}? As mensagens dela param de chegar até ler o QR code de novo.`)) return;
     setOcupado(true);
-    try { await api('/whatsapp/evolution/desconectar', { metodo: 'POST' }); await ver(); } catch (f) { setErro(f.message); } finally { setOcupado(false); }
+    try { await api('/whatsapp/evolution/desconectar', { metodo: 'POST', corpo: { conexao: conexao.id } }); await ver(); } catch (f) { setErro(f.message); } finally { setOcupado(false); }
   }
-  const fechar = () => (ligou.current ? aoSalvar() : aoFechar());
 
   return (
-    <Janela titulo="Ligar o WhatsApp do grupo" aoFechar={fechar}>
+    <Janela titulo={`Ligar o WhatsApp · ${conexao.nome}`} aoFechar={aoFechar}>
       <div className="formulario conectar-qr">
         <p className="cinza ajuda">
           WhatsApp por QR code (não oficial). Use de preferência um número que não seja o principal da loja:
@@ -615,42 +758,9 @@ function ConectarQr({ aoFechar, aoSalvar }) {
           {e?.estado === 'open'
             ? <button type="button" className="botao-contorno" disabled={ocupado} onClick={desligar}>Desligar</button>
             : !qr && <button type="button" className="botao-primario" disabled={ocupado || !e} onClick={() => conectar(false)}>{ocupado ? 'Preparando…' : 'Mostrar QR code'}</button>}
-          <button type="button" className="botao-contorno" onClick={fechar}>{e?.estado === 'open' ? 'Pronto' : 'Fechar'}</button>
+          <button type="button" className="botao-contorno" onClick={aoFechar}>{e?.estado === 'open' ? 'Pronto' : 'Voltar'}</button>
         </div>
       </div>
-    </Janela>
-  );
-}
-
-function Configurar({ situacao, aoFechar, aoSalvar }) {
-  if (situacao.provedor === 'evolution') return <ConectarQr aoFechar={aoFechar} aoSalvar={aoSalvar} />;
-  return <ConfigurarMeta situacao={situacao} aoFechar={aoFechar} aoSalvar={aoSalvar} />;
-}
-
-function ConfigurarMeta({ situacao, aoFechar, aoSalvar }) {
-  const n = situacao.numero;
-  const [f, setF] = useState({ phone_number_id: n?.phone_number_id || '', numero: n?.numero ? mascaraTelefone(String(n.numero).replace(/^55/, '')) : '' });
-  const [erro, setErro] = useState('');
-  return (
-    <Janela titulo="Configurar WhatsApp do grupo" aoFechar={aoFechar}>
-      <form className="formulario" onSubmit={async (e) => {
-        e.preventDefault(); setErro('');
-        try { await api('/whatsapp/numero', { metodo: 'PUT', corpo: f }); aoSalvar(); } catch (falha) { setErro(falha.message); }
-      }}>
-        <p className="cinza ajuda">
-          Situação: {situacao.provedor === 'meta' ? 'API oficial da Meta ligada' : 'modo teste (nada sai pelo WhatsApp)'}
-          {situacao.provedor === 'meta' && !situacao.token && ', mas falta o WHATSAPP_TOKEN no servidor'}.
-        </p>
-        <label>ID do número (Phone number ID)<input value={f.phone_number_id} inputMode="numeric" data-livre placeholder="Copie do painel da Meta, em WhatsApp > Configuração da API"
-          onChange={(e) => setF({ ...f, phone_number_id: e.target.value.replace(/\D/g, '') })} /></label>
-        <label>Número (só para mostrar)<input value={f.numero} inputMode="tel" placeholder="(11) 99999-9999" onChange={(e) => setF({ ...f, numero: mascaraTelefone(e.target.value) })} /></label>
-        <p className="cinza ajuda">Deixe o ID em branco e salve para desligar o WhatsApp deste grupo.</p>
-        {erro && <p className="erro" role="alert">{erro}</p>}
-        <div className="acoes-modal">
-          <button type="button" className="botao-contorno" onClick={aoFechar}>Cancelar</button>
-          <button className="botao-primario">Salvar</button>
-        </div>
-      </form>
     </Janela>
   );
 }
@@ -728,13 +838,15 @@ function Robo() {
   const [novoTipo, setNovoTipo] = useState('mensagem');
   const [destaque, setDestaque] = useState(null); // bloco clicado no fluxograma
   const [modelo, setModelo] = useState('');
+  const [conexao, setConexao] = useState(''); // '' = robô do grupo; id = robô próprio da conexão
   const promptArquivo = useRef(null);
 
-  const carregar = () => api('/whatsapp/robo').then((r) => {
+  const carregar = (c = conexao) => api(`/whatsapp/robo${c ? `?conexao=${c}` : ''}`).then((r) => {
     setD(r);
-    setF({ ...r.robo, unidades: r.lojas.map((u) => ({ ...u, cep: mascaraCep(u.cep), horarios: u.horarios || HORARIO_PADRAO })) });
+    setF({ ...r.robo, conexao: r.conexao, unidades: r.lojas.map((u) => ({ ...u, cep: mascaraCep(u.cep), horarios: u.horarios || HORARIO_PADRAO })) });
   }).catch((x) => setErro(x.message));
   useEffect(() => { carregar(); }, []);
+  const trocarRobo = (c) => { setConexao(c); setF(null); setOk(''); setErro(''); setDestaque(null); carregar(c); };
   if (!f) return erro ? <p className="erro" role="alert">{erro}</p> : <p className="cinza">Carregando…</p>;
 
   const pode = d.pode_enviar;
@@ -774,6 +886,14 @@ function Robo() {
 
   return (
     <form className="cartao painel formulario robo-config" onSubmit={salvar}>
+      {/* mais de uma conexão com robô próprio: escolhe qual robô configurar */}
+      {d.robos.length > 1 && (
+        <label className="robo-escolha">Qual robô
+          <select value={conexao} onChange={(e) => trocarRobo(e.target.value)}>
+            {d.robos.map((x) => <option key={x.id || ''} value={x.id || ''}>{x.nome}{!x.id && x.conexoes.length ? ` (${x.conexoes.join(', ')})` : ''}</option>)}
+          </select>
+        </label>
+      )}
       <fieldset className="sem-borda" disabled={!pode}>
         <label className="linha-check robo-ligar">
           <input type="checkbox" checked={f.ativo} onChange={(e) => mudar({ ativo: e.target.checked })} />

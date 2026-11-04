@@ -172,7 +172,7 @@ WHATSAPP_VERIFY_TOKEN=uma-senha-que-voce-inventa
 WHATSAPP_MODELO_CODIGO=codigo_acesso
 ```
 
-5. No sistema, em WhatsApp > Configurar, informe o ID do número (Phone number ID) de cada grupo.
+5. No sistema, em WhatsApp > Conexões, clique em **+ Nova conexão** e informe o ID do número (Phone number ID).
 6. Para **receber** mensagens, o sistema precisa estar num endereço público com https (a Hostinger).
    No painel da Meta, cadastre o webhook `https://seu-endereco/api/whatsapp/webhook` com a mesma
    `WHATSAPP_VERIFY_TOKEN` e assine o campo `messages`. No Mac (localhost), só o envio funciona.
@@ -201,7 +201,7 @@ EVOLUTION_API_KEY=a-mesma-chave
 ```
 
 3. Rode `npm run whatsapp:ligar` (baixa e liga o serviço da Evolution no Docker, ao lado do banco).
-4. Religue a API (`npm run iniciar`). No sistema, em WhatsApp > Configurar, clique em **Mostrar QR code**
+4. Religue a API (`npm run iniciar`). No sistema, em WhatsApp > Conexões, crie a conexão (ou clique em **QR code** numa que já existe) e depois em **Mostrar QR code**
    e leia com o celular em WhatsApp > Dispositivos conectados > Conectar dispositivo.
 
 As mensagens recebidas chegam no quadro e o robô responde, mesmo no Mac (não precisa de endereço público).
@@ -240,6 +240,20 @@ ANTHROPIC_MODELO=claude-opus-5-5
 ```
 
 O `ANTHROPIC_MODELO` é opcional. Com `claude-haiku-5-5` cada mensagem sai mais barata.
+
+## Várias conexões de WhatsApp
+
+Em **WhatsApp > Conexões** (só o master) cada grupo pode ter quantos números quiser. Cada conexão é do
+**grupo todo** ou de **uma unidade**, e usa o **robô do grupo** ou um **robô próprio** (que começa como cópia do
+robô do grupo e é ajustado na aba Robô de atendimento, em "Qual robô"). Conexão de uma unidade: o robô não
+pergunta a unidade. Cada conversa fica na conexão que recebeu a mensagem e é respondida pelo mesmo número; o
+mesmo celular pode ter uma conversa em cada conexão. Com mais de uma conexão aparece o filtro **Conexão** nos
+Chamados e nas Conversas.
+
+**Quem vê as conversas** é definido na tela **Usuários**, no cadastro de cada usuário ("WhatsApp: conversas que
+vê"): por padrão, as conexões das filiais dele e as do grupo todo; ou **só as conexões marcadas**. O perfil
+ainda precisa ter o módulo WhatsApp. O master vê tudo. Confirmações da agenda e documentos vão pela conexão
+da unidade (senão pela do grupo todo). Banco: `db/54-whatsapp-conexoes.sql` (`npm run banco:atualizar`).
 
 ## Rodar no dia a dia
 
