@@ -3,6 +3,7 @@ import { api, cabecalhos } from './api.js';
 import { criarTem } from './modulos.js';
 import { Icone } from './icones.jsx';
 import { abrirArquivo } from './Colaboradores.jsx';
+import { horas } from './FeriasAtestados.jsx';
 
 // Controle de ponto dos colaboradores: registro com foto (entrada, saída para o
 // almoço, volta do almoço, saída) e espelho do mês com edição e justificativa.
@@ -266,6 +267,10 @@ function Espelho({ loja }) {
     .sort((a, b) => (a.tipo ? ORDEM.indexOf(a.tipo) + 1 : 0) - (b.tipo ? ORDEM.indexOf(b.tipo) + 1 : 0));
   const comprovante = (d) => dados?.comprovantes?.find((c) => c.data === d);
   const totalMes = dias.reduce((t, d) => t + minutosDia(doDia(d)), 0);
+  // férias do colaborador e banco de horas (saldo de cada dia contado)
+  const deFerias = (d) => (dados?.ferias || []).some((f) => d >= f.inicio && d <= f.fim);
+  const bancoDia = (d) => dados?.banco?.dias?.find((x) => x.data === d);
+  const bancoMes = (dados?.banco?.dias || []).reduce((t, x) => t + x.saldo, 0);
 
   return (
     <>
@@ -282,7 +287,10 @@ function Espelho({ loja }) {
       {erro && <p className="erro" role="alert">{erro}</p>}
       {dados && (
         <>
-          <small className="cinza">Total no mês: <strong>{duracao(totalMes)}</strong> · clique num horário para ver a foto{dados.pode.ajustar ? ' ou editar' : ''}.</small>
+          <small className="cinza">Total no mês: <strong>{duracao(totalMes)}</strong>
+            {dados.banco && <> · Banco de horas no mês: <strong className={bancoMes > 0 ? 'positivo' : bancoMes < 0 ? 'negativo' : ''}>{horas(bancoMes, true)}</strong>
+              {' '}· saldo até ontem: <strong className={dados.banco.saldo > 0 ? 'positivo' : dados.banco.saldo < 0 ? 'negativo' : ''}>{horas(dados.banco.saldo, true)}</strong></>}
+            {' '}· clique num horário para ver a foto{dados.pode.ajustar ? ' ou editar' : ''}.</small>
           <div className="tabela-ponto" role="table" aria-label="Espelho do ponto">
             <div className="tp-linha tp-cabecalho" role="row">
               <span>Dia</span>{ORDEM.map((k) => <span key={k}>{MARCACOES[k]}</span>)}<span>Horas</span><span>Justificativa</span>
@@ -320,6 +328,9 @@ function Espelho({ loja }) {
                   ))}
                   <span data-rotulo="Horas" className="tp-horas">
                     {minutosDia(marcas) ? duracao(minutosDia(marcas)) : ''}
+                    {bancoDia(d) && bancoDia(d).saldo !== 0 && (
+                      <small className={`tp-banco ${bancoDia(d).saldo > 0 ? 'positivo' : 'negativo'}`} title="Banco de horas do dia">{horas(bancoDia(d).saldo, true)}</small>
+                    )}
                     {comprovante(d) && (
                       <button className={`tp-comprovante ${comprovante(d).envio}`} title={`Comprovante do dia nº ${comprovante(d).nsr}: ${ENVIO[comprovante(d).envio] || comprovante(d).envio}${comprovante(d).erro ? ` (${comprovante(d).erro})` : ''}`}
                         aria-label={`Comprovante do dia ${new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}`}
@@ -327,9 +338,10 @@ function Espelho({ loja }) {
                     )}
                   </span>
                   <span data-rotulo="Justificativa" className="tp-justificativa">
+                    {deFerias(d) && <span className="etiqueta">Férias</span>}
                     {js.map((j) => (
                       <span key={j.tipo || 'dia'} className="tp-just-item">
-                        <small title={`${j.criado_por || ''}`}><strong>{j.tipo ? MARCACOES[j.tipo] : 'Dia'}:</strong> {j.texto}</small>
+                        <small title={`${j.criado_por || ''}`}><strong>{j.tipo ? MARCACOES[j.tipo] : j.atestado_id ? 'Atestado' : 'Dia'}:</strong> {j.texto}</small>
                         {j.arquivos?.map((a) => (
                           <button key={a.id} className="botao-texto tp-anexo" title="Abrir documento"
                             onClick={() => abrirArquivo(`/ponto/justificativa/arquivos/${a.id}`).catch((f) => setErro(f.message))}>📎 {a.nome}</button>
@@ -365,6 +377,7 @@ function Espelho({ loja }) {
       )}
       {justificando && dados && (
         <Justificar colaborador={dados.colaborador.id} {...justificando} atual={justificativa(justificando.data, justificando.tipo)?.texto || ''}
+          atestado={Boolean(justificativa(justificando.data, justificando.tipo)?.atestado_id)}
           arquivos={justificativa(justificando.data, justificando.tipo)?.arquivos || []} aoMudar={carregar}
           aoFechar={() => setJustificando(null)} aoSalvar={() => { setJustificando(null); carregar(); }} />
       )}
@@ -438,8 +451,9 @@ function DetalheMarcacao({ dados, data, tipo, aoFechar, aoSalvar }) {
   );
 }
 
-function Justificar({ colaborador, data, tipo, atual, arquivos, aoMudar, aoFechar, aoSalvar }) {
+function Justificar({ colaborador, data, tipo, atual, atestado: eraAtestado, arquivos, aoMudar, aoFechar, aoSalvar }) {
   const [texto, setTexto] = useState(atual);
+  const [atestado, setAtestado] = useState(eraAtestado);
   const [novos, setNovos] = useState([]); // arquivos escolhidos, enviados ao salvar
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
@@ -448,7 +462,7 @@ function Justificar({ colaborador, data, tipo, atual, arquivos, aoMudar, aoFecha
     if (novos.length && !texto.trim()) return setErro('Escreva a justificativa para anexar o documento.');
     setSalvando(true); setErro('');
     try {
-      await api('/ponto/justificativa', { metodo: 'PUT', corpo: { colaborador_id: colaborador, data, tipo, texto } });
+      await api('/ponto/justificativa', { metodo: 'PUT', corpo: { colaborador_id: colaborador, data, tipo, texto, ...(!tipo && { atestado }) } });
       for (const arq of novos) {
         const q = new URLSearchParams({ colaborador, data, ...(tipo && { tipo }), nome: arq.name, mime: arq.type || 'application/octet-stream' });
         const r = await fetch(`/api/ponto/justificativa/arquivos?${q}`, {
@@ -475,6 +489,9 @@ function Justificar({ colaborador, data, tipo, atual, arquivos, aoMudar, aoFecha
         <form className="formulario" onSubmit={salvar}>
           <label>Justificativa<textarea rows={3} value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ex.: atestado médico, folga combinada…" autoFocus /></label>
           <small className="cinza">Deixe em branco e salve para apagar a justificativa (e os documentos dela).</small>
+          {!tipo && (
+            <label className="linha-check"><input type="checkbox" checked={atestado} onChange={(e) => setAtestado(e.target.checked)} /> Falta com atestado (vai para a aba Atestados do colaborador e não conta como falta no banco de horas)</label>
+          )}
           <fieldset className="grupo-permissoes">
             <legend>Documentos (atestado, declaração…)</legend>
             {arquivos.length > 0 && (
