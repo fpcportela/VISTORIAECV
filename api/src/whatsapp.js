@@ -13,14 +13,16 @@ import { avisarConfirmado } from './agenda.js';
 //   WHATSAPP_APP_SECRET=...         chave secreta do app (confere se o webhook veio mesmo da Meta)
 //   WHATSAPP_VERIFY_TOKEN=...       senha que você inventa e repete no cadastro do webhook
 //   WHATSAPP_MODELO_CODIGO=codigo_acesso   modelo de autenticação aprovado (código da senha)
-// O número de cada grupo (phone_number_id) é cadastrado na tela WhatsApp > Configurar.
+// Cada grupo pode ter várias conexões (números), do grupo todo ou de uma unidade, cadastradas
+// em WhatsApp > Conexões (só o master). Cada conversa é de uma conexão e responde por ela.
+// Quem vê as conversas de cada conexão: db/54 (ve_whatsapp) e a tela Usuários.
 //
 // Opção sem a Meta (não oficial, por QR code): a Evolution API, que roda no Docker ao lado do banco.
 //   WHATSAPP_PROVEDOR=evolution
 //   EVOLUTION_URL=http://localhost:8080
 //   EVOLUTION_API_KEY=...           a mesma chave do serviço da Evolution (docker-compose)
 //   EVOLUTION_WEBHOOK_URL=http://host.docker.internal:3001/api/whatsapp/evolution
-// Cada grupo vira uma "instância" da Evolution; o celular é ligado lendo o QR code em WhatsApp > Configurar.
+// Cada conexão vira uma "instância" da Evolution; o celular é ligado lendo o QR code em WhatsApp > Conexões.
 
 const provedor = () => (['meta', 'evolution'].includes(process.env.WHATSAPP_PROVEDOR) ? process.env.WHATSAPP_PROVEDOR : 'teste');
 const GRAPH = process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com/v21.0';
@@ -45,7 +47,7 @@ class ErroWhatsApp extends Error {}
 async function chamarMeta(phoneNumberId, corpo) {
   const token = process.env.WHATSAPP_TOKEN;
   if (!token) throw new ErroWhatsApp('O WhatsApp ainda não foi configurado. Coloque o WHATSAPP_TOKEN no arquivo api/.env.');
-  if (!phoneNumberId) throw new ErroWhatsApp('Cadastre o número do WhatsApp deste grupo em WhatsApp > Configurar.');
+  if (!phoneNumberId) throw new ErroWhatsApp('Cadastre o número do WhatsApp desta unidade em WhatsApp > Conexões.');
   const r = await fetch(`${GRAPH}/${encodeURIComponent(phoneNumberId)}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -64,7 +66,8 @@ async function chamarMeta(phoneNumberId, corpo) {
 
 // ------------------------------------------------------------ Evolution API (QR code)
 const EVO = () => (process.env.EVOLUTION_URL || 'http://localhost:8080').replace(/\/+$/, '');
-const instanciaDoGrupo = (empresa) => `vistoria-${empresa}`;
+// Instância da Evolution = phone_number_id da conexão (a primeira do grupo é "vistoria-<grupo>",
+// as novas "vistoria-<id da conexão>")
 // Senha que a Evolution manda no cabeçalho do webhook (vem da própria chave, sem outra configuração)
 const chaveWebhook = () => crypto.createHash('sha256').update(`webhook:${process.env.EVOLUTION_API_KEY || ''}`).digest('hex');
 
@@ -94,7 +97,7 @@ async function chamarEvolution(caminho, { metodo = 'GET', corpo } = {}) {
 }
 
 async function enviarEvolution(instancia, caminho, corpo) {
-  if (!instancia) throw new ErroWhatsApp('Ligue o WhatsApp deste grupo em WhatsApp > Configurar (ler o QR code).');
+  if (!instancia) throw new ErroWhatsApp('Ligue o WhatsApp desta unidade em WhatsApp > Conexões (ler o QR code).');
   const d = await chamarEvolution(`/message/${caminho}/${encodeURIComponent(instancia)}`, { metodo: 'POST', corpo });
   return { id_externo: d?.key?.id || null, status: 'enviada' };
 }
@@ -190,7 +193,7 @@ export async function enviarDocumento(phoneNumberId, para, { bytes, nome, mime =
   }
   const token = process.env.WHATSAPP_TOKEN;
   if (!token) throw new ErroWhatsApp('O WhatsApp ainda não foi configurado. Coloque o WHATSAPP_TOKEN no arquivo api/.env.');
-  if (!phoneNumberId) throw new ErroWhatsApp('Cadastre o número do WhatsApp deste grupo em WhatsApp > Configurar.');
+  if (!phoneNumberId) throw new ErroWhatsApp('Cadastre o número do WhatsApp desta unidade em WhatsApp > Conexões.');
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
   form.append('type', mime);
@@ -214,9 +217,10 @@ export async function enviarDocumento(phoneNumberId, para, { bytes, nome, mime =
   return { id_externo: id, status: 'enviada' };
 }
 
-// Número de WhatsApp do grupo da loja (para mensagens que não são de uma conversa)
+// Número de WhatsApp da unidade (para mensagens que não são de uma conversa): a conexão da
+// unidade, senão a do grupo todo
 export const numeroDoGrupo = async (db, loja) =>
-  (await db.query('select n.phone_number_id from whatsapp_numeros n join lojas l on l.empresa_id = n.empresa_id where l.id = $1 and n.ativo', [loja])).rows[0]?.phone_number_id || null;
+  (await db.query('select phone_number_id from whatsapp_numeros where id = whatsapp_numero_loja($1)', [loja])).rows[0]?.phone_number_id || null;
 
 async function enviarCodigo(phoneNumberId, para, codigo) {
   if (provedor() === 'teste') {
@@ -255,6 +259,48 @@ async function grupoDoWhatsApp(db, permissao) {
 
 const podeEnviar = (db, empresa) =>
   db.query("select exists (select 1 from lojas l where l.empresa_id = $1 and pode(l.id, 'whatsapp.enviar')) as ok", [empresa]).then((r) => r.rows[0].ok);
+
+// Conexões do grupo que a pessoa vê (o master vê todas). As de mentira do modo teste também
+// aparecem (é nelas que a simulação cai), marcadas como teste.
+const conexoesVisiveis = async (db, empresa) => (await db.query(
+  `select n.id, n.nome, n.numero, n.loja_id, l.nome as loja, n.ativo, n.robo_proprio, n.phone_number_id like 'teste-%' as teste,
+          ve_whatsapp(n.id, n.empresa_id, 'whatsapp.enviar') as pode_enviar
+     from whatsapp_numeros n left join lojas l on l.id = n.loja_id
+    where n.empresa_id = $1 and ve_whatsapp(n.id, n.empresa_id)
+    order by n.criado_em, n.nome`, [empresa])).rows;
+
+// Conexão escolhida no filtro da tela (?conexao=id), conferindo que a pessoa vê; vazio = todas
+const conexaoDoFiltro = (v) => (UUID.test(v || '') ? v : null);
+
+// Conversa (contato) que a pessoa vê; com p_permissao = whatsapp.enviar, que pode responder
+async function contatoVisivel(db, id, permissao = 'whatsapp.ver') {
+  if (!UUID.test(id || '')) throw new Recusa(404, 'Conversa não encontrada.');
+  const k = (await db.query('select k.*, ve_whatsapp(k.numero_id, k.empresa_id, $2) as ok from whatsapp_contatos k where k.id = $1', [id, permissao])).rows[0];
+  if (!k) throw new Recusa(404, 'Conversa não encontrada.');
+  if (!k.ok) throw new Recusa(403, permissao === 'whatsapp.enviar' ? 'Seu perfil não pode responder as conversas desta conexão.' : 'Seu perfil não vê as conversas desta conexão.');
+  return k;
+}
+async function chamadoVisivel(db, id, permissao = 'whatsapp.enviar') {
+  if (!UUID.test(id || '')) throw new Recusa(404, 'Chamado não encontrado.');
+  const ch = (await db.query('select * from whatsapp_chamados where id = $1', [id])).rows[0];
+  if (!ch) throw new Recusa(404, 'Chamado não encontrado.');
+  await contatoVisivel(db, ch.contato_id, permissao);
+  return ch;
+}
+
+// Conexão para uma conversa nova: a pedida (se a pessoa vê), senão a da unidade, senão a primeira que a pessoa vê
+async function conexaoParaNova(db, empresa, { numero, loja, permissao = 'whatsapp.ver' } = {}) {
+  const r = (await db.query(
+    `select n.id from whatsapp_numeros n
+      where n.empresa_id = $1 and n.ativo and ve_whatsapp(n.id, n.empresa_id, $4)
+      order by (n.id = $2) desc nulls last, (n.id = whatsapp_numero_loja($3)) desc nulls last,
+               (n.phone_number_id like 'teste-%'), n.criado_em
+      limit 1`, [empresa, UUID.test(numero || '') ? numero : null, UUID.test(loja || '') ? loja : null, permissao])).rows[0];
+  if (r) return r.id;
+  // grupo sem nenhuma conexão: a conversa fica sem conexão (aparece para quem tem WhatsApp no grupo)
+  if (!(await db.query('select 1 from whatsapp_numeros where empresa_id = $1', [empresa])).rowCount) return null;
+  throw new Recusa(403, 'Seu perfil não vê nenhuma conexão de WhatsApp deste grupo.');
+}
 
 const semAcentoNome = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
@@ -381,19 +427,139 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     for (const c of recebidos) atenderComRobo(c, { enviarTexto, enviarOpcoes, nacional });
   }));
 
-  // ------------------------------------------------------------ ligar o celular por QR code (Evolution)
+  // ------------------------------------------------------------ conexões (números) do grupo
+  // Só o master cadastra e liga as conexões. Cada uma é do grupo todo (loja_id vazio) ou de uma unidade.
   const grupoDoMaster = async (db) => {
-    if (!(await db.query('select eh_admin_rede() as m')).rows[0].m) throw new Recusa(403, 'Só o master liga o WhatsApp do grupo.');
+    if (!(await db.query('select eh_admin_rede() as m')).rows[0].m) throw new Recusa(403, 'Só o master configura as conexões do WhatsApp.');
     return grupoDoWhatsApp(db, 'whatsapp.ver');
+  };
+  const conexaoDoMaster = async (db, id) => {
+    const empresa = await grupoDoMaster(db);
+    if (!UUID.test(id || '')) throw new Recusa(404, 'Conexão não encontrada.');
+    const n = (await db.query('select * from whatsapp_numeros where id = $1 and empresa_id = $2', [id, empresa])).rows[0];
+    if (!n) throw new Recusa(404, 'Conexão não encontrada.');
+    return n;
   };
   const exigirEvolution = () => {
     if (provedor() !== 'evolution') throw new Recusa(400, 'O WhatsApp por QR code não está ativo. Coloque WHATSAPP_PROVEDOR=evolution no api/.env.');
   };
+  const lojaDoGrupo = async (db, empresa, loja) => {
+    if (!loja) return null;
+    if (!UUID.test(loja) || !(await db.query('select 1 from lojas where id = $1 and empresa_id = $2', [loja, empresa])).rowCount) {
+      throw new Recusa(400, 'Unidade não encontrada neste grupo.');
+    }
+    return loja;
+  };
+  // robô próprio ligado: começa como cópia do robô do grupo (depois cada um segue o seu)
+  const prepararRoboProprio = (db, n) => db.query(
+    `insert into whatsapp_robo (empresa_id, numero_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes,
+                                fluxo, responsavel_id, responsaveis, botoes)
+     select $1, $2, coalesce(r.ativo, false), r.saudacao, coalesce(r.etapas, '[]'), r.mensagem_final, coalesce($3, r.loja_id), r.servico_id,
+            coalesce(r.ia_ativa, false), r.ia_instrucoes, r.fluxo, r.responsavel_id, coalesce(r.responsaveis, '{}'), coalesce(r.botoes, true)
+       from (select 1) x left join whatsapp_robo r on r.empresa_id = $1 and r.numero_id is null
+     on conflict (empresa_id, numero_id) do nothing`, [n.empresa_id, n.id, n.loja_id]);
 
+  app.get('/api/whatsapp/conexoes', exigeLogin, comRecusa(async (req, res) => {
+    res.json(await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await grupoDoMaster(db);
+      const conexoes = (await db.query(
+        `select n.id, n.nome, n.phone_number_id, n.numero, n.loja_id, l.nome as loja, n.ativo, n.robo_proprio,
+                n.phone_number_id like 'teste-%' as teste,
+                (select count(*)::int from whatsapp_contatos k where k.numero_id = n.id) as conversas
+           from whatsapp_numeros n left join lojas l on l.id = n.loja_id
+          where n.empresa_id = $1 order by n.criado_em, n.nome`, [empresa])).rows;
+      const lojas = (await db.query('select id, nome from lojas where empresa_id = $1 and ativo order by nome', [empresa])).rows;
+      return { provedor: provedor(), token: Boolean(process.env.WHATSAPP_TOKEN), conexoes, lojas };
+    }));
+  }));
+
+  // Nova conexão. Na API oficial vem o ID do número (Phone number ID); no QR code a instância é criada aqui.
+  app.post('/api/whatsapp/conexoes', exigeLogin, comRecusa(async (req, res) => {
+    const b = req.body || {};
+    const nome = texto(b.nome, 60)?.toUpperCase();
+    if (!nome) throw new Recusa(400, 'Dê um nome à conexão (ex.: LOJA CENTRO, VENDAS).');
+    const id = crypto.randomUUID();
+    let phoneId = digitos(b.phone_number_id);
+    if (provedor() === 'evolution') phoneId = `vistoria-${id}`;
+    else if (provedor() === 'teste') phoneId = phoneId || `local-${id}`; // modo teste: a simulação cai nela
+    else if (phoneId.length < 8) throw new Recusa(400, 'Confira o ID do número (Phone number ID) no painel da Meta.');
+    const novo = await comoUsuario(req.usuarioId, async (db) => {
+      const empresa = await grupoDoMaster(db);
+      const loja = await lojaDoGrupo(db, empresa, b.loja_id || null);
+      if ((await db.query('select 1 from whatsapp_numeros where phone_number_id = $1', [phoneId])).rowCount) {
+        throw new Recusa(400, 'Este número já está cadastrado em outra conexão.');
+      }
+      if ((await db.query('select 1 from whatsapp_numeros where empresa_id = $1 and upper(nome) = $2', [empresa, nome])).rowCount) {
+        throw new Recusa(400, 'Já existe uma conexão com esse nome.');
+      }
+      const primeira = !(await db.query("select 1 from whatsapp_numeros where empresa_id = $1 and phone_number_id not like 'teste-%'", [empresa])).rowCount;
+      const n = (await db.query(
+        `insert into whatsapp_numeros (id, empresa_id, phone_number_id, numero, nome, loja_id, robo_proprio)
+         values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+        [id, empresa, phoneId, digitos(b.numero) || null, nome, loja, Boolean(b.robo_proprio)])).rows[0];
+      if (n.robo_proprio) await prepararRoboProprio(db, n);
+      // primeira conexão de verdade: as conversas que estavam sem conexão (ou na de teste) passam para ela
+      if (primeira) {
+        await db.query(
+          `update whatsapp_contatos k set numero_id = $2
+            where k.empresa_id = $1 and (k.numero_id is null or k.numero_id in (select id from whatsapp_numeros where empresa_id = $1 and phone_number_id like 'teste-%'))
+              and not exists (select 1 from whatsapp_contatos o where o.empresa_id = $1 and o.numero_id = $2 and o.telefone = k.telefone)`, [empresa, n.id]);
+      }
+      return n;
+    });
+    res.json({ id: novo.id });
+  }));
+
+  app.put('/api/whatsapp/conexoes/:id', exigeLogin, comRecusa(async (req, res) => {
+    const b = req.body || {};
+    await comoUsuario(req.usuarioId, async (db) => {
+      const n = await conexaoDoMaster(db, req.params.id);
+      const nome = 'nome' in b ? texto(b.nome, 60)?.toUpperCase() : n.nome;
+      if (!nome) throw new Recusa(400, 'Dê um nome à conexão.');
+      if ((await db.query('select 1 from whatsapp_numeros where empresa_id = $1 and upper(nome) = $2 and id <> $3', [n.empresa_id, nome, n.id])).rowCount) {
+        throw new Recusa(400, 'Já existe uma conexão com esse nome.');
+      }
+      const loja = 'loja_id' in b ? await lojaDoGrupo(db, n.empresa_id, b.loja_id || null) : n.loja_id;
+      let phoneId = n.phone_number_id;
+      if (provedor() === 'meta' && 'phone_number_id' in b) {
+        phoneId = digitos(b.phone_number_id);
+        if (phoneId.length < 8) throw new Recusa(400, 'Confira o ID do número (Phone number ID) no painel da Meta.');
+        if ((await db.query('select 1 from whatsapp_numeros where phone_number_id = $1 and id <> $2', [phoneId, n.id])).rowCount) {
+          throw new Recusa(400, 'Este número já está cadastrado em outra conexão.');
+        }
+      }
+      const numero = 'numero' in b ? digitos(b.numero) || null : n.numero;
+      const robo = 'robo_proprio' in b ? Boolean(b.robo_proprio) : n.robo_proprio;
+      const ativo = 'ativo' in b ? b.ativo !== false : n.ativo;
+      const nova = (await db.query(
+        `update whatsapp_numeros set nome = $2, loja_id = $3, phone_number_id = $4, numero = $5, robo_proprio = $6, ativo = $7, atualizado_em = now()
+          where id = $1 returning *`, [n.id, nome, loja, phoneId, numero, robo, ativo])).rows[0];
+      if (nova.robo_proprio) await prepararRoboProprio(db, nova);
+    });
+    res.json({ ok: true });
+  }));
+
+  // Excluir: só sem conversas (com conversas, desligue a conexão para guardar o histórico)
+  app.delete('/api/whatsapp/conexoes/:id', exigeLogin, comErroZap(async (req, res) => {
+    const n = await comoUsuario(req.usuarioId, async (db) => {
+      const x = await conexaoDoMaster(db, req.params.id);
+      if ((await db.query('select 1 from whatsapp_contatos where numero_id = $1 limit 1', [x.id])).rowCount) {
+        throw new Recusa(400, 'Esta conexão tem conversas. Desligue a conexão (Ativa) em vez de excluir, para não perder o histórico.');
+      }
+      await db.query('delete from whatsapp_numeros where id = $1', [x.id]);
+      return x;
+    });
+    if (provedor() === 'evolution' && n.phone_number_id.startsWith('vistoria-')) {
+      await chamarEvolution(`/instance/delete/${encodeURIComponent(n.phone_number_id)}`, { metodo: 'DELETE' }).catch(() => {});
+    }
+    res.json({ ok: true });
+  }));
+
+  // ------------------------------------------------------------ ligar o celular por QR code (Evolution), por conexão
   app.get('/api/whatsapp/evolution/estado', exigeLogin, comErroZap(async (req, res) => {
     exigirEvolution();
-    const empresa = await comoUsuario(req.usuarioId, (db) => grupoDoWhatsApp(db, 'whatsapp.ver'));
-    const instancia = instanciaDoGrupo(empresa);
+    const n = await comoUsuario(req.usuarioId, (db) => conexaoDoMaster(db, req.query.conexao));
+    const instancia = n.phone_number_id;
     const estado = await estadoEvolution(instancia);
     let numero = null, nome = null;
     if (estado === 'open') {
@@ -403,7 +569,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       nome = i?.profileName || i?.instance?.profileName || null;
       if (numero) {
         await comoUsuario(req.usuarioId, (db) => db.query(
-          'update whatsapp_numeros set numero = $2, atualizado_em = now() where phone_number_id = $1 and numero is distinct from $2', [instancia, numero]));
+          'update whatsapp_numeros set numero = $2, atualizado_em = now() where id = $1 and numero is distinct from $2', [n.id, numero]));
       }
     }
     res.json({ estado, numero, nome });
@@ -411,18 +577,12 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
 
   app.post('/api/whatsapp/evolution/conectar', exigeLogin, comErroZap(async (req, res) => {
     exigirEvolution();
-    const empresa = await comoUsuario(req.usuarioId, async (db) => {
-      const e = await grupoDoMaster(db);
-      const instancia = instanciaDoGrupo(e);
-      if ((await db.query('select 1 from whatsapp_numeros where phone_number_id = $1 and empresa_id <> $2', [instancia, e])).rowCount) {
-        throw new Recusa(400, 'Este número já está ligado a outro grupo.');
-      }
-      await db.query(
-        `insert into whatsapp_numeros (empresa_id, phone_number_id, numero) values ($1, $2, null)
-         on conflict (empresa_id) do update set phone_number_id = $2, ativo = true, atualizado_em = now()`, [e, instancia]);
-      return e;
+    const n = await comoUsuario(req.usuarioId, async (db) => {
+      const x = await conexaoDoMaster(db, req.body?.conexao);
+      await db.query('update whatsapp_numeros set ativo = true, atualizado_em = now() where id = $1', [x.id]);
+      return x;
     });
-    const instancia = instanciaDoGrupo(empresa);
+    const instancia = n.phone_number_id;
     await prepararInstancia(instancia);
     if ((await estadoEvolution(instancia)) === 'open') return res.json({ estado: 'open' });
     const d = await chamarEvolution(`/instance/connect/${encodeURIComponent(instancia)}`);
@@ -431,52 +591,38 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
 
   app.post('/api/whatsapp/evolution/desconectar', exigeLogin, comErroZap(async (req, res) => {
     exigirEvolution();
-    const empresa = await comoUsuario(req.usuarioId, grupoDoMaster);
-    await chamarEvolution(`/instance/logout/${encodeURIComponent(instanciaDoGrupo(empresa))}`, { metodo: 'DELETE' }).catch((e) => {
+    const n = await comoUsuario(req.usuarioId, (db) => conexaoDoMaster(db, req.body?.conexao));
+    await chamarEvolution(`/instance/logout/${encodeURIComponent(n.phone_number_id)}`, { metodo: 'DELETE' }).catch((e) => {
       if (e.status !== 404 && e.status !== 400) throw e;
     });
     res.json({ ok: true });
   }));
 
   // ------------------------------------------------------------ números da barra lateral
-  // Conversas com mensagem não lida e chamados em aberto (do grupo escolhido, ou de todos que a pessoa vê)
+  // Conversas com mensagem não lida e chamados em aberto (das conexões que a pessoa vê)
   app.get('/api/whatsapp/contadores', exigeLogin, comRecusa(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
       `select (select count(*)::int from whatsapp_contatos k
                 where k.nao_lidas > 0 and (grupo_ativo() is null or k.empresa_id = grupo_ativo())
-                  and exists (select 1 from lojas l where l.empresa_id = k.empresa_id and pode(l.id, 'whatsapp.ver'))) as nao_lidas,
-              (select count(*)::int from whatsapp_chamados h
+                  and ve_whatsapp(k.numero_id, k.empresa_id)) as nao_lidas,
+              (select count(*)::int from whatsapp_chamados h join whatsapp_contatos k on k.id = h.contato_id
                 where h.aberto and (grupo_ativo() is null or h.empresa_id = grupo_ativo())
-                  and exists (select 1 from lojas l where l.empresa_id = h.empresa_id and pode(l.id, 'whatsapp.ver'))) as abertos`)).rows[0]));
+                  and ve_whatsapp(k.numero_id, k.empresa_id)) as abertos`)).rows[0]));
   }));
 
-  // ------------------------------------------------------------ situação e número do grupo
+  // ------------------------------------------------------------ situação e conexões que a pessoa vê
   app.get('/api/whatsapp/situacao', exigeLogin, comRecusa(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
-      // o número de mentira do modo teste não conta como configurado
-      const numero = (await db.query("select phone_number_id, numero, ativo from whatsapp_numeros where empresa_id = $1 and phone_number_id not like 'teste-%'", [empresa])).rows[0] || null;
+      const conexoes = await conexoesVisiveis(db, empresa);
+      // as de mentira do modo teste não contam como configuradas
+      const configuradas = (await db.query("select count(*)::int as n from whatsapp_numeros where empresa_id = $1 and phone_number_id not like 'teste-%'", [empresa])).rows[0].n;
       const master = (await db.query('select eh_admin_rede() as m')).rows[0].m;
-      return { provedor: provedor(), token: Boolean(process.env.WHATSAPP_TOKEN), numero, master, pode_enviar: await podeEnviar(db, empresa) };
+      return {
+        provedor: provedor(), token: Boolean(process.env.WHATSAPP_TOKEN), configuradas, conexoes, master,
+        pode_enviar: conexoes.some((c) => c.pode_enviar) || (!configuradas && await podeEnviar(db, empresa)),
+      };
     }));
-  }));
-
-  app.put('/api/whatsapp/numero', exigeLogin, comRecusa(async (req, res) => {
-    const phoneId = digitos(req.body?.phone_number_id);
-    const numero = digitos(req.body?.numero) || null;
-    await comoUsuario(req.usuarioId, async (db) => {
-      if (!(await db.query('select eh_admin_rede() as m')).rows[0].m) throw new Recusa(403, 'Só o master configura o número do WhatsApp.');
-      const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
-      if (!phoneId) { await db.query('delete from whatsapp_numeros where empresa_id = $1', [empresa]); return; }
-      if (phoneId.length < 8) throw new Recusa(400, 'Confira o ID do número (Phone number ID) no painel da Meta.');
-      if ((await db.query('select 1 from whatsapp_numeros where phone_number_id = $1 and empresa_id <> $2', [phoneId, empresa])).rowCount) {
-        throw new Recusa(400, 'Este número já está ligado a outro grupo.');
-      }
-      await db.query(
-        `insert into whatsapp_numeros (empresa_id, phone_number_id, numero) values ($1, $2, $3)
-         on conflict (empresa_id) do update set phone_number_id = $2, numero = $3, ativo = true, atualizado_em = now()`, [empresa, phoneId, numero]);
-    });
-    res.json({ ok: true });
   }));
 
   // Modo teste: finge que um cliente mandou mensagem (para conhecer o módulo sem provedor)
@@ -487,10 +633,15 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     if (tel.length < 12 || !corpo) throw new Recusa(400, 'Informe o celular com DDD e a mensagem.');
     const contato = await comoUsuario(req.usuarioId, async (db) => {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.enviar');
-      // no modo teste o grupo ganha um número de mentira, só para a simulação
-      await db.query(`insert into whatsapp_numeros (empresa_id, phone_number_id, numero) values ($1, $2, null) on conflict (empresa_id) do nothing`,
-        [empresa, `teste-${empresa}`]);
-      const phoneId = (await db.query('select phone_number_id from whatsapp_numeros where empresa_id = $1', [empresa])).rows[0].phone_number_id;
+      // grupo sem conexão: no modo teste ganha um número de mentira, só para a simulação
+      if (!(await db.query('select 1 from whatsapp_numeros where empresa_id = $1', [empresa])).rowCount) {
+        await db.query(`insert into whatsapp_numeros (empresa_id, phone_number_id, numero, nome) values ($1, $2, null, 'TESTE') on conflict do nothing`,
+          [empresa, `teste-${empresa}`]);
+      }
+      // a mensagem chega na conexão escolhida (ou na primeira que a pessoa vê)
+      const numero = await conexaoParaNova(db, empresa, { numero: req.body?.conexao, permissao: 'whatsapp.enviar' });
+      const phoneId = (await db.query('select phone_number_id from whatsapp_numeros where id = $1', [numero])).rows[0]?.phone_number_id;
+      if (!phoneId) throw new Recusa(400, 'Escolha a conexão.');
       return (await db.query('select app_whatsapp_receber($1, $2, $3, $4, null, now()) as id',
         [phoneId, tel, texto(req.body?.nome, 80)?.toUpperCase() || null, corpo])).rows[0].id;
     });
@@ -508,6 +659,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
         `select h.id, h.coluna_id, h.titulo, h.ordem, h.aberto, h.criado_em, h.atualizado_em, h.responsavel_id, u.nome as responsavel,
                 h.robo_estado, h.venda_id, (select v.numero from vendas v where v.id = h.venda_id) as venda_numero,
                 k.id as contato_id, coalesce(k.nome, k.telefone) as contato, k.telefone, k.nao_lidas, k.cliente_id, cl.nome as cliente,
+                k.numero_id as conexao_id, (select n.nome from whatsapp_numeros n where n.id = k.numero_id) as conexao,
                 (select m.texto from whatsapp_conversa m where m.contato_id = k.id order by m.criado_em desc limit 1) as ultima,
                 ag.id as agendamento_id, ag.loja_id as agenda_loja, ag.inicio as agenda_inicio,
                 to_char(ag.inicio at time zone 'America/Sao_Paulo', 'YYYY-MM-DD') as agenda_dia
@@ -524,7 +676,9 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
                        abs(extract(epoch from a.inicio - now()))
               limit 1) ag on true
           where h.empresa_id = $1 and (h.aberto or h.concluido_em > now() - interval '30 days')
-          order by h.ordem, h.atualizado_em desc`, [empresa])).rows;
+            -- só as conexões que a pessoa vê (e a escolhida no filtro)
+            and ve_whatsapp(k.numero_id, k.empresa_id) and ($2::uuid is null or k.numero_id = $2)
+          order by h.ordem, h.atualizado_em desc`, [empresa, conexaoDoFiltro(req.query.conexao)])).rows;
       const responsaveis = (await db.query('select * from app_responsaveis($1)', [empresa]).catch(() => ({ rows: [] }))).rows;
       return { empresa, colunas, chamados, responsaveis, pode_enviar: await podeEnviar(db, empresa) };
     }));
@@ -606,16 +760,19 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     const tel = internacional(req.body?.telefone);
     if (tel.length < 12) throw new Recusa(400, 'Este cadastro não tem WhatsApp com DDD.');
     const id = await comoUsuario(req.usuarioId, async (db) => {
-      const empresa = UUID.test(req.body?.loja_id || '')
-        ? (await db.query("select empresa_id from lojas where id = $1 and pode(id, 'whatsapp.ver')", [req.body.loja_id])).rows[0]?.empresa_id
+      const loja = UUID.test(req.body?.loja_id || '') ? req.body.loja_id : null;
+      const empresa = loja
+        ? (await db.query("select l.empresa_id from lojas l where l.id = $1 and exists (select 1 from lojas o where o.empresa_id = l.empresa_id and pode(o.id, 'whatsapp.ver'))", [loja])).rows[0]?.empresa_id
         : await grupoDoWhatsApp(db, 'whatsapp.ver');
       if (!empresa) throw new Recusa(403, 'Seu perfil não tem acesso ao WhatsApp desta unidade.');
-      return (await db.query(
-        `insert into whatsapp_contatos (empresa_id, telefone, nome, cliente_id) values ($1, $2, $3, $4)
-         on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome),
-                                                         cliente_id = coalesce(whatsapp_contatos.cliente_id, excluded.cliente_id)
-         returning id`,
-        [empresa, tel, texto(req.body?.nome, 80)?.toUpperCase() || null, UUID.test(req.body?.cliente_id || '') ? req.body.cliente_id : null])).rows[0].id;
+      // já existe conversa com esse celular numa conexão que a pessoa vê: abre ela
+      const existente = (await db.query(
+        `select k.id from whatsapp_contatos k where k.empresa_id = $1 and k.telefone = $2 and ve_whatsapp(k.numero_id, k.empresa_id)
+          order by (k.numero_id = whatsapp_numero_loja($3)) desc nulls last, k.ultima_em desc nulls last limit 1`, [empresa, tel, loja])).rows[0];
+      if (existente && !UUID.test(req.body?.conexao || '')) return existente.id;
+      const numero = await conexaoParaNova(db, empresa, { numero: req.body?.conexao, loja });
+      return (await db.query('select app_whatsapp_contato($1, $2, $3, $4, $5) as id',
+        [empresa, numero, tel, texto(req.body?.nome, 80)?.toUpperCase() || null, UUID.test(req.body?.cliente_id || '') ? req.body.cliente_id : null])).rows[0].id;
     });
     res.json({ contato_id: id });
   }));
@@ -626,10 +783,10 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     const id = await comoUsuario(req.usuarioId, async (db) => {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
       await exigirEnvio(db, empresa);
-      const contato = (await db.query(
-        `insert into whatsapp_contatos (empresa_id, telefone, nome) values ($1, $2, $3)
-         on conflict (empresa_id, telefone) do update set nome = coalesce(excluded.nome, whatsapp_contatos.nome) returning id`,
-        [empresa, tel, texto(req.body?.nome, 80)?.toUpperCase() || null])).rows[0].id;
+      const numero = await conexaoParaNova(db, empresa, { numero: req.body?.conexao, permissao: 'whatsapp.enviar' });
+      const nome = texto(req.body?.nome, 80)?.toUpperCase() || null;
+      const contato = (await db.query('select app_whatsapp_contato($1, $2, $3, $4, null) as id', [empresa, numero, tel, nome])).rows[0].id;
+      if (nome) await db.query('update whatsapp_contatos set nome = $2 where id = $1', [contato, nome]);
       const ch = (await db.query('select app_whatsapp_chamado_do_contato($1, $2, $3) as id', [empresa, contato, req.usuarioId])).rows[0].id;
       const titulo = texto(req.body?.titulo, 120)?.toUpperCase();
       if (titulo) await db.query('update whatsapp_chamados set titulo = $2 where id = $1', [ch, titulo]);
@@ -643,9 +800,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     const b = req.body || {};
     let confirmado = null;
     await comoUsuario(req.usuarioId, async (db) => {
-      const ch = (await db.query('select * from whatsapp_chamados where id = $1', [req.params.id])).rows[0];
-      if (!ch) throw new Recusa(404, 'Chamado não encontrado.');
-      await exigirEnvio(db, ch.empresa_id);
+      const ch = await chamadoVisivel(db, req.params.id);
       let { coluna_id: coluna, aberto, concluido_em: concluido } = ch;
       if (UUID.test(b.coluna_id || '') && b.coluna_id !== ch.coluna_id) {
         const col = (await db.query('select id, finaliza from whatsapp_colunas where id = $1 and empresa_id = $2', [b.coluna_id, ch.empresa_id])).rows[0];
@@ -699,10 +854,25 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     }
     return r;
   }
+  // Robô do grupo (sem ?conexao) ou o robô próprio de uma conexão (?conexao=id, conexão com "robô próprio")
+  const roboEscolhido = async (db, empresa, conexao) => {
+    if (!conexao) return null;
+    const n = UUID.test(conexao) && (await db.query(
+      'select id from whatsapp_numeros where id = $1 and empresa_id = $2 and robo_proprio and ve_whatsapp(id, empresa_id)', [conexao, empresa])).rows[0];
+    if (!n) throw new Recusa(404, 'Esta conexão não tem robô próprio (ligue em WhatsApp > Conexões).');
+    return n.id;
+  };
   app.get('/api/whatsapp/robo', exigeLogin, comRecusa(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
-      const salvo = (await db.query('select * from whatsapp_robo where empresa_id = $1', [empresa])).rows[0];
+      const numero = await roboEscolhido(db, empresa, req.query.conexao);
+      const salvo = (await db.query('select * from whatsapp_robo where empresa_id = $1 and numero_id is not distinct from $2', [empresa, numero])).rows[0];
+      // robôs que dá para escolher: o do grupo e o de cada conexão com robô próprio (que a pessoa vê)
+      const robos = [{ id: null, nome: 'Robô do grupo', conexoes: (await db.query(
+        'select nome from whatsapp_numeros where empresa_id = $1 and not robo_proprio and phone_number_id not like \'teste-%\' order by criado_em', [empresa])).rows.map((x) => x.nome) },
+        ...(await db.query(
+          `select id, nome, loja_id from whatsapp_numeros where empresa_id = $1 and robo_proprio and ve_whatsapp(id, empresa_id) order by criado_em`,
+          [empresa])).rows.map((x) => ({ id: x.id, nome: `Robô próprio · ${x.nome}`, loja_id: x.loja_id }))];
       const g = (await db.query('select ia_liberada, eh_admin_rede() as master from empresas where id = $1', [empresa])).rows[0];
       // unidades com endereço e horário de funcionamento (o mesmo da agenda)
       const lojas = (await db.query(
@@ -715,7 +885,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const colunas = (await db.query('select id, nome from whatsapp_colunas where empresa_id = $1 and not finaliza order by ordem, nome', [empresa])).rows;
       const robo = { ...ROBO_PADRAO, ...(salvo || {}) };
       return {
-        robo: { ...robo, fluxo: fluxoDe(robo) }, campos: CAMPOS, blocos: BLOCOS, lojas, servicos, usuarios, colunas,
+        robo: { ...robo, fluxo: fluxoDe(robo) }, conexao: numero, robos, campos: CAMPOS, blocos: BLOCOS, lojas, servicos, usuarios, colunas,
         ia_liberada: g.ia_liberada, ia_configurada: iaDisponivel(), master: g.master, pode_enviar: await podeEnviar(db, empresa),
       };
     }));
@@ -740,6 +910,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     await comoUsuario(req.usuarioId, async (db) => {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
       await exigirEnvio(db, empresa);
+      const numero = await roboEscolhido(db, empresa, b.conexao || null);
       const ia = (await db.query('select ia_liberada from empresas where id = $1', [empresa])).rows[0].ia_liberada;
       const usaIA = fluxo ? fluxo.some((x) => x.tipo === 'ia') : Boolean(b.ia_ativa);
       if (usaIA && !ia) throw new Recusa(403, 'A IA ainda não foi liberada para este grupo. Tire o bloco "Conversa com IA" ou fale com o master (depende do contrato).');
@@ -758,14 +929,14 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       }
       await db.query(
         `insert into whatsapp_robo (empresa_id, ativo, saudacao, etapas, mensagem_final, loja_id, servico_id, ia_ativa, ia_instrucoes, fluxo,
-                                    responsavel_id, responsaveis, botoes, atualizado_em)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
-         on conflict (empresa_id) do update set ativo = $2, saudacao = $3, etapas = $4, mensagem_final = $5, loja_id = $6,
+                                    responsavel_id, responsaveis, botoes, numero_id, atualizado_em)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
+         on conflict (empresa_id, numero_id) do update set ativo = $2, saudacao = $3, etapas = $4, mensagem_final = $5, loja_id = $6,
                 servico_id = $7, ia_ativa = $8, ia_instrucoes = $9, fluxo = coalesce($10, whatsapp_robo.fluxo),
                 responsavel_id = $11, responsaveis = $12, botoes = $13, atualizado_em = now()`,
         [empresa, Boolean(b.ativo), texto(b.saudacao, 1000), JSON.stringify(etapas), texto(b.mensagem_final, 1000),
          loja, servico, usaIA && ia, texto(b.ia_instrucoes, 30000), fluxo && JSON.stringify(fluxo), responsavel, JSON.stringify(responsaveis),
-         b.botoes !== false]);
+         b.botoes !== false, numero]);
     });
     res.json({ ok: true });
   }));
@@ -890,9 +1061,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
   app.post('/api/whatsapp/chamados/:id/robo', exigeLogin, comRecusa(async (req, res) => {
     if (!UUID.test(req.params.id)) throw new Recusa(404, 'Chamado não encontrado.');
     await comoUsuario(req.usuarioId, async (db) => {
-      const ch = (await db.query('select * from whatsapp_chamados where id = $1', [req.params.id])).rows[0];
-      if (!ch) throw new Recusa(404, 'Chamado não encontrado.');
-      await exigirEnvio(db, ch.empresa_id);
+      const ch = await chamadoVisivel(db, req.params.id);
       if (ch.venda_id) throw new Recusa(400, 'O robô já abriu a venda deste atendimento.');
       const estado = req.body?.acao === 'devolver' ? 'coletando' : 'humano';
       await db.query('update whatsapp_chamados set robo_estado = $2, atualizado_em = now() where id = $1', [ch.id, estado]);
@@ -908,12 +1077,13 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const empresa = await grupoDoWhatsApp(db, 'whatsapp.ver');
       return (await db.query(
         `select k.id, coalesce(k.nome, k.telefone) as nome, k.telefone, k.nao_lidas, k.ultima_em, k.cliente_id, c.nome as cliente,
+                k.numero_id as conexao_id, (select n.nome from whatsapp_numeros n where n.id = k.numero_id) as conexao,
                 (select m.texto from whatsapp_conversa m where m.contato_id = k.id order by m.criado_em desc limit 1) as ultima
            from whatsapp_contatos k left join clientes c on c.id = k.cliente_id
-          where k.empresa_id = $1
+          where k.empresa_id = $1 and ve_whatsapp(k.numero_id, k.empresa_id) and ($3::uuid is null or k.numero_id = $3)
             and ($2::text is null or k.nome ilike '%' || $2 || '%' or c.nome ilike '%' || $2 || '%'
                  or (regexp_replace($2, '\\D', '', 'g') <> '' and k.telefone like '%' || regexp_replace($2, '\\D', '', 'g') || '%'))
-          order by k.ultima_em desc nulls last, k.criado_em desc limit 200`, [empresa, busca])).rows;
+          order by k.ultima_em desc nulls last, k.criado_em desc limit 200`, [empresa, busca, conexaoDoFiltro(req.query.conexao)])).rows;
     }));
   }));
 
@@ -921,11 +1091,11 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     if (!UUID.test(req.params.id)) throw new Recusa(404, 'Conversa não encontrada.');
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const k = (await db.query(
-        `select k.id, k.empresa_id, k.nome, k.telefone, k.cliente_id, c.nome as cliente, c.cpf_cnpj
-           from whatsapp_contatos k left join clientes c on c.id = k.cliente_id where k.id = $1`, [req.params.id])).rows[0];
+        `select k.id, k.empresa_id, k.numero_id as conexao_id, n.nome as conexao, k.nome, k.telefone, k.cliente_id, c.nome as cliente, c.cpf_cnpj
+           from whatsapp_contatos k left join clientes c on c.id = k.cliente_id left join whatsapp_numeros n on n.id = k.numero_id
+          where k.id = $1`, [req.params.id])).rows[0];
       if (!k) throw new Recusa(404, 'Conversa não encontrada.');
-      const ve = (await db.query("select exists (select 1 from lojas l where l.empresa_id = $1 and pode(l.id, 'whatsapp.ver')) as ok", [k.empresa_id])).rows[0].ok;
-      if (!ve) throw new Recusa(403, 'Seu perfil não tem acesso ao WhatsApp.');
+      await contatoVisivel(db, k.id);
       // contato ainda sem ligação: se o celular é de um (e só um) cliente cadastrado, liga sozinho
       if (!k.cliente_id) {
         const achados = (await db.query(
@@ -948,7 +1118,11 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
                 (select v.situacao from vendas v where v.id = h.venda_id) as venda_situacao from whatsapp_chamados h
           where h.contato_id = $1 order by h.aberto desc, h.criado_em desc limit 1`, [k.id])).rows[0] || null;
       if (req.query.ler === '1') await db.query('update whatsapp_contatos set nao_lidas = 0 where id = $1', [k.id]);
-      const robo = (await db.query('select ativo from whatsapp_robo where empresa_id = $1', [k.empresa_id])).rows[0]?.ativo || false;
+      // robô da conexão (o próprio dela ou o do grupo)
+      const robo = (await db.query(
+        `select r.ativo from whatsapp_robo r left join whatsapp_numeros n on n.id = $2
+          where r.empresa_id = $1 and r.numero_id is not distinct from (case when n.robo_proprio then n.id end)`,
+        [k.empresa_id, k.conexao_id])).rows[0]?.ativo || false;
       // agendamento do chamado: a conversa mostra e muda a situação dele
       const agendamento = chamado ? (await db.query(
         `select a.id, a.inicio, a.situacao, a.loja_id, pode(a.loja_id, 'agenda.gerenciar') as pode, a.venda_id,
@@ -957,7 +1131,8 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
                 (select string_agg(s.nome, ', ' order by x.n) from unnest(a.servico_ids) with ordinality x(id, n)
                    join servicos s on s.id = x.id) as servicos
            from agendamentos a where a.id = app_agendamento_do_chamado($1)`, [chamado.id])).rows[0] || null : null;
-      return { ...k, mensagens, chamado, agendamento, robo, pode_enviar: await podeEnviar(db, k.empresa_id) };
+      const pode = (await db.query("select ve_whatsapp($1, $2, 'whatsapp.enviar') as ok", [k.conexao_id, k.empresa_id])).rows[0].ok;
+      return { ...k, mensagens, chamado, agendamento, robo, pode_enviar: pode };
     }));
   }));
 
@@ -965,9 +1140,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
   app.put('/api/whatsapp/contatos/:id', exigeLogin, comRecusa(async (req, res) => {
     if (!UUID.test(req.params.id)) throw new Recusa(404, 'Conversa não encontrada.');
     await comoUsuario(req.usuarioId, async (db) => {
-      const k = (await db.query('select * from whatsapp_contatos where id = $1', [req.params.id])).rows[0];
-      if (!k) throw new Recusa(404, 'Conversa não encontrada.');
-      await exigirEnvio(db, k.empresa_id);
+      const k = await contatoVisivel(db, req.params.id, 'whatsapp.enviar');
       const cliente = 'cliente_id' in (req.body || {}) ? (UUID.test(req.body.cliente_id || '') ? req.body.cliente_id : null) : k.cliente_id;
       if (cliente && !(await db.query('select 1 from clientes where id = $1 and empresa_id = $2', [cliente, k.empresa_id])).rowCount) {
         throw new Recusa(400, 'Cliente não encontrado neste grupo.');
@@ -984,11 +1157,13 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     if (!corpo) throw new Recusa(400, 'Escreva a mensagem.');
     // 1) confere e pega o número; 2) envia fora da transação; 3) grava o resultado
     const k = await comoUsuario(req.usuarioId, async (db) => {
-      const c = (await db.query(
-        `select k.*, n.phone_number_id from whatsapp_contatos k left join whatsapp_numeros n on n.empresa_id = k.empresa_id and n.ativo
-          where k.id = $1`, [req.params.id])).rows[0];
-      if (!c) throw new Recusa(404, 'Conversa não encontrada.');
-      await exigirEnvio(db, c.empresa_id);
+      const c = await contatoVisivel(db, req.params.id, 'whatsapp.enviar');
+      // responde pelo número da conexão da conversa (conversa sem conexão: o da primeira unidade do grupo)
+      c.phone_number_id = (await db.query(
+        `select phone_number_id from whatsapp_numeros
+          where id = coalesce($1, whatsapp_numero_loja((select id from lojas where empresa_id = $2 and ativo order by nome limit 1))) and ativo`,
+        [c.numero_id, c.empresa_id])).rows[0]?.phone_number_id || null;
+      if (c.numero_id && !c.phone_number_id) throw new Recusa(400, 'A conexão desta conversa está desligada (WhatsApp > Conexões).');
       return c;
     });
     let envio, falha = null;
@@ -1028,12 +1203,11 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       const arquivos = (await db.query(
         'select nome, nome_arquivo, mime, conteudo from lancamento_arquivos where lancamento_id = $1 and id = any($2) order by criado_em', [l.id, ids])).rows;
       if (!arquivos.length) throw new Recusa(400, 'Documento não encontrado.');
-      const contato = (await db.query(
-        `insert into whatsapp_contatos (empresa_id, telefone, nome, cliente_id) values ($1, $2, $3, $4)
-         on conflict (empresa_id, telefone) do update set nome = coalesce(whatsapp_contatos.nome, excluded.nome),
-                                                         cliente_id = coalesce(whatsapp_contatos.cliente_id, excluded.cliente_id)
-         returning id`, [l.empresa_id, tel, l.cliente, l.cliente_id])).rows[0].id;
-      const numero = (await db.query('select phone_number_id from whatsapp_numeros where empresa_id = $1 and ativo', [l.empresa_id])).rows[0]?.phone_number_id || null;
+      // vai pela conexão da unidade do lançamento (senão a do grupo todo)
+      const conexao = (await db.query('select id, phone_number_id from whatsapp_numeros where id = whatsapp_numero_loja($1)', [l.loja_id])).rows[0];
+      const contato = (await db.query('select app_whatsapp_contato($1, $2, $3, $4, $5) as id',
+        [l.empresa_id, conexao?.id || null, tel, l.cliente, l.cliente_id])).rows[0].id;
+      const numero = conexao?.phone_number_id || null;
       return { ...l, tel, contato, numero, arquivos };
     });
     const hora = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date()));
