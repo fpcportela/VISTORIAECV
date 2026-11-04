@@ -267,6 +267,8 @@ const conexoesVisiveis = async (db, empresa) => (await db.query(
           ve_whatsapp(n.id, n.empresa_id, 'whatsapp.enviar') as pode_enviar
      from whatsapp_numeros n left join lojas l on l.id = n.loja_id
     where n.empresa_id = $1 and ve_whatsapp(n.id, n.empresa_id)
+      -- filial escolhida no topo: as conexões dela e as do grupo todo
+      and (loja_ativa() is null or n.loja_id is null or n.loja_id = loja_ativa())
     order by n.criado_em, n.nome`, [empresa])).rows;
 
 // Conexão escolhida no filtro da tela (?conexao=id), conferindo que a pessoa vê; vazio = todas
@@ -275,7 +277,7 @@ const conexaoDoFiltro = (v) => (UUID.test(v || '') ? v : null);
 // Conversa (contato) que a pessoa vê; com p_permissao = whatsapp.enviar, que pode responder
 async function contatoVisivel(db, id, permissao = 'whatsapp.ver') {
   if (!UUID.test(id || '')) throw new Recusa(404, 'Conversa não encontrada.');
-  const k = (await db.query('select k.*, ve_whatsapp(k.numero_id, k.empresa_id, $2) as ok from whatsapp_contatos k where k.id = $1', [id, permissao])).rows[0];
+  const k = (await db.query('select k.*, ve_conversa(k.id, $2) as ok from whatsapp_contatos k where k.id = $1', [id, permissao])).rows[0];
   if (!k) throw new Recusa(404, 'Conversa não encontrada.');
   if (!k.ok) throw new Recusa(403, permissao === 'whatsapp.enviar' ? 'Seu perfil não pode responder as conversas desta conexão.' : 'Seu perfil não vê as conversas desta conexão.');
   return k;
@@ -293,7 +295,8 @@ async function conexaoParaNova(db, empresa, { numero, loja, permissao = 'whatsap
   const r = (await db.query(
     `select n.id from whatsapp_numeros n
       where n.empresa_id = $1 and n.ativo and ve_whatsapp(n.id, n.empresa_id, $4)
-      order by (n.id = $2) desc nulls last, (n.id = whatsapp_numero_loja($3)) desc nulls last,
+        and (loja_ativa() is null or n.loja_id is null or n.loja_id = loja_ativa())
+      order by (n.id = $2) desc nulls last, (n.id = whatsapp_numero_loja(coalesce($3::uuid, loja_ativa()))) desc nulls last,
                (n.phone_number_id like 'teste-%'), n.criado_em
       limit 1`, [empresa, UUID.test(numero || '') ? numero : null, UUID.test(loja || '') ? loja : null, permissao])).rows[0];
   if (r) return r.id;
@@ -604,10 +607,10 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
     res.json(await comoUsuario(req.usuarioId, async (db) => (await db.query(
       `select (select count(*)::int from whatsapp_contatos k
                 where k.nao_lidas > 0 and (grupo_ativo() is null or k.empresa_id = grupo_ativo())
-                  and ve_whatsapp(k.numero_id, k.empresa_id)) as nao_lidas,
+                  and ve_conversa(k.id)) as nao_lidas,
               (select count(*)::int from whatsapp_chamados h join whatsapp_contatos k on k.id = h.contato_id
                 where h.aberto and (grupo_ativo() is null or h.empresa_id = grupo_ativo())
-                  and ve_whatsapp(k.numero_id, k.empresa_id)) as abertos`)).rows[0]));
+                  and ve_conversa(k.id)) as abertos`)).rows[0]));
   }));
 
   // ------------------------------------------------------------ situação e conexões que a pessoa vê
@@ -676,8 +679,8 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
                        abs(extract(epoch from a.inicio - now()))
               limit 1) ag on true
           where h.empresa_id = $1 and (h.aberto or h.concluido_em > now() - interval '30 days')
-            -- só as conexões que a pessoa vê (e a escolhida no filtro)
-            and ve_whatsapp(k.numero_id, k.empresa_id) and ($2::uuid is null or k.numero_id = $2)
+            -- só as conexões que a pessoa vê, a filial escolhida no topo e a conexão do filtro
+            and ve_conversa(k.id) and ($2::uuid is null or k.numero_id = $2)
           order by h.ordem, h.atualizado_em desc`, [empresa, conexaoDoFiltro(req.query.conexao)])).rows;
       const responsaveis = (await db.query('select * from app_responsaveis($1)', [empresa]).catch(() => ({ rows: [] }))).rows;
       return { empresa, colunas, chamados, responsaveis, pode_enviar: await podeEnviar(db, empresa) };
@@ -767,7 +770,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
       if (!empresa) throw new Recusa(403, 'Seu perfil não tem acesso ao WhatsApp desta unidade.');
       // já existe conversa com esse celular numa conexão que a pessoa vê: abre ela
       const existente = (await db.query(
-        `select k.id from whatsapp_contatos k where k.empresa_id = $1 and k.telefone = $2 and ve_whatsapp(k.numero_id, k.empresa_id)
+        `select k.id from whatsapp_contatos k where k.empresa_id = $1 and k.telefone = $2 and ve_conversa(k.id)
           order by (k.numero_id = whatsapp_numero_loja($3)) desc nulls last, k.ultima_em desc nulls last limit 1`, [empresa, tel, loja])).rows[0];
       if (existente && !UUID.test(req.body?.conexao || '')) return existente.id;
       const numero = await conexaoParaNova(db, empresa, { numero: req.body?.conexao, loja });
@@ -1080,7 +1083,7 @@ export function rotasWhatsApp(app, { exigeLogin, rota }) {
                 k.numero_id as conexao_id, (select n.nome from whatsapp_numeros n where n.id = k.numero_id) as conexao,
                 (select m.texto from whatsapp_conversa m where m.contato_id = k.id order by m.criado_em desc limit 1) as ultima
            from whatsapp_contatos k left join clientes c on c.id = k.cliente_id
-          where k.empresa_id = $1 and ve_whatsapp(k.numero_id, k.empresa_id) and ($3::uuid is null or k.numero_id = $3)
+          where k.empresa_id = $1 and ve_conversa(k.id) and ($3::uuid is null or k.numero_id = $3)
             and ($2::text is null or k.nome ilike '%' || $2 || '%' or c.nome ilike '%' || $2 || '%'
                  or (regexp_replace($2, '\\D', '', 'g') <> '' and k.telefone like '%' || regexp_replace($2, '\\D', '', 'g') || '%'))
           order by k.ultima_em desc nulls last, k.criado_em desc limit 200`, [empresa, busca, conexaoDoFiltro(req.query.conexao)])).rows;

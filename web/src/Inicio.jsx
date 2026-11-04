@@ -461,7 +461,7 @@ export default function Inicio({ perfil: perfilCompleto, setPerfil, aoSair }) {
             : tela === 'clientes' ? <Clientes perfil={perfil} loja={loja} />
             : tela === 'royalties' ? <Royalties perfil={perfil} loja={loja} />
             : tela === 'agenda' ? <Agenda key={agendaAbre.chave} diaInicial={agendaAbre.dia} lojaInicial={agendaAbre.loja} agendarPara={agendaAbre.agendarPara} perfil={perfil} loja={loja} aoVenda={abrirVenda} aoNovaVenda={tem('vendas.criar') ? (ag) => novaVenda(null, ag) : undefined} />
-            : tela === 'whatsapp' ? <WhatsApp key={whatsAbre.chave} contatoInicial={whatsAbre.contato} perfil={perfil} loja={loja} aoVenda={abrirVenda}
+            : tela === 'whatsapp' ? <WhatsApp key={`${whatsAbre.chave}|${loja}`} contatoInicial={whatsAbre.contato} perfil={perfil} loja={loja} aoVenda={abrirVenda}
                 aoAgenda={tem('agenda.ver') ? (dia, l) => { setAgendaAbre((a) => ({ chave: a.chave + 1, dia, loja: l })); setTela('agenda'); } : undefined}
                 aoAgendar={tem('agenda.gerenciar') ? (dados) => { setAgendaAbre((a) => ({ chave: a.chave + 1, agendarPara: dados })); setTela('agenda'); } : undefined} />
             : tela === 'relatorios' ? <Relatorios perfil={perfil} loja={loja} empresa={empresa} logo={perfil.logo}
