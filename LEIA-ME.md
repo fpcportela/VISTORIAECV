@@ -255,6 +255,11 @@ vê"): por padrão, as conexões das filiais dele e as do grupo todo; ou **só a
 ainda precisa ter o módulo WhatsApp. O master vê tudo. Confirmações da agenda e documentos vão pela conexão
 da unidade (senão pela do grupo todo). Banco: `db/54-whatsapp-conexoes.sql` (`npm run banco:atualizar`).
 
+**Filial escolhida no topo:** com uma filial escolhida, o WhatsApp mostra só as conversas e os chamados dela
+(vale também para o master); com "Todas as lojas", tudo o que a pessoa vê. A conversa é da unidade da conexão;
+numa conexão do grupo todo, da unidade do atendimento (a escolhida no robô, senão a do agendamento ou da venda).
+Conversa do grupo todo que ainda não tem unidade aparece em todas as filiais. Banco: `db/57-whatsapp-filial-topo.sql`.
+
 ## Rodar no dia a dia
 
 ```bash
