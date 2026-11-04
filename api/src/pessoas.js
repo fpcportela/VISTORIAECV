@@ -3,6 +3,7 @@ import { comoUsuario } from './db.js';
 import { cpfValido } from './documentos.js';
 import { Recusa, UUID, criarComRecusa, exigir, texto } from './comum.js';
 import { comprovanteDoDia } from './comprovantePonto.js';
+import { bancoDoColaborador, bancoDoMes, criarAtestado } from './feriasAtestados.js';
 
 // Colaboradores (cadastro de funcionários, com arquivos) e controle de ponto com foto.
 // O acesso por loja vem do banco (RLS); aqui ficam as permissões de cada ação.
@@ -302,7 +303,7 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
           where r.colaborador_id = $1 and to_char(r.data, 'YYYY-MM') = $2
           order by r.data, r.criado_em`, [c.id, mes])).rows;
       const justificativas = (await db.query(
-        `select j.data, j.tipo, j.texto, u.nome as criado_por, j.criado_em,
+        `select j.data, j.tipo, j.texto, j.atestado_id, u.nome as criado_por, j.criado_em,
                 coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'nome', a.nome_arquivo, 'tamanho', a.tamanho) order by a.criado_em)
                             from ponto_justificativa_arquivos a where a.justificativa_id = j.id), '[]') as arquivos
            from ponto_justificativas j left join usuarios u on u.id = j.criado_por
@@ -311,7 +312,13 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
         `select data, nsr, envio, erro, criado_em from ponto_comprovantes
           where colaborador_id = $1 and to_char(data, 'YYYY-MM') = $2`, [c.id, mes])).rows;
       const pode = (await db.query("select pode_colaborador($1, 'ponto.ajustar') as ajustar, pode_colaborador($1, 'ponto.justificar') as justificar", [c.id])).rows[0];
-      return { colaborador: { id: c.id, nome: c.nome, cargo: c.cargo, loja_id: c.loja_id }, registros, justificativas, comprovantes, pode };
+      // férias que caem no mês e o banco de horas (dia a dia e saldo até ontem)
+      const ferias = (await db.query(
+        `select id, inicio, fim, dias from colaborador_ferias
+          where colaborador_id = $1 and inicio <= ($2 || '-01')::date + interval '1 month' - interval '1 day' and fim >= ($2 || '-01')::date
+          order by inicio`, [c.id, mes])).rows;
+      const banco = c.banco_horas ? { ...(await bancoDoColaborador(db, c)), dias: await bancoDoMes(db, c, mes) } : null;
+      return { colaborador: { id: c.id, nome: c.nome, cargo: c.cargo, loja_id: c.loja_id }, registros, justificativas, comprovantes, ferias, banco, pode };
     }));
   }));
 
@@ -365,10 +372,16 @@ export function rotasPessoas(app, { exigeLogin, rota }) {
         return db.query('delete from ponto_justificativas where colaborador_id = $1 and data = $2 and tipo is not distinct from $3::tipo_marcacao_ponto', [c.id, data, tipo]);
       }
       const alvo = tipo ? '(colaborador_id, data, tipo) where tipo is not null' : '(colaborador_id, data) where tipo is null';
-      return db.query(
+      const j = (await db.query(
         `insert into ponto_justificativas (colaborador_id, data, tipo, texto, criado_por) values ($1, $2, $3, $4, $5)
-         on conflict ${alvo} do update set texto = excluded.texto, criado_por = excluded.criado_por, criado_em = now()`,
-        [c.id, data, tipo, textoJ, req.usuarioId]);
+         on conflict ${alvo} do update set texto = excluded.texto, criado_por = excluded.criado_por, criado_em = now()
+         returning id, atestado_id`,
+        [c.id, data, tipo, textoJ, req.usuarioId])).rows[0];
+      // "Atestado" no dia todo: o dia entra na aba Atestados do colaborador (e sai, se desmarcar)
+      if (!tipo && b.atestado !== undefined) {
+        if (b.atestado && !j.atestado_id) await criarAtestado(db, c, { inicio: data, fim: data, textoJ, usuario: req.usuarioId });
+        if (!b.atestado && j.atestado_id) await db.query('update ponto_justificativas set atestado_id = null where id = $1', [j.id]);
+      }
     });
     res.json({ ok: true });
   }));

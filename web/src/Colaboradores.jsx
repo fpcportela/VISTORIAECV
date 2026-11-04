@@ -3,6 +3,7 @@ import { api, sessao } from './api.js';
 import { criarTem } from './modulos.js';
 import { cpfValido, mascaraCpf, mascaraTelefone } from './documentos.js';
 import { CampoData } from './Data.jsx';
+import { AbaAtestados, AbaFerias } from './FeriasAtestados.jsx';
 
 // Cadastro de colaboradores (funcionários das lojas), com arquivos anexados
 // por tipo (RG, CNH, Contrato… e outros que o grupo criar).
@@ -86,6 +87,7 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
   useEffect(() => { if (podeDarAcesso) api('/perfis').then(setPerfis).catch(() => {}); }, [podeDarAcesso]);
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [aba, setAba] = useState('cadastro');
 
   async function carregar() {
     try {
@@ -146,7 +148,16 @@ function EditorColaborador({ id, perfil, lojaPadrao, lojasEditar, aoFechar, aoSa
           <h2>{id ? (c?.nome || 'Colaborador') : 'Novo colaborador'}</h2>
           <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
         </div>
-        {id && !c && !erro ? <p className="cinza">Carregando…</p> : (
+        {id && c && (
+          <div className="abas" role="tablist">
+            {[['cadastro', 'Cadastro'], ['ferias', 'Férias'], ['atestados', 'Atestados']].map(([k, rotulo]) => (
+              <button key={k} type="button" role="tab" aria-selected={aba === k} className={aba === k ? 'ativa' : ''} onClick={() => setAba(k)}>{rotulo}</button>
+            ))}
+          </div>
+        )}
+        {id && c && aba === 'ferias' ? <AbaFerias colaborador={c} />
+          : id && c && aba === 'atestados' ? <AbaAtestados colaborador={c} />
+          : id && !c && !erro ? <p className="cinza">Carregando…</p> : (
           <>
             <form className="formulario" onSubmit={salvar}>
               <fieldset className="sem-borda" disabled={!podeEditar}>

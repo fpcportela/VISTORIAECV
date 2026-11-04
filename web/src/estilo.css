@@ -447,6 +447,10 @@ div.linha-loja { display: flex; align-items: center; gap: 8px; }
 /* Colaboradores e arquivos */
 .filtro-check { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; }
 .arquivos-colaborador { margin-top: 16px; }
+.jornada-semana { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.jornada-semana label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; }
+.formulario .jornada-semana input { width: 100%; min-width: 0; box-sizing: border-box; padding-left: 2px; padding-right: 2px; text-align: center; }
+@media (max-width: 560px) { .jornada-semana { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .lista-arquivos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .lista-arquivos li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #eef1f5; }
 .lista-arquivos li .botao-texto { padding: 0; font-weight: 700; text-align: left; word-break: break-all; }
@@ -487,6 +491,7 @@ div.linha-loja { display: flex; align-items: center; gap: 8px; }
 .tp-hora:hover, .tp-vazio:hover { border-color: var(--borda); }
 .tp-hora.editada { color: #92400e; font-weight: 700; }
 .tp-vazio { color: var(--cinza); }
+.tp-banco { display: block; font-size: 12px; font-weight: 700; }
 .tp-justificativa { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .tp-justificativa .botao-texto { padding: 0; font-size: 13px; }
 .foto-ponto { width: 100%; max-width: 360px; border-radius: 8px; display: block; margin: 0 auto 10px; }
