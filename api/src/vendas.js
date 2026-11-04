@@ -183,8 +183,14 @@ export function rotasVendas(app, { exigeLogin, rota }) {
                 pode($1, 'vendas.autorizar') as autorizar, pode($1, 'vendas.responsavel') as responsavel`, [v.loja_id])).rows[0];
       // agendamento da venda (o atual ou o que teve), para o selo ao lado do número
       const agendamentos = (await db.query(
-        `select id, loja_id, inicio, situacao from agendamentos where venda_id = $1
-          order by (situacao <> 'cancelado') desc, inicio desc`, [v.id])).rows;
+        `select a.id, a.loja_id, a.inicio, a.situacao, a.nome,
+                -- telefone da conversa do WhatsApp; sem conversa, o do agendamento (para o Novo cadastro já vir preenchido)
+                coalesce(ct.telefone, a.telefone) as telefone
+           from agendamentos a
+           left join whatsapp_chamados ch on ch.id = a.chamado_id
+           left join whatsapp_contatos ct on ct.id = ch.contato_id
+          where a.venda_id = $1
+          order by (a.situacao <> 'cancelado') desc, a.inicio desc`, [v.id])).rows;
       return { ...v, ...extra, itens, historico, pagamentos, pode, agendamentos };
     });
     res.json(dados);

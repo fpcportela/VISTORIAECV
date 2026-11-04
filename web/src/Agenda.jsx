@@ -227,7 +227,7 @@ const listaServicos = (a) => (a?.servico_ids?.length ? a.servico_ids : a?.servic
 
 // Dados do agendamento para abrir a venda já preenchida
 const paraVenda = (a) => ({
-  id: a.id, loja_id: a.loja_id, placa: a.placa || '', servico_ids: listaServicos(a),
+  id: a.id, loja_id: a.loja_id, placa: a.placa || '', servico_ids: listaServicos(a), nome: a.nome || '', telefone: a.telefone || '',
   cliente: a.cliente_id ? { id: a.cliente_id, nome: a.cliente_nome, cpf_cnpj: a.cliente_doc } : null,
   observacao_venda: [`Agendamento de ${quando(a.inicio)}`, !a.cliente_id && a.nome, a.telefone && mascaraTelefone(String(a.telefone).replace(/^55/, '')),
     a.observacao].filter(Boolean).join(' · '),
