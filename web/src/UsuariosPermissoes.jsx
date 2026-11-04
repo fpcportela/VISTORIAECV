@@ -42,7 +42,7 @@ export default function UsuariosPermissoes({ perfil }) {
     }
   }
 
-  const nomeLoja = (id) => perfil.lojas.find((l) => l.id === id)?.nome || 'Outra loja';
+  const nomeLoja = (id) => (perfil.lojasTodas || perfil.lojas).find((l) => l.id === id)?.nome || 'Outra loja';
   const nomePerfil = (id) => perfis.find((p) => p.id === id)?.nome || '–';
 
   return (
@@ -347,6 +347,8 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
   // perfil escolhido em cada filial (sem entrada = não tem acesso à filial)
   const [vinculos, setVinculos] = useState(() =>
     Object.fromEntries((item?.vinculos || []).map((v) => [v.loja_id, v.perfil_id])));
+  // "Todas as unidades": vê as filiais juntas; sem ela, vê as marcadas uma por vez (troca no topo)
+  const [todasUnidades, setTodasUnidades] = useState(Boolean(item?.todas_unidades));
   const [erro, setErro] = useState('');
   const [salvando, setSalvando] = useState(false);
   // colaborador amarrado ao usuário: o que muda num cadastro muda no outro
@@ -387,12 +389,13 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
   const marcada = (l) => l.id in vinculos;
   const marcarFilial = (l, marcar) => {
     const novo = { ...vinculos };
-    if (marcar) novo[l.id] = sugerir(l); else delete novo[l.id];
+    if (marcar) novo[l.id] = sugerir(l); else { delete novo[l.id]; setTodasUnidades(false); }
     setVinculos(novo);
   };
-  const todas = lojas.length > 0 && lojas.every(marcada);
+  // Marcar as filiais uma a uma não liga "Todas as filiais"; marcar a opção marca todas
   const marcarTodas = () => {
-    if (todas) return setVinculos({});
+    if (todasUnidades) return setTodasUnidades(false);
+    setTodasUnidades(true);
     const novo = { ...vinculos };
     lojas.forEach((l) => { if (!marcada(l)) novo[l.id] = sugerir(l); });
     setVinculos(novo);
@@ -421,6 +424,7 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
       const corpo = {
         nome, cpf, telefone, email, senha: senha || undefined, ativo, cargo_id: cargoId || null, colaborador_id: colab?.id || null,
         vinculos: Object.entries(vinculos).filter(([, p]) => p).map(([loja_id, perfil_id]) => ({ loja_id, perfil_id })),
+        ...(lojas.length > 1 ? { todas_unidades: todasUnidades } : {}),
         ...(conexoes.length && !item?.master && { whatsapp: { restrito: zapRestrito, conexoes: zapRestrito ? [...zapMarcadas] : [] } }),
       };
       await (item ? api(`/usuarios/${item.id}`, { metodo: 'PUT', corpo }) : api('/usuarios', { metodo: 'POST', corpo }));
@@ -491,7 +495,10 @@ function EditorUsuario({ item, lojas, perfis, cargos = [], somenteLeitura, aoFec
             <fieldset className="grupo-permissoes">
               <legend>Filiais que acessa e perfil em cada uma</legend>
               {lojas.length > 1 && (
-                <label className="linha-check"><input type="checkbox" checked={todas} onChange={marcarTodas} /> <strong>Todas as filiais</strong></label>
+                <>
+                  <label className="linha-check"><input type="checkbox" checked={todasUnidades} onChange={marcarTodas} /> <strong>Todas as filiais</strong></label>
+                  <small className="cinza">Com "Todas as filiais", vê todas juntas. Sem ela, vê as filiais marcadas uma por vez (troca no topo da tela).</small>
+                </>
               )}
               {lojas.map((l) => (
                 <div key={l.id} className="linha-loja">

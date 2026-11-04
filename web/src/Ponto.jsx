@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, sessao } from './api.js';
+import { api, cabecalhos } from './api.js';
 import { criarTem } from './modulos.js';
 import { Icone } from './icones.jsx';
 import { abrirArquivo } from './Colaboradores.jsx';
@@ -377,7 +377,7 @@ function FotoPonto({ id }) {
   const [url, setUrl] = useState('');
   useEffect(() => {
     let u = '';
-    fetch(`/api/ponto/registros/${id}/foto`, { headers: { Authorization: `Bearer ${sessao.token()}` } })
+    fetch(`/api/ponto/registros/${id}/foto`, { headers: { ...cabecalhos() } })
       .then((r) => (r.ok ? r.blob() : null)).then((b) => { if (b) { u = URL.createObjectURL(b); setUrl(u); } });
     return () => u && URL.revokeObjectURL(u);
   }, [id]);
@@ -452,7 +452,7 @@ function Justificar({ colaborador, data, tipo, atual, arquivos, aoMudar, aoFecha
       for (const arq of novos) {
         const q = new URLSearchParams({ colaborador, data, ...(tipo && { tipo }), nome: arq.name, mime: arq.type || 'application/octet-stream' });
         const r = await fetch(`/api/ponto/justificativa/arquivos?${q}`, {
-          method: 'POST', body: arq, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+          method: 'POST', body: arq, headers: { 'Content-Type': 'application/octet-stream', ...cabecalhos() },
         });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || (r.status === 413 ? `"${arq.name}" passa de 15 MB.` : `Não foi possível enviar "${arq.name}".`));
       }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, moeda, sessao } from './api.js';
+import { api, moeda, cabecalhos } from './api.js';
 import { criarTem } from './modulos.js';
 import { formatarDoc } from './documentos.js';
 import { CampoData } from './Data.jsx';
@@ -639,7 +639,7 @@ function GerarRecebimento({ perfil, cliente, vendas, total, gerarPdf, aoFechar, 
           const blob = await gerarPdf(vendas.filter((v) => v.loja_id === l.loja_id));
           const q = new URLSearchParams({ arquivo: `${semAcento(`faturamento ${cliente.nome}`).replace(/[^\w-]+/g, '-').toLowerCase()}.pdf`, nome: 'RELATORIO DE FATURAMENTO', mime: 'application/pdf' });
           const resp = await fetch(`/api/financeiro/lancamentos/${l.id}/arquivos?${q}`, {
-            method: 'POST', body: blob, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+            method: 'POST', body: blob, headers: { 'Content-Type': 'application/octet-stream', ...cabecalhos() },
           });
           if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).erro || 'Não foi possível anexar o PDF.');
         } catch (falha) { falhaPdf = falha.message; }

@@ -44,7 +44,9 @@ function exigeLogin(req, res, next) {
   }
   // O grupo só filtra o que o master vê; para os demais o banco ignora (eles já só têm o próprio grupo)
   const grupo = String(req.headers['x-grupo'] || '');
-  contexto.run({ grupo: /^[0-9a-f-]{36}$/i.test(grupo) ? grupo : '' }, next);
+  // Unidade escolhida no topo: quem vê uma unidade por vez só enxerga essa (o banco confere)
+  const loja = String(req.headers['x-loja'] || '');
+  contexto.run({ grupo: UUID.test(grupo) ? grupo : '', loja: UUID.test(loja) ? loja : '' }, next);
 }
 
 app.get('/api/saude', (req, res) => res.json({ ok: true }));
@@ -61,7 +63,9 @@ app.post('/api/login', rota(async (req, res) => {
 
 app.get('/api/eu', exigeLogin, rota(async (req, res) => {
   const dados = await comoUsuario(req.usuarioId, async (db) => {
-    const usuario = (await db.query('select id, nome, email, admin_rede from usuarios where id = $1', [req.usuarioId])).rows[0];
+    const usuario = (await db.query('select id, nome, email, admin_rede, todas_unidades from usuarios where id = $1', [req.usuarioId])).rows[0];
+    // Sem "Todas as unidades", quem trabalha em várias unidades vê uma por vez (troca no topo)
+    const unidadePorVez = (await db.query('select unidade_por_vez() as v')).rows[0].v;
     const lojas = (await db.query('select * from app_minhas_lojas()')).rows;
     const { cor, pode_cor: podeCor, grupo_cor: grupoCor } = (await db.query('select app_cor_tema() as cor, app_pode_cor_tema() as pode_cor, app_grupo_da_cor() as grupo_cor')).rows[0];
     const atalhos = (await db.query('select app_meus_atalhos() as a')).rows[0].a;
@@ -79,7 +83,7 @@ app.get('/api/eu', exigeLogin, rota(async (req, res) => {
     // logo do grupo em uso (o master só vê quando escolhe um grupo no topo)
     const grupoLogo = grupo || (!usuario.admin_rede && grupos.length === 1 ? grupos[0].id : null);
     const logo = grupoLogo ? (await db.query('select logo from empresas where id = $1', [grupoLogo])).rows[0]?.logo || null : null;
-    return { usuario, lojas, cor, pode_cor: podeCor, cor_do_grupo: Boolean(grupoCor), atalhos, menu, acessos, grupos, grupo, logo, master: usuario.admin_rede };
+    return { usuario, lojas, unidade_por_vez: unidadePorVez, cor, pode_cor: podeCor, cor_do_grupo: Boolean(grupoCor), atalhos, menu, acessos, grupos, grupo, logo, master: usuario.admin_rede };
   });
   res.json(dados);
 }));

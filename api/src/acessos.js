@@ -76,9 +76,10 @@ export function rotasAcessos(app, { exigeLogin, rota }) {
   app.get('/api/usuarios', exigeLogin, rota(async (req, res) => {
     res.json(await comoUsuario(req.usuarioId, async (db) => {
       const usuarios = (await db.query(
-        `select a.*, c.cargo_id, c.cargo, k.colaborador_id, k.colaborador
+        `select a.*, c.cargo_id, c.cargo, k.colaborador_id, k.colaborador, t.todas_unidades
            from app_usuarios() a left join app_cargos_usuarios() c on c.usuario_id = a.id
-           left join app_colaborador_do_usuario() k on k.usuario_id = a.id`)).rows;
+           left join app_colaborador_do_usuario() k on k.usuario_id = a.id
+           left join app_usuarios_todas_unidades() t on t.id = a.id`)).rows;
       // WhatsApp: conexões que cada um vê (restrito = só as marcadas)
       const acessos = (await db.query('select * from app_whatsapp_acessos()')).rows;
       return usuarios.map((u) => {
@@ -128,6 +129,8 @@ export function rotasAcessos(app, { exigeLogin, rota }) {
       if (req.body && 'colaborador_id' in req.body) {
         await db.query('select app_ligar_colaborador_usuario($1, $2)', [uid, UUID.test(req.body.colaborador_id || '') ? req.body.colaborador_id : null]);
       }
+      // "Todas as unidades": vê as unidades juntas; sem ela, uma por vez
+      if (typeof req.body?.todas_unidades === 'boolean') await db.query('select app_definir_todas_unidades($1, $2)', [uid, req.body.todas_unidades]);
       return uid;
     });
     res.json({ id: novoId });

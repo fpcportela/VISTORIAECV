@@ -10,7 +10,7 @@ export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || 'postgres://app_api:app_dev@localhost:5432/vistoria_ecv',
 });
 
-// Grupo escolhido pelo master no topo da tela (cabeçalho X-Grupo), guardado por requisição
+// Grupo escolhido pelo master (cabeçalho X-Grupo) e unidade escolhida no topo (X-Loja), guardados por requisição
 export const contexto = new AsyncLocalStorage();
 
 // Roda as consultas em uma transação "em nome" do usuário logado,
@@ -21,6 +21,7 @@ export async function comoUsuario(usuarioId, fn) {
     await client.query('begin');
     await client.query("select set_config('app.usuario_id', $1, true)", [usuarioId || '']);
     await client.query("select set_config('app.grupo', $1, true)", [contexto.getStore()?.grupo || '']);
+    await client.query("select set_config('app.loja', $1, true)", [contexto.getStore()?.loja || '']);
     // "hoje" e o mês são os do Brasil, não os do servidor
     await client.query("set local time zone 'America/Sao_Paulo'");
     const resultado = await fn(client);

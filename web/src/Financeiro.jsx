@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, moeda, sessao } from './api.js';
+import { api, moeda, cabecalhos } from './api.js';
 import { paraMoeda } from './entrada.js';
 import { Icone } from './icones.jsx';
 import { criarTem } from './modulos.js';
@@ -554,7 +554,7 @@ function CentrosCusto({ loja, centros, podeEditar, aoMudar }) {
 async function enviarArquivo(lancamentoId, { arquivo, nome }) {
   const q = new URLSearchParams({ arquivo: arquivo.name, nome: nome || '', mime: arquivo.type || 'application/octet-stream' });
   const r = await fetch(`/api/financeiro/lancamentos/${lancamentoId}/arquivos?${q}`, {
-    method: 'POST', body: arquivo, headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${sessao.token()}` },
+    method: 'POST', body: arquivo, headers: { 'Content-Type': 'application/octet-stream', ...cabecalhos() },
   });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || (r.status === 413 ? `"${arquivo.name}" passa de 15 MB.` : `Não foi possível enviar "${arquivo.name}".`));
 }
@@ -582,7 +582,7 @@ function Documentos({ id, arquivos, podeEditar, temCliente, novos, aoNovos, aoMu
   }
   async function baixar(a) {
     try {
-      const r = await fetch(`/api/financeiro/arquivos/${a.id}?baixar=1`, { headers: { Authorization: `Bearer ${sessao.token()}` } });
+      const r = await fetch(`/api/financeiro/arquivos/${a.id}?baixar=1`, { headers: { ...cabecalhos() } });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erro || 'Não foi possível baixar o arquivo.');
       const nomeBaixado = decodeURIComponent((/filename\*=UTF-8''([^;]+)/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || a.nome_arquivo);
       const url = URL.createObjectURL(await r.blob());
