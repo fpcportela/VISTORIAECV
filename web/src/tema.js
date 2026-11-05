@@ -40,3 +40,25 @@ export function aplicarTema(cor) {
   raiz.setProperty('--profunda', profunda);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cor);
 }
+
+// Tamanho da letra: preferência de cada pessoa neste computador ou celular
+// (fica guardada no navegador). Aumenta a tela inteira na mesma proporção,
+// como o zoom do navegador, para nada ficar desalinhado.
+export const TAMANHOS = [['Pequeno', 0.9], ['Normal', 1], ['Grande', 1.1], ['Muito grande', 1.25]];
+const CHAVE_TAMANHO = 'vistoria-ecv:tamanho-letra';
+
+export function lerTamanho() {
+  try {
+    const v = Number(localStorage.getItem(CHAVE_TAMANHO));
+    return TAMANHOS.some(([, t]) => t === v) ? v : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function aplicarTamanho(tamanho) {
+  const raiz = document.documentElement;
+  raiz.style.zoom = tamanho === 1 ? '' : String(tamanho);
+  raiz.style.setProperty('--zoom', String(tamanho));
+  try { localStorage.setItem(CHAVE_TAMANHO, String(tamanho)); } catch { /* navegador sem armazenamento: vale só nesta sessão */ }
+}

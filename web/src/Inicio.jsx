@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { api, grupoEscolhido, lojaEscolhida, moeda } from './api.js';
-import { aplicarTema, COR_PADRAO, PALETA } from './tema.js';
+import { aplicarTema, aplicarTamanho, lerTamanho, COR_PADRAO, PALETA, TAMANHOS } from './tema.js';
 import { Icone } from './icones.jsx';
 import { MODULOS, criarTem, ordenar } from './modulos.js';
 import ConsultaPlaca from './ConsultaPlaca.jsx';
@@ -50,6 +50,7 @@ export default function Inicio({ perfil: perfilCompleto, setPerfil, aoSair }) {
   const [erro, setErro] = useState('');
   const [oculto, setOculto] = useState(false);
   const [paletaAberta, setPaletaAberta] = useState(false);
+  const [tamanho, setTamanho] = useState(lerTamanho);
   const [menuAberto, setMenuAberto] = useState(false);
   const [novaVistoria, setNovaVistoria] = useState(false);
   const [vistoriaId, setVistoriaId] = useState(null);
@@ -240,26 +241,44 @@ export default function Inicio({ perfil: perfilCompleto, setPerfil, aoSair }) {
       aoCliente={(c) => { setTela('vendas'); setAbaVenda('lista'); setFiltroVendas(null); setBuscaVendas(c.cpf_cnpj || c.nome); }} />
   );
 
+  const trocarTamanho = (t) => { aplicarTamanho(t); setTamanho(t); };
+
   const paleta = paletaAberta && (
-    <div className="paleta" role="dialog" aria-label="Cor do sistema">
+    <div className="paleta" role="dialog" aria-label="Aparência">
       <div className="paleta-topo">
-        <strong>Cor do sistema</strong>
+        <strong>Aparência</strong>
         <button className="fechar" onClick={() => setPaletaAberta(false)} aria-label="Fechar">×</button>
       </div>
-      <p>Escolha uma cor pronta ou uma cor personalizada. Menu, botões e destaques mudam juntos.
-        {perfil.cor_do_grupo ? ` A cor fica salva para todo o grupo ${empresa}.` : ' Sem grupo escolhido, a cor vale só para você.'}</p>
-      <div className="paleta-cores">
-        {PALETA.map(([nome, hex]) => (
-          <button key={hex} title={nome} aria-label={nome} onClick={() => trocarCor(hex)}
-            className={perfil.cor.toLowerCase() === hex.toLowerCase() ? 'cor selecionada' : 'cor'}
-            style={{ background: hex }} />
-        ))}
-      </div>
-      <label className="paleta-personalizada">
-        Cor personalizada
-        <input type="color" value={perfil.cor} onChange={(e) => trocarCor(e.target.value)} />
-      </label>
-      <button className="botao-contorno" onClick={() => trocarCor(COR_PADRAO)}>Voltar ao azul padrão</button>
+      {perfil.pode_cor && (
+        <section className="paleta-secao" aria-label="Cor do sistema">
+          <h3>Cor do sistema</h3>
+          <p>Escolha uma cor pronta ou uma cor personalizada. Menu, botões e destaques mudam juntos.
+            {perfil.cor_do_grupo ? ` A cor fica salva para todo o grupo ${empresa}.` : ' Sem grupo escolhido, a cor vale só para você.'}</p>
+          <div className="paleta-cores">
+            {PALETA.map(([nome, hex]) => (
+              <button key={hex} title={nome} aria-label={nome} onClick={() => trocarCor(hex)}
+                className={perfil.cor.toLowerCase() === hex.toLowerCase() ? 'cor selecionada' : 'cor'}
+                style={{ background: hex }} />
+            ))}
+          </div>
+          <label className="paleta-personalizada">
+            Cor personalizada
+            <input type="color" value={perfil.cor} onChange={(e) => trocarCor(e.target.value)} />
+          </label>
+          <button className="botao-contorno" onClick={() => trocarCor(COR_PADRAO)}>Voltar ao azul padrão</button>
+        </section>
+      )}
+      <section className="paleta-secao" aria-label="Tamanho da letra">
+        <h3>Tamanho da letra</h3>
+        <div className="tamanhos-letra">
+          {TAMANHOS.map(([nome, t]) => (
+            <button key={t} type="button" aria-pressed={tamanho === t} onClick={() => trocarTamanho(t)}>
+              <span style={{ fontSize: `${Math.round(15 * t)}px` }}>Aa</span>{nome}
+            </button>
+          ))}
+        </div>
+        <p>Vale só para você, neste computador ou celular.</p>
+      </section>
     </div>
   );
 
@@ -385,7 +404,7 @@ export default function Inicio({ perfil: perfilCompleto, setPerfil, aoSair }) {
           <span className="marca-textos"><strong>Vistoria ECV</strong><small>Gestão de vistorias cautelares</small></span>
         </div>
         {pesquisa('so-computador')}
-        {perfil.pode_cor && <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>}
+        <button className="botao-redondo clara" onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Aparência: cor e tamanho da letra" title="Aparência"><Icone nome="paleta" tamanho={22} /></button>
         <button className="botao-redondo" onClick={emBreve} aria-label="Ajuda"><Icone nome="ajuda" tamanho={22} /></button>
         <div className="empresa">
           {seletorGrupo || <strong>{empresa}</strong>}
@@ -401,7 +420,7 @@ export default function Inicio({ perfil: perfilCompleto, setPerfil, aoSair }) {
           <strong className="titulo">Vistoria ECV</strong>
           {perfil.logo && <img className="logo-celular" src={perfil.logo} alt={`Logo ${empresa}`} />}
           <button onClick={() => setOculto(!oculto)} aria-label={oculto ? 'Mostrar valores' : 'Ocultar valores'}><Icone nome={oculto ? 'olhoFechado' : 'olho'} tamanho={22} /></button>
-          {perfil.pode_cor && <button onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Personalizar cores"><Icone nome="paleta" tamanho={22} /></button>}
+          <button onClick={() => setPaletaAberta(!paletaAberta)} aria-label="Aparência: cor e tamanho da letra"><Icone nome="paleta" tamanho={22} /></button>
           <button onClick={aoSair} aria-label="Sair"><Icone nome="sair" tamanho={22} /></button>
         </div>
         {seletorGrupo && <label className="loja">Grupo {seletorGrupo}</label>}

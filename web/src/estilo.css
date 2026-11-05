@@ -49,13 +49,13 @@ h1, h2 { margin: 0; }
 .marca-textos small { font-size: 12px; color: var(--cinza); }
 
 /* ---------- Login ---------- */
-.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--primaria); }
+.login { min-height: calc(100vh / var(--zoom, 1)); display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--primaria); }
 .login-caixa { width: 100%; max-width: 380px; background: #fff; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 12px 32px rgba(15, 23, 42, .2); }
 .login-caixa label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 700; }
 .login-caixa input { border: 1px solid var(--borda); border-radius: 8px; padding: 10px 12px; font-size: 16px; min-height: 44px; }
 
 /* ---------- Estrutura ---------- */
-.app { min-height: 100vh; display: flex; flex-direction: column; }
+.app { min-height: calc(100vh / var(--zoom, 1)); display: flex; flex-direction: column; }
 .topo { background: #fff; border-bottom: 1px solid var(--linha); padding: 12px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .topo .marca { margin-right: auto; }
 .empresa { display: flex; flex-direction: column; gap: 2px; }
@@ -1187,7 +1187,7 @@ select { border-radius: 8px; border-color: var(--borda); font-weight: 600; paddi
 
 /* Menu lateral: a cor do tema, com itens em pílula */
 .corpo { align-items: flex-start; }
-.menu { width: 256px; padding: 16px 12px 24px; gap: 2px; position: sticky; top: 68px; align-self: stretch; min-height: calc(100vh - 68px); }
+.menu { width: 256px; padding: 16px 12px 24px; gap: 2px; position: sticky; top: 68px; align-self: stretch; min-height: calc(100vh / var(--zoom, 1) - 68px); }
 .menu button { margin: 0; padding: 9px 12px; border-radius: var(--raio-controle); font-size: 15px; font-weight: 500; min-height: 42px; gap: 12px; opacity: .9; transition: background .15s, opacity .15s; }
 .menu button:hover { background: rgba(255, 255, 255, .12); opacity: 1; }
 .menu button.ativo { background: var(--superficie); color: var(--forte); font-weight: 700; opacity: 1; box-shadow: 0 2px 6px rgba(13, 21, 36, .18); }
@@ -1304,3 +1304,13 @@ button.cartao-atalho:hover:not(:disabled) { border-color: var(--primaria); box-s
   .barra-inferior > button { font-weight: 600; }
   .botao-central { box-shadow: 0 8px 20px -4px color-mix(in srgb, var(--primaria) 60%, transparent); }
 }
+
+/* Aparência: cor do sistema e tamanho da letra */
+.paleta-secao { display: flex; flex-direction: column; gap: 10px; }
+.paleta-secao + .paleta-secao { border-top: 1px solid var(--linha); padding-top: 14px; }
+.paleta-secao h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.tamanhos-letra { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.tamanhos-letra button { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; min-height: 62px; padding: 6px 2px; border: 1px solid var(--borda); border-radius: var(--raio-controle); background: var(--superficie); color: var(--texto); font-size: 11.5px; font-weight: 500; line-height: 1.15; }
+.tamanhos-letra button span { font-family: var(--fonte-titulo); font-weight: 600; line-height: 1; }
+.tamanhos-letra button:hover { border-color: var(--primaria); }
+.tamanhos-letra button[aria-pressed=true] { border: 2px solid var(--forte); background: var(--clara); color: var(--forte); font-weight: 700; }
