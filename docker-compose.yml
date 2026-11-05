@@ -14,5 +14,35 @@ services:
       - dados_banco:/var/lib/postgresql/data
       - ./db:/docker-entrypoint-initdb.d:ro
 
+  # WhatsApp por QR code (Evolution API, não oficial). Só liga com: npm run whatsapp:ligar
+  whatsapp:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: vistoria-ecv-whatsapp
+    profiles: ["whatsapp"]
+    restart: unless-stopped
+    depends_on:
+      - banco
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://vistoria:${DB_ADMIN_PASSWORD:-vistoria_dev}@banco:5432/evolution?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: vistoria_ecv
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      DEL_INSTANCE: "false"
+      CONFIG_SESSION_PHONE_CLIENT: Vistoria ECV
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: "30"
+      LANGUAGE: pt-BR
+    volumes:
+      - whatsapp_sessoes:/evolution/instances
+
 volumes:
   dados_banco:
+  whatsapp_sessoes:
