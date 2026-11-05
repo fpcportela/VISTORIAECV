@@ -34,5 +34,9 @@ export function aplicarTema(cor) {
   raiz.setProperty('--forte', forte);
   raiz.setProperty('--sobre-primaria', luminancia(cor) <= 0.199 ? '#ffffff' : '#111827');
   raiz.setProperty('--clara', misturar(cor, '#ffffff', 0.9));
+  // Fundo da tela de entrada: a cor do tema bem escurecida, sempre com texto branco
+  let profunda = misturar(cor, '#0d1524', 0.55);
+  for (let i = 0; i < 8 && luminancia(profunda) > 0.06; i++) profunda = misturar(profunda, '#0d1524', 0.2);
+  raiz.setProperty('--profunda', profunda);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cor);
 }
