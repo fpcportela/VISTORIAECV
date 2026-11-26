@@ -1,0 +1,100 @@
+import { useEffect, useState } from 'react';
+import { api } from './api.js';
+import { Icone } from './icones.jsx';
+import { Placa, PlacaInput, limparPlaca } from './Placa.jsx';
+
+const TIPOS = { carro: 'Carro', moto: 'Moto', caminhao: 'Caminhão', outro: 'Outro' };
+
+// aoUsar(veiculo): opcional, mostra o botão "Usar nesta venda"
+// aoAbrirVenda(veiculo): opcional (consulta feita fora da venda): ao achar a placa, já abre uma venda nova com ela
+export default function ConsultaPlaca({ loja, placaInicial = '', aoFechar, aoUsar, aoAbrirVenda }) {
+  const [placa, setPlaca] = useState(limparPlaca(placaInicial));
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+  const [buscando, setBuscando] = useState(false);
+
+  async function buscar(atualizar = false) {
+    if (placa.length !== 7) {
+      setErro('Digite a placa completa, com 7 caracteres.');
+      return;
+    }
+    setErro('');
+    setBuscando(true);
+    try {
+      const params = new URLSearchParams();
+      if (loja) params.set('loja', loja);
+      if (atualizar) params.set('atualizar', '1');
+      const r = await api(`/placa/${placa}?${params}`);
+      setResultado(r);
+      if (aoAbrirVenda && r?.veiculo) aoAbrirVenda(r.veiculo);
+    } catch (falha) {
+      setResultado(null);
+      setErro(falha.message);
+    } finally {
+      setBuscando(false);
+    }
+  }
+
+  useEffect(() => {
+    if (placaInicial) buscar();
+    const fechar = (e) => e.key === 'Escape' && aoFechar();
+    window.addEventListener('keydown', fechar);
+    return () => window.removeEventListener('keydown', fechar);
+  }, []);
+
+  const v = resultado?.veiculo;
+  const linhas = v && [
+    ['Marca / modelo', [v.marca, v.modelo].filter(Boolean).join(' ') || v.versao],
+    ['Tipo', TIPOS[v.tipo]],
+    ['Ano', [v.ano_fabricacao, v.ano_modelo].filter(Boolean).join(' / ')],
+    ['Cor', v.cor],
+    ['Combustível', v.combustivel],
+    ['Chassi', v.chassi],
+    ['Renavam', v.renavam],
+    ['Motor', v.motor],
+    ['Município', [v.municipio, v.uf].filter(Boolean).join(' / ')],
+  ].filter(([, valor]) => valor);
+
+  return (
+    <div className="fundo-modal" onClick={(e) => e.target === e.currentTarget && aoFechar()}>
+      <section className="modal" role="dialog" aria-modal="true" aria-label="Consulta de placa">
+        <div className="modal-topo">
+          <h2>Consulta de placa</h2>
+          <button className="fechar" onClick={aoFechar} aria-label="Fechar">×</button>
+        </div>
+
+        <form className="busca-placa" onSubmit={(e) => { e.preventDefault(); buscar(); }}>
+          <PlacaInput valor={placa} aoMudar={setPlaca} autoFocus />
+          <button className="botao-primario" type="submit" disabled={buscando}>
+            <Icone nome="busca" tamanho={18} /> {buscando ? 'Buscando…' : 'Buscar'}
+          </button>
+        </form>
+
+        {erro && <p className="erro" role="alert">{erro}</p>}
+
+        {v && (
+          <div className="resultado-placa">
+            {resultado.aviso && <p className="aviso-texto">{resultado.aviso} Mostrando os dados guardados.</p>}
+            <dl>
+              {linhas.map(([rotulo, valor]) => (
+                <div key={rotulo}><dt>{rotulo}</dt><dd>{valor}</dd></div>
+              ))}
+            </dl>
+            <div className="rodape-placa">
+              <small className="cinza">
+                {resultado.origem === 'cache' ? 'Dados guardados' : 'Consultado agora'} em{' '}
+                {new Date(v.consultado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+              </small>
+              {aoUsar && <button className="botao-primario pequeno" onClick={() => aoUsar(v)}>Usar nesta venda</button>}
+              {resultado.origem === 'cache' && (
+                <button className="botao-contorno pequeno" onClick={() => buscar(true)} disabled={buscando}>
+                  Atualizar consulta
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

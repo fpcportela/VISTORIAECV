@@ -7,7 +7,18 @@
     "banco": "docker compose up -d",
     "banco:parar": "docker compose stop",
     "banco:zerar": "docker compose down -v && docker compose up -d",
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev --prefix api\" \"npm run dev --prefix web\""
+    "iniciar": "npm run build --prefix web && concurrently -n api,web -c blue,green \"npm start --prefix api\" \"npm run preview --prefix web\"",
+    "abrir": "node scripts/abrir.mjs",
+    "atualizar": "node scripts/atualizar.mjs",
+    "drive:iniciar": "node scripts/drive.mjs iniciar",
+    "drive:salvar": "node scripts/drive.mjs salvar",
+    "drive:fechar": "node scripts/drive.mjs fechar",
+    "drive:restaurar": "node scripts/drive.mjs restaurar",
+    "drive:status": "node scripts/drive.mjs status",
+    "whatsapp:ligar": "docker exec vistoria-ecv-banco sh -c \"psql -U vistoria -d vistoria_ecv -tAc \\\"select 1 from pg_database where datname = 'evolution'\\\" | grep -q 1 || createdb -U vistoria evolution\" && docker compose --profile whatsapp up -d whatsapp",
+    "whatsapp:parar": "docker compose --profile whatsapp stop whatsapp",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev --prefix api\" \"npm run dev --prefix web\"",
+    "banco:atualizar": "node scripts/atualizar.mjs --banco"
   },
   "devDependencies": {
     "concurrently": "9.1.0"

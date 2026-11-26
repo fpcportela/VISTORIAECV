@@ -1,0 +1,92 @@
+# Vistoria ECV no servidor (VPS). Rodar a partir da pasta do projeto:
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+# Só o Caddy abre portas (80 e 443). Banco, API e WhatsApp ficam na rede interna.
+name: vistoria-ecv
+
+services:
+  caddy:
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      CADDY_ENDERECO: ${DOMINIO:?coloque DOMINIO no deploy/.env}
+    volumes:
+      - caddy_dados:/data
+      - caddy_config:/config
+
+  api:
+    build: { context: .., dockerfile: deploy/api.Dockerfile }
+    restart: unless-stopped
+    depends_on:
+      banco: { condition: service_healthy }
+    env_file: .env
+    environment:
+      PORT: "3001"
+      # o IP de quem acessa é o primeiro que não for da rede interna (vale com um ou dois proxies na frente)
+      TRUST_PROXY: loopback, linklocal, uniquelocal
+      DATABASE_URL: postgresql://app_api:${APP_DB_PASSWORD:?}@banco:5432/vistoria_ecv
+      # backup e recuperação pela tela rodam como o dono do banco
+      PGPASSWORD: ${DB_ADMIN_PASSWORD:?}
+      BACKUP_CMD: pg_dump -h banco -U vistoria -Fc vistoria_ecv
+      BACKUP_TEXTO_CMD: pg_restore --data-only -f -
+      BACKUP_RESTAURAR_CMD: pg_restore -h banco -U vistoria -d vistoria_ecv --clean --if-exists --no-owner --single-transaction
+      BACKUP_PSQL_CMD: psql -h banco -U vistoria -d vistoria_ecv -v ON_ERROR_STOP=1 -1 -q
+      BACKUP_DIR: /app/backups-automaticos
+      EVOLUTION_URL: http://whatsapp:8080
+      EVOLUTION_WEBHOOK_URL: http://api:3001/api/whatsapp/evolution
+    volumes:
+      - backups_automaticos:/app/backups-automaticos
+
+  banco:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vistoria_ecv
+      POSTGRES_USER: vistoria
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
+      TZ: America/Sao_Paulo
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-h", "127.0.0.1", "-U", "vistoria", "-d", "vistoria_ecv"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - dados_banco:/var/lib/postgresql/data
+      # só roda na primeira vez (banco vazio); as atualizações vêm do deploy.sh
+      - ../db:/docker-entrypoint-initdb.d:ro
+
+  # WhatsApp por QR code (Evolution API). Só liga com o perfil whatsapp (WHATSAPP=sim no .env).
+  whatsapp:
+    image: evoapicloud/evolution-api:v2.3.7
+    profiles: ["whatsapp"]
+    restart: unless-stopped
+    depends_on:
+      banco: { condition: service_healthy }
+    environment:
+      SERVER_URL: http://whatsapp:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://vistoria:${DB_ADMIN_PASSWORD}@banco:5432/evolution?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: vistoria_ecv
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      DEL_INSTANCE: "false"
+      CONFIG_SESSION_PHONE_CLIENT: Vistoria ECV
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: "30"
+      LANGUAGE: pt-BR
+    volumes:
+      - whatsapp_sessoes:/evolution/instances
+
+volumes:
+  dados_banco:
+  whatsapp_sessoes:
+  backups_automaticos:
+  caddy_dados:
+  caddy_config:

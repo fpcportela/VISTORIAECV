@@ -1,0 +1,21 @@
+# Botão "Publicar no servidor" (aba Actions do GitHub > Publicar no servidor > Run workflow).
+# Entra na VPS por SSH e roda o deploy/deploy.sh. Precisa dos Secrets do repositório:
+#   VPS_HOST (IP da VPS), VPS_USUARIO (ex.: deploy), VPS_CHAVE_SSH (chave privada só para o deploy)
+name: Publicar no servidor
+on:
+  workflow_dispatch:
+concurrency: publicar
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rodar o deploy na VPS
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          USUARIO: ${{ secrets.VPS_USUARIO }}
+          CHAVE: ${{ secrets.VPS_CHAVE_SSH }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$CHAVE" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy "$USUARIO@$HOST" '/opt/vistoria-ecv/deploy/deploy.sh'

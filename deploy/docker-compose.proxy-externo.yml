@@ -1,0 +1,21 @@
+# Quando o servidor já tem outro proxy com https nas portas 80/443 (ex.: o Caddy do whatsweb).
+# O Caddy do Vistoria não abre portas: entra na rede do outro proxy com o nome vistoria-ecv-web
+# e responde em http na porta 80. No outro proxy basta:
+#   vistoriaecv.novatec.cloud {
+#       reverse_proxy vistoria-ecv-web:80
+#   }
+# Liga com PROXY_REDE=<rede do outro proxy> no deploy/.env (o deploy.sh inclui este arquivo sozinho).
+services:
+  caddy:
+    ports: !reset []
+    environment:
+      CADDY_ENDERECO: ":80"
+    networks:
+      default:
+      proxy:
+        aliases: [vistoria-ecv-web]
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_REDE:?coloque PROXY_REDE no deploy/.env}

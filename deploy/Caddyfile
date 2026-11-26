@@ -1,0 +1,33 @@
+# O endereço vem do .env (DOMINIO). O Caddy pede e renova o certificado https sozinho.
+# Atrás de outro proxy (deploy/docker-compose.proxy-externo.yml) o endereço é ":80" e o https fica com ele.
+{
+	servers {
+		# confia no X-Forwarded-For só quando vem da rede interna do Docker (o outro proxy)
+		trusted_proxies static private_ranges
+	}
+}
+
+{$CADDY_ENDERECO} {
+	encode gzip
+
+	# API (inclui os webhooks do WhatsApp)
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	# App: arquivos gerados pelo Vite; qualquer outro caminho abre o index.html
+	handle {
+		root * /srv/app
+		@semcache path /index.html /sw.js /manifest.webmanifest
+		header @semcache Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

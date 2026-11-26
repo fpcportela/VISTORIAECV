@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, sessao } from './api.js';
-import { aplicarTema, COR_PADRAO } from './tema.js';
+import { aplicarTema, aplicarTamanho, lerTamanho, COR_PADRAO } from './tema.js';
 import Login from './Login.jsx';
 import Inicio from './Inicio.jsx';
 
@@ -22,6 +22,7 @@ export default function App() {
 
   useEffect(() => {
     aplicarTema(COR_PADRAO);
+    aplicarTamanho(lerTamanho());
     if (sessao.token()) carregarPerfil();
   }, []);
 
