@@ -22,6 +22,32 @@ const app = express();
 // a foto do ponto vem em base64; o corpo bruto fica guardado para conferir a assinatura do webhook do WhatsApp
 app.use(express.json({ limit: '3mb', verify: (req, res, buf) => { if (req.url.startsWith('/api/whatsapp/webhook')) req.corpoBruto = buf; } }));
 
+// Atrás do Caddy (servidor), o IP de quem acessa vem no cabeçalho X-Forwarded-For
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+
+// Limite de tentativas erradas no login e no "Esqueci a senha": 10 por IP a cada 15 minutos
+const TENTATIVAS_MAX = Number(process.env.LOGIN_TENTATIVAS || 10);
+const JANELA_MS = 15 * 60 * 1000;
+const tentativas = new Map();
+setInterval(() => {
+  const agora = Date.now();
+  for (const [ip, t] of tentativas) if (agora - t.inicio > JANELA_MS) tentativas.delete(ip);
+}, 60 * 1000).unref();
+function limiteTentativas(req, res, next) {
+  const agora = Date.now();
+  const chave = `${req.path}|${req.ip}`;
+  let t = tentativas.get(chave);
+  if (!t || agora - t.inicio > JANELA_MS) { t = { inicio: agora, n: 0 }; tentativas.set(chave, t); }
+  if (t.n >= TENTATIVAS_MAX) {
+    const minutos = Math.ceil((JANELA_MS - (agora - t.inicio)) / 60000);
+    return res.status(429).json({ erro: `Muitas tentativas. Espere ${minutos} minuto(s) e tente de novo.` });
+  }
+  // só as tentativas que deram errado contam (uma loja com várias pessoas no mesmo IP entra normal)
+  res.on('finish', () => { if (res.statusCode >= 400) t.n += 1; });
+  next();
+}
+app.use(['/api/login', '/api/senha'], limiteTentativas);
+
 const SEGREDO = process.env.JWT_SECRET || 'troque-este-segredo-em-producao';
 const PORTA = Number(process.env.PORT || 3001);
 const UUID = /^[0-9a-f-]{36}$/i;

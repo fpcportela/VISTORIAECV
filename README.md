@@ -227,5 +227,5 @@ Isso recria o banco do zero com os dados iniciais (use com cuidado).
 
 ## Próximos passos
 
-- Servidor final: um VPS na Hostinger com Docker (as hospedagens compartilhadas não têm PostgreSQL).
+- Servidor final: um VPS na Hostinger com Docker (as hospedagens compartilhadas não têm PostgreSQL). Como instalar e atualizar: [deploy/LEIA-ME.md](deploy/LEIA-ME.md).
 - Os módulos do menu (vistorias, financeiro, royalties, ponto…) serão feitos um por um.
