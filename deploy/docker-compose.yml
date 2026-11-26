@@ -13,7 +13,7 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      DOMINIO: ${DOMINIO:?coloque DOMINIO no deploy/.env}
+      CADDY_ENDERECO: ${DOMINIO:?coloque DOMINIO no deploy/.env}
     volumes:
       - caddy_dados:/data
       - caddy_config:/config
@@ -26,7 +26,8 @@ services:
     env_file: .env
     environment:
       PORT: "3001"
-      TRUST_PROXY: "1"
+      # o IP de quem acessa é o primeiro que não for da rede interna (vale com um ou dois proxies na frente)
+      TRUST_PROXY: loopback, linklocal, uniquelocal
       DATABASE_URL: postgresql://app_api:${APP_DB_PASSWORD:?}@banco:5432/vistoria_ecv
       # backup e recuperação pela tela rodam como o dono do banco
       PGPASSWORD: ${DB_ADMIN_PASSWORD:?}

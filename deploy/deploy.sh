@@ -9,6 +9,7 @@ RAIZ="$(pwd)"
 COMPOSE=(docker compose -f deploy/docker-compose.yml)
 [ -f deploy/.env ] || { echo "Falta deploy/.env (copie de deploy/.env.exemplo)"; exit 1; }
 set -a; . deploy/.env; set +a
+[ -n "${PROXY_REDE:-}" ] && COMPOSE+=(-f deploy/docker-compose.proxy-externo.yml)
 [ "${WHATSAPP:-}" = "sim" ] && COMPOSE+=(--profile whatsapp)
 RAMO="${DEPLOY_RAMO:-consulta-placa}"
 

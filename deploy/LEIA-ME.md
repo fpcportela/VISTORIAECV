@@ -41,6 +41,22 @@ Antes do primeiro acesso, o DNS precisa ter um registro **A** de `vistoriaecv` (
 
 Depois de entrar com `admin@vistoriaecv.local` / `admin123`, **troque a senha** (ou restaure os dados reais, abaixo).
 
+## Servidor que já tem outro proxy nas portas 80/443
+
+Na VPS da Novatec as portas 80/443 já são do Caddy do whatsweb (que também publica o ERP). Nesse caso o Vistoria não abre portas: o Caddy dele entra na rede `whatsweb_default` com o nome `vistoria-ecv-web`, e o https fica com o Caddy do whatsweb.
+
+1. No `deploy/.env`: `PROXY_REDE=whatsweb_default` (o `deploy.sh` passa a usar `deploy/docker-compose.proxy-externo.yml`).
+2. Crie `/opt/whatsweb/caddy-tenants/_vistoria.caddy`:
+
+```
+vistoriaecv.novatec.cloud {
+	encode gzip
+	reverse_proxy vistoria-ecv-web:80
+}
+```
+
+3. Recarregue o Caddy do whatsweb (não derruba nada): `docker exec whatsweb-web-1 caddy reload --config /etc/caddy/Caddyfile`
+
 ## Atualizar
 
 ```bash
